@@ -5119,8 +5119,3 @@ function isBrownPixel(r, g, b, tolerance = 10, strict = false) {
   
   return (r > 60 && r < 180 && g > 30 && g < 120 && b < 80);
 }
-
-
-//Test Backup change
-//TESTERRRRR
-//NO 
