@@ -590,12 +590,11 @@ function createSettingsContext(layout) {
 
     pushElement(el) { activeSettingElements.push(el); },
 
-    // --- SLIDER ROW ---
     addSliderRow(labelText, min, max, currentVal, onChange, opts) {
       this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y));
 
       const slider = createSlider(min, max, currentVal);
-      // Adjusted position for the thicker slider
+      // Move slider down (+20) to align with text center
       slider.position(this.layout.controlX, this.y + 20); 
       slider.style('width', this.layout.controlWidth + 'px');
       slider.style('z-index', '20000');
@@ -611,18 +610,15 @@ function createSettingsContext(layout) {
       return this;
     },
 
-    // --- CHECKBOX ROW ---
     addCheckboxRow(labelText, isChecked, onChange) {
       this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y));
 
       const chk = createCheckbox('', isChecked);
-      
-      // IMPORTANT: Add the class so our CSS works
-      chk.class('setting-checkbox'); 
-      
-      // Move it down slightly (+10) to center with text
+      // Move checkbox down (+10)
       chk.position(this.layout.controlX, this.y + 10); 
       chk.style('z-index', '20000');
+      // Force the class just in case, though the CSS now targets input[type=checkbox] globally
+      if(chk.elt) chk.elt.classList.add('setting-checkbox');
 
       if (onChange) chk.changed(() => onChange(chk.checked()));
       this.pushElement(chk);
@@ -631,17 +627,14 @@ function createSettingsContext(layout) {
       return this;
     },
 
-    // --- SELECT ROW (Dropdown) ---
     addSelectRow(labelText, options, config) {
       this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y));
 
       const sel = createSelect();
-      sel.position(this.layout.controlX, this.y - 10);
-      sel.size(this.layout.controlWidth, 70); 
-      sel.style('font-size', '28px');
+      sel.position(this.layout.controlX, this.y - 5);
+      sel.size(this.layout.controlWidth, 60); 
+      sel.style('font-size', '24px');
       sel.style('z-index', '20000');
-      
-      // Dropdown styling
       sel.style('background', '#222');
       sel.style('color', 'white');
       sel.style('border', '2px solid #555');
