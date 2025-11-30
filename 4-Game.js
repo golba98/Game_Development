@@ -31,74 +31,6 @@ const SELECT_VERTICAL_NUDGE = 15;
 const TEXTSIZE_BUTTON_Y_OFFSET = 10;
 const BACK_BUTTON_VERTICAL_OFFSET = 120;
 
-function ensureLoadingOverlayDom() {
-  try {
-    if (typeof document === 'undefined') return null;
-    
-    if (!document.body) {
-      try {
-        document.addEventListener('DOMContentLoaded', function _gd_createOverlay() {
-          try { document.removeEventListener('DOMContentLoaded', _gd_createOverlay); } catch (e) {}
-          try { ensureLoadingOverlayDom(); updateLoadingOverlayDom(); } catch (e) {}
-        });
-      } catch (e) {}
-      return null;
-    }
-    let el = document.getElementById('gd-loading-overlay');
-    if (el) return el;
-    el = document.createElement('div');
-    el.id = 'gd-loading-overlay';
-    el.style.position = 'fixed';
-    el.style.left = '0';
-    el.style.top = '0';
-    el.style.width = '100%';
-    el.style.height = '100%';
-    el.style.display = 'flex';
-    el.style.alignItems = 'center';
-    el.style.justifyContent = 'center';
-    el.style.zIndex = '2147483647';
-    el.style.background = 'rgba(0,0,0,0.8)';
-    el.style.color = '#fff';
-    el.style.fontFamily = 'sans-serif';
-    el.style.fontSize = '40px';
-
-   
-    try {
-      const styleId = 'gd-ui-font-face';
-      if (!document.getElementById(styleId) && typeof UI_FONT_PATH !== 'undefined') {
-        const s = document.createElement('style');
-        s.id = styleId;
-        s.type = 'text/css';
-        const fontName = 'GD_UI_Font';
-        const src = UI_FONT_PATH.replace(/\\/g, '/');
-        s.appendChild(document.createTextNode("@font-face { font-family: '" + fontName + "'; src: url('" + src + "'); }") );
-        try { document.head.appendChild(s); } catch (e) {  }
-      }
-    } catch (e) {}
-    const inner = document.createElement('div');
-    inner.className = 'gd-loading-inner';
-    inner.style.textAlign = 'center';
-    inner.style.fontFamily = (typeof UI_FONT_PATH !== 'undefined') ? 'GD_UI_Font, sans-serif' : 'sans-serif';
-    const msg = document.createElement('div');
-    msg.className = 'message';
-    msg.innerText = overlayMessage || 'Loading...';
-   
-
-    msg.style.color = '#ffd700';
-    msg.style.fontWeight = '600';
-    const sub = document.createElement('div');
-    sub.className = 'sub';
-    sub.style.marginTop = '8px';
-    sub.style.fontSize = '24px';
-    sub.innerText = 'Please wait';
-    sub.style.color = '#ddd';
-    inner.appendChild(msg);
-    inner.appendChild(sub);
-    el.appendChild(inner);
-    document.body.appendChild(el);
-    return el;
-  } catch (e) { return null; }
-}
 
 
 
@@ -109,137 +41,6 @@ const CATEGORY_BUILDERS = {
   Accessibility: buildAccessibilitySettings,
   Language: buildLanguageSettings
 };
-
-function buildAudioSettings(ctx) {
-  ctx
-    .addSliderRow("Master Volume", 0, 100, masterVol * 100, v => { 
-        masterVol = v / 100; 
-        if(gameMusic) gameMusic.setVolume(musicVol * masterVol); 
-    }, { isAudio: true })
-    .addSliderRow("Music Volume", 0, 100, musicVol * 100, v => { 
-        musicVol = v / 100; 
-        if(gameMusic) gameMusic.setVolume(musicVol * masterVol);
-    }, { isAudio: true })
-    .addSliderRow("SFX Volume", 0, 100, sfxVol * 100, v => { 
-        sfxVol = v / 100; 
-    }, { isAudio: true });
-}
-
-function buildControlsSettings(ctx) {
-  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {}).addCheckboxRow("Invert Y Axis", false);
-}
-
-function buildGameplaySettings(ctx) {
-  ctx
-    .addCheckboxRow("Show Tutorials", true)
-    .addCheckboxRow("Enable HUD", true)
-    .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
-      value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
-      onChange: (val) => {
-        const normalized = val.toLowerCase();
-        difficultySetting = normalized;
-        setDifficulty(normalized, { regenerate: false });
-      }
-    });
-}
-
-function buildControlsSettings(ctx) {
-  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {}).addCheckboxRow("Invert Y Axis", false);
-}
-
-function buildAccessibilitySettings(ctx) {
-  
-  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
-  ctx.addSelectRow("Text Size", ["Small", "Default", "Big"], {
-      value: "Default",
-      onChange: (val) => { console.log("Text size changed to", val); }
-  });
-}
-
-function buildLanguageSettings(ctx) {
-  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
-}
-
-function createSettingsContext({ labelX, controlX, controlWidth, panelH, startY, spacingY }) {
-  let y = startY;
-  
-
-  const labelSize = '45px';    
-  const inputHeight = '50px';  
-  const sliderScale = 'scale(2.5)'; 
-  const checkboxScale = 'scale(1.8)'; 
- 
-
-  const ctx = {
-    get y() { return y; },
-    set y(value) { y = value; },
-    layout: { labelX, controlX, controlWidth, panelH, spacingY },
-    
-    addSliderRow(name, min, max, val, callback, options = {}) {
-      const lbl = createDiv(name);
-      lbl.class('setting-label');
-      lbl.position(labelX, y);
-      lbl.style('width', (controlX - labelX - 40) + 'px');
-      lbl.style('text-align', 'right');
-      lbl.style('font-size', labelSize); 
-      lbl.style('z-index', '20002');
-      activeSettingElements.push(lbl);
-
-      const slider = createSlider(min, max, val);
-      slider.position(controlX, y + 20); 
-      slider.style('width', controlWidth + 'px');
-      slider.style('transform', sliderScale); 
-      slider.style('transform-origin', 'left center');
-      slider.style('z-index', '20002');
-      slider.input(() => callback(slider.value()));
-      
-      activeSettingElements.push(slider);
-      y += spacingY;
-      return ctx;
-    },
-
-    addCheckboxRow(name, state) {
-      const cb = createCheckbox(' ' + name, state);
-      cb.class('setting-label setting-checkbox');
-      cb.position(controlX, y);
-      cb.style('font-size', labelSize); 
-      cb.style('transform', checkboxScale); 
-      cb.style('transform-origin', 'left top');
-      cb.style('z-index', '20002');
-      activeSettingElements.push(cb);
-      y += spacingY;
-      return ctx;
-    },
-
-    addSelectRow(name, opts, options = {}) {
-      const lbl = createDiv(name);
-      lbl.class('setting-label');
-      lbl.position(labelX, y);
-      lbl.style('width', (controlX - labelX - 40) + 'px');
-      lbl.style('text-align', 'right');
-      lbl.style('font-size', labelSize); 
-      lbl.style('z-index', '20002');
-      activeSettingElements.push(lbl);
-
-      const sel = createSelect();
-      sel.position(controlX, y);
-      sel.style('width', controlWidth + 'px');
-      sel.style('height', inputHeight);
-      sel.style('font-size', '30px'); 
-      sel.style('z-index', '20002');
-      
-      opts.forEach(opt => sel.option(opt));
-      
-      if (options.value) sel.value(options.value);
-      if (options.onChange) sel.changed(() => options.onChange(sel.value()));
-
-      activeSettingElements.push(sel);
-      y += spacingY;
-      return ctx;
-    }
-  };
-  return ctx;
-}
 
 function styleButton(btn) {
   btn.style("background", "transparent");
@@ -394,15 +195,40 @@ function drawInGameMenu() {
   }
 }
 
- 
-
 function updateLoadingOverlayDom() {
   try {
-    const el = (typeof document !== 'undefined') ? document.getElementById('gd-loading-overlay') : null;
+    const el = document.getElementById('gd-loading-overlay');
     if (!el) return;
-    el.style.display = showLoadingOverlay ? 'flex' : 'none';
-    const msg = el.querySelector && el.querySelector('.message');
-    if (msg) msg.innerText = overlayMessage || 'Loading...';
+    
+    if (showLoadingOverlay) {
+      el.style.display = 'flex';
+      el.style.opacity = '1';
+    } else {
+      el.style.display = 'none';
+      el.style.opacity = '0';
+      return; 
+    }
+
+    // Update Message
+    const msg = el.querySelector('.gd-loading-message');
+    if (msg && overlayMessage) msg.innerText = overlayMessage;
+
+    // Calculate %
+    let p = 0;
+    if (typeof AssetTracker !== 'undefined' && AssetTracker.expected > 0) {
+        p = (AssetTracker.loaded / AssetTracker.expected) * 100;
+    } else if (typeof overlayProgress !== 'undefined') {
+        p = overlayProgress;
+    }
+    p = Math.floor(Math.max(0, Math.min(100, p)));
+
+    // Update Bar
+    const fill = el.querySelector('.gd-progress-fill');
+    const pct = el.querySelector('.gd-progress-text');
+    
+    if (fill) fill.style.width = p + '%';
+    if (pct) pct.innerText = p + '%';
+
   } catch (e) {}
 }
 
@@ -1397,17 +1223,7 @@ let logicalW, logicalH;
 const cellSize = 32;
 
 
-let BROWN_HIGHLIGHT_DEBUG = false;
-let brownDebugPositions = []; 
-
-function toggleBrownHighlightDebug(on) {
-  try {
-    if (typeof on === 'boolean') BROWN_HIGHLIGHT_DEBUG = on;
-    else BROWN_HIGHLIGHT_DEBUG = !BROWN_HIGHLIGHT_DEBUG;
-    console.log('[debug] BROWN_HIGHLIGHT_DEBUG=', BROWN_HIGHLIGHT_DEBUG);
-    return BROWN_HIGHLIGHT_DEBUG;
-  } catch (e) { return false; }
-}
+// Brown-pixel diagnostic removed. No runtime diagnostic state required.
 
 
 const BASE_ELEVATION_THRESHOLD = 0.5;
@@ -2041,17 +1857,6 @@ function draw() {
   background(34, 139, 34);
   if (mapImage) {
     image(mapImage, 0, 0);
-    try {
-      if (BROWN_HIGHLIGHT_DEBUG && Array.isArray(brownDebugPositions) && brownDebugPositions.length) {
-        push();
-        noStroke();
-        fill(255, 0, 255, 160);
-        for (const p of brownDebugPositions) {
-          try { rect(p.x - 1, p.y - 1, 3, 3); } catch (e) {}
-        }
-        pop();
-      }
-    } catch (e) {}
   }
 
   if (showLoadingOverlay) {
@@ -2287,178 +2092,7 @@ function closeInGameSettings() {
   }
 }
 
-function openInGameSettings(payload = {}) {
-  
-  closeInGameSettings();
-  
-  
-  if (payload.masterVol !== undefined) masterVol = payload.masterVol;
-  if (payload.musicVol !== undefined) musicVol = payload.musicVol;
-  if (payload.sfxVol !== undefined) sfxVol = payload.sfxVol;
-  if (payload.difficulty) difficultySetting = payload.difficulty;
 
-  
-  settingsOverlayDiv = createDiv('');
-  settingsOverlayDiv.style('position', 'fixed');
-  settingsOverlayDiv.style('top', '0');
-  settingsOverlayDiv.style('left', '0');
-  settingsOverlayDiv.style('width', '100%');
-  settingsOverlayDiv.style('height', '100%');
-  settingsOverlayDiv.style('background', 'rgba(0,0,0,0.85)');
-  settingsOverlayDiv.style('z-index', '20000'); 
-  
-  
-  renderSettingsCategories();
-}
-
-function renderSettingsCategories() {
-  
-  activeSettingElements.forEach(e => e.remove());
-  activeSettingElements = [];
-
-  
-  const menuWidth = 600;       
-  const buttonHeight = 100;    
-  const spacing = 30;          
-  const titleOffset = 140;     
-  const titleSize = '80px';    
-  const btnTextSize = '45px';  
-  
-
-  const cx = windowWidth / 2;
-  const cy = windowHeight / 2;
-  const totalMenuH = (SETTINGS_CATEGORIES.length * (buttonHeight + spacing)) + buttonHeight; 
-  const startY = cy - (totalMenuH / 2);
-  const xPos = cx - (menuWidth / 2);
-
-  
-  const title = createDiv("Settings");
-  title.style('color', 'white');
-  title.style('font-size', titleSize); 
-  title.style('font-weight', 'bold');
-  title.position(cx - 300, startY - titleOffset);
-  title.style('width', '600px');
-  title.style('text-align', 'center');
-  title.style('z-index', '20001');
-  title.style('text-shadow', '0 4px 8px rgba(0,0,0,0.8)');
-  activeSettingElements.push(title);
-
-  
-  SETTINGS_CATEGORIES.forEach((label, index) => {
-    const btnY = startY + (index * (buttonHeight + spacing));
-    
-    if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
-        const bg = createImg('assets/3-GUI/Button BG.png', '');
-        bg.size(menuWidth, buttonHeight);
-        bg.position(xPos, btnY);
-        bg.style('z-index', '20001');
-        activeSettingElements.push(bg);
-    }
-
-    const btn = createButton(label);
-    btn.position(xPos, btnY);
-    btn.size(menuWidth, buttonHeight);
-    styleButton(btn); 
-    btn.style('font-size', btnTextSize); 
-    btn.style('z-index', '20002');
-    btn.mousePressed(() => {
-       
-       showSubSettingsInGame(label);
-    });
-    activeSettingElements.push(btn);
-  });
-
-  
-  const closeY = startY + (SETTINGS_CATEGORIES.length * (buttonHeight + spacing)) + 40;
-  const btnClose = createButton("Close");
-  btnClose.position(xPos, closeY);
-  btnClose.size(menuWidth, buttonHeight);
-  styleButton(btnClose);
-  btnClose.style('font-size', btnTextSize);
-  btnClose.style('color', '#ffaa00');
-  btnClose.style('z-index', '20002');
-  
-  btnClose.mousePressed(() => {
-    
-    closeInGameSettings();
-    
-    
-  
-
-    
-    console.log('[game] Sending settings sync to menu...');
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({
-        type: 'sync-settings',
-        masterVol: masterVol,
-        musicVol: musicVol,
-        sfxVol: sfxVol,
-        difficulty: difficultySetting
-      }, '*');
-    }
-  });
-  activeSettingElements.push(btnClose);
-}
-
-function showSubSettingsInGame(label) {
-  
-  activeSettingElements.forEach(e => e.remove());
-  activeSettingElements = [];
-
-  const cx = windowWidth / 2;
-  const cy = windowHeight / 2;
-  
-  
-  const panelW = Math.min(1200, windowWidth * 0.95); 
-  const panelH = windowHeight * 0.85;                
-  const titleSize = '70px';                          
-  const backBtnW = 250;                              
-  const backBtnH = 80;                               
-  const rowSpacing = 120;                            
-  
-
-  
-  const title = createDiv(label);
-  title.style('color', 'white');
-  title.style('font-size', titleSize);
-  title.style('font-weight', 'bold');
-  title.position(cx - 300, cy - panelH/2 + 20);
-  title.style('width', '600px');
-  title.style('text-align', 'center');
-  title.style('z-index', '20001');
-  title.style('text-shadow', '0 4px 8px rgba(0,0,0,0.8)');
-  activeSettingElements.push(title);
-
-  
-  const labelX = cx - panelW * 0.45; 
-  const controlX = cx + 50;          
-  const controlWidth = panelW * 0.35; 
-  const startY = cy - panelH/2 + 180; 
-
-  const ctx = createSettingsContext({
-    labelX, controlX, controlWidth, panelH,
-    startY: startY,
-    spacingY: rowSpacing 
-  });
-
-  
-  const builder = CATEGORY_BUILDERS[label];
-  if (builder) {
-    builder(ctx);
-  }
-
-  
-  const backBtn = createButton("← Back");
-  backBtn.position(cx - (backBtnW / 2), cy + panelH/2 - 100);
-  backBtn.size(backBtnW, backBtnH);
-  styleButton(backBtn);
-  backBtn.style('font-size', '40px'); 
-  backBtn.style('z-index', '20002');
-  backBtn.mousePressed(() => {
-    renderSettingsCategories(); 
-  });
-  activeSettingElements.push(backBtn);
-}
 
 ['pointerdown', 'keydown'].forEach((evt) => {
   window.addEventListener(evt, () => {
@@ -2900,160 +2534,6 @@ function createSettingLabel(txt, x, y, maxWidth = 200) {
   d.style("pointer-events", "none");
   if (d.elt && d.elt.classList) d.elt.classList.add('setting-label');
   return d;
-}
-
-function createSettingsContext({ labelX, controlX, controlWidth, panelH, startY, spacingY }) {
-  let y = startY;
-  const ctx = {
-    get y() { return y; },
-    set y(value) { y = value; },
-    layout: { labelX, controlX, controlWidth, panelH, spacingY },
-    addSliderRow(name, min, max, val, callback, options = {}) {
-      const { isAudio = false, settingKey = null, dataAttrs = {} } = options;
-      const lbl = createSettingLabel(name, labelX, y, controlX - labelX - 20);
-      activeSettingElements.push(lbl);
-      const slider = createSlider(min, max, val);
-      slider.position(controlX, y + CONTROL_VERTICAL_NUDGE);
-      slider.style("width", controlWidth + "px");
-      slider.style("margin", "0");
-      slider.style("padding", panelH * 0.01 + "px 0");
-      slider.style("position", "absolute");
-      slider.style("z-index", "4");
-      if (settingKey) slider.attribute('data-setting', settingKey);
-      Object.entries(dataAttrs).forEach(([k, v]) => { if (v !== undefined && v !== null) slider.attribute(k, v); });
-      if (isAudio) slider.attribute('data-audio', '1');
-      slider.input(() => callback(slider.value()));
-      activeSettingElements.push(slider);
-      y += spacingY;
-      return ctx;
-    },
-    addCheckboxRow(name, state) {
-      const cb = createCheckbox(name, state);
-      const checkboxShift = Math.round(controlWidth * 0.06);
-      cb.position(controlX, y);
-      if (cb.elt && cb.elt.classList) cb.elt.classList.add('setting-checkbox');
-      cb.style("color", "white");
-      cb.style("font-size", (0.035 * height) + "px");
-      cb.style("transform", "scale(1.2)");
-      cb.style("transform-origin", "left center");
-      const checkboxInput = cb.elt?.querySelector('input[type="checkbox"]');
-      if (checkboxInput) {
-        const boxSize = Math.max(30, panelH * 0.055);
-        checkboxInput.style.width = boxSize + "px";
-        checkboxInput.style.height = boxSize + "px";
-        checkboxInput.style.transform = `translateX(-${checkboxShift}px)`;
-        checkboxInput.style.marginRight = Math.max(8, Math.round(controlWidth * 0.02)) + "px";
-        checkboxInput.style.transformOrigin = 'left center';
-      }
-      activeSettingElements.push(cb);
-      y += spacingY;
-      return ctx;
-    },
-    addSelectRow(name, opts, options = {}) {
-      const normalizedOptions = (opts || []).map((opt) => {
-        if (opt && typeof opt === 'object') {
-          return {
-            label: opt.label ?? opt.value ?? '',
-            value: opt.value ?? opt.label ?? ''
-          };
-        }
-        return { label: String(opt), value: String(opt) };
-      });
-      const lbl = createSettingLabel(name, labelX, y, controlX - labelX - 20);
-      activeSettingElements.push(lbl);
-      const sel = createSelect();
-      sel.position(controlX, y + SELECT_VERTICAL_NUDGE);
-      sel.style('width', controlWidth + 'px');
-      sel.style('height', (0.045 * panelH) + 'px');
-      sel.style('font-size', (0.035 * height) + 'px');
-      normalizedOptions.forEach(({ label, value }) => sel.option(label, value));
-      const initialValue = options.value ?? normalizedOptions[0]?.value;
-      if (initialValue !== undefined) {
-        try { sel.value(initialValue); } catch (e) {}
-      }
-      if (typeof options.onChange === 'function') {
-        sel.changed(() => options.onChange(sel.value()));
-      }
-      activeSettingElements.push(sel);
-      y += spacingY;
-      return ctx;
-    },
-    pushElement(el) {
-      activeSettingElements.push(el);
-      return ctx;
-    }
-  };
-  return ctx;
-}
-
-
-
-
-
-function buildAudioSettings(ctx) {
-  ctx
-    .addSliderRow("Master Volume", 0, 100, masterVol * 100, v => { masterVol = v / 100; applyVolumes(); }, { isAudio: true, settingKey: 'masterVol' })
-    .addSliderRow("Music Volume", 0, 100, musicVol * 100, v => { musicVol = v / 100; applyVolumes(); }, { isAudio: true, settingKey: 'musicVol' })
-    .addSliderRow("SFX Volume", 0, 100, sfxVol * 100, v => { sfxVol = v / 100; }, { isAudio: true, settingKey: 'sfxVol' });
-}
-
-function buildGameplaySettings(ctx) {
-  ctx
-    .addCheckboxRow("Show Tutorials", true)
-    .addCheckboxRow("Enable HUD", true)
-    .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
-      value: getDifficultyLabel(difficultySetting),
-      onChange: (val) => {
-        const normalized = normalizeDifficultyChoice(val);
-        if (normalized) difficultySetting = normalized;
-      }
-    });
-}
-
-function buildControlsSettings(ctx) {
-  ctx
-    .addSliderRow("Sensitivity", 1, 10, 5, v => {})
-    .addCheckboxRow("Invert Y Axis", false);
-}
-
-function buildAccessibilitySettings(ctx) {
-  const { labelX, controlX, controlWidth, panelH, spacingY } = ctx.layout;
-  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
-  const label = createSettingLabel("Text Size", labelX, ctx.y, controlX - labelX - 20);
-  ctx.pushElement(label);
-  const sizes = { Small: DEFAULT_SETTINGS.textSize - 20, Default: DEFAULT_SETTINGS.textSize, Big: DEFAULT_SETTINGS.textSize + 20 };
-  const btnWidth = controlWidth / 3.2;
-  let currentX = controlX;
-  Object.entries(sizes).forEach(([sizeLabel, sizeVal]) => {
-  const btn = makeSmallBtn(sizeLabel, currentX, ctx.y + TEXTSIZE_BUTTON_Y_OFFSET, btnWidth, panelH * 0.07, () => {
-      playClickSFX();
-      textSizeSetting = sizeVal;
-      adjustTextSize(sizeVal);
-      updateTextSizeButtonStyles();
-    });
-    btn.attribute('data-text-size-val', sizeVal);
-    ctx.pushElement(btn);
-    currentX += btnWidth + 15;
-  });
-  updateTextSizeButtonStyles();
-  ctx.y += spacingY;
-  const actionBtnWidth = controlWidth * 0.42;
-  const actionBtnHeight = panelH * 0.09;
-  const actionGap = controlWidth * 0.06;
-  const applyX = controlX;
-  const resetX = controlX + actionBtnWidth + actionGap;
-  const actionY = ctx.y + TEXTSIZE_BUTTON_Y_OFFSET;
-  const applyBG = createBgImg("assets/3-GUI/Button BG.png", applyX, actionY, actionBtnWidth, actionBtnHeight, '3');
-  const applyBtn = makeSmallBtn("💾 Apply", applyX, actionY, actionBtnWidth, actionBtnHeight, saveAccessibilitySettings);
-  ctx.pushElement(applyBG).pushElement(applyBtn);
-  const resetBG = createBgImg("assets/3-GUI/Button BG.png", resetX, actionY, actionBtnWidth, actionBtnHeight, '3');
-  const resetBtn = makeSmallBtn("Default", resetX, actionY, actionBtnWidth, actionBtnHeight, resetDefaults);
-  ctx.pushElement(resetBG).pushElement(resetBtn);
-  ctx.y += spacingY;
-}
-
-function buildLanguageSettings(ctx) {
-  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
 }
 
 function updateTextSizeButtonStyles() {
@@ -3884,53 +3364,7 @@ function createMapImage() {
 
   
   
-  try {
-    if (mapImage && typeof mapImage.loadPixels === 'function') {
-      mapImage.loadPixels();
-      const mw = mapImage.width || 0;
-      const mh = mapImage.height || 0;
-      const findings = [];
-      const maxFind = 128;
-      for (let yy = 0; yy < mh; yy++) {
-        if (findings.length >= maxFind) break;
-        for (let xx = 0; xx < mw; xx++) {
-          const idx = 4 * (yy * mw + xx);
-          const r = mapImage.pixels[idx];
-          const g = mapImage.pixels[idx+1];
-          const b = mapImage.pixels[idx+2];
-          if (isBrownPixel(r, g, b)) {
-            findings.push({ x: xx, y: yy, r, g, b, tx: Math.floor(xx / (cellSize || 32)), ty: Math.floor(yy / (cellSize || 32)) });
-            if (findings.length >= maxFind) break;
-          }
-        }
-      }
-      if (findings.length) {
-        console.warn('[createMapImage] detected brown/orange pixels in mapImage - running diagnostics/fixes count=', findings.length);
-        
-        try { brownDebugPositions = findings.map(f => ({ x: f.x, y: f.y })); } catch (e) { brownDebugPositions = findings.slice(0,0); }
-        try { for (const f of findings.slice(0, 24)) { try { diagnoseMapPixel(f.x, f.y); } catch (e) {} } } catch (e) {}
-
-        
-        let totalFixed = 0;
-        try {
-          if (TILE_IMAGES && TILE_IMAGES['tile_1']) {
-            try { totalFixed += cleanImageBrown(TILE_IMAGES['tile_1']); } catch (e) {}
-          }
-          if (HILL_ASSETS) {
-            for (const k in HILL_ASSETS) {
-              if (!Object.prototype.hasOwnProperty.call(HILL_ASSETS, k)) continue;
-              try { totalFixed += cleanImageBrown(HILL_ASSETS[k]); } catch (e) {}
-            }
-          }
-        } catch (e) {}
-
-        if (totalFixed > 0) {
-          console.log('[createMapImage] cleaned brown pixels from source assets total=', totalFixed, ' — recomposing map');
-          try { setTimeout(() => { try { createMapImage(); } catch (e) {} }, 40); } catch (e) {}
-        }
-      }
-    }
-  } catch (e) { console.warn('[createMapImage] brown-pixel diagnose/fix failed', e); }
+  // Brown-pixel diagnose/fix removed to avoid runtime diagnostics and asset mutation.
 }
 
 function loadMapFromStorage() {
@@ -4560,7 +3994,8 @@ function cleanImageBrown(img) {
       const r = img.pixels[i];
       const g = img.pixels[i + 1];
       const b = img.pixels[i + 2];
-      if (isBrownPixel(r, g, b, 12, false)) { 
+      // Inline brown-ish test to avoid a function call per pixel
+      if (r > 60 && r < 180 && g > 30 && g < 120 && b < 80) {
         if (img.pixels[i + 3] !== 0) {
           img.pixels[i + 3] = 0;
           fixed++;
@@ -4575,67 +4010,7 @@ function cleanImageBrown(img) {
 }
 
 
-function diagnoseMapPixel(mapX, mapY) {
-  try {
-    if (typeof mapX !== 'number' || typeof mapY !== 'number') return null;
-    const tx = Math.floor(mapX / (cellSize || 32));
-    const ty = Math.floor(mapY / (cellSize || 32));
-    const localX = mapX - (tx * (cellSize || 32));
-    const localY = mapY - (ty * (cellSize || 32));
-    const tileState = (typeof getTileState === 'function') ? getTileState(tx, ty) : null;
-    const report = { mapX, mapY, tx, ty, localX, localY, tileState, samples: [] };
-
-    
-    try {
-      if (TILE_IMAGES && TILE_IMAGES['tile_1']) {
-        const img = TILE_IMAGES['tile_1'];
-        if (img && img.width && img.height) {
-          const sx = Math.floor(localX * img.width / (cellSize || 32));
-          const sy = Math.floor(localY * img.height / (cellSize || 32));
-          let s = null;
-          try {
-            if (img.pixels && img.pixels.length) {
-              const idx = 4 * (sy * img.width + sx);
-              s = [img.pixels[idx], img.pixels[idx+1], img.pixels[idx+2], img.pixels[idx+3]];
-            } else if (typeof img.get === 'function') {
-              s = img.get(sx, sy);
-            }
-          } catch (e) {}
-          report.samples.push({ type: 'tile_1', key: 'tile_1', sx, sy, rgba: s });
-        }
-      }
-    } catch (e) {}
-
-    
-    try {
-      if (HILL_ASSETS) {
-        for (const k in HILL_ASSETS) {
-          if (!Object.prototype.hasOwnProperty.call(HILL_ASSETS, k)) continue;
-          const img = HILL_ASSETS[k];
-          if (!img || !img.width || !img.height) continue;
-          try {
-            const sx = Math.floor(localX * img.width / (cellSize || 32));
-            const sy = Math.floor(localY * img.height / (cellSize || 32));
-            let s = null;
-            if (img.pixels && img.pixels.length) {
-              const idx = 4 * (sy * img.width + sx);
-              s = [img.pixels[idx], img.pixels[idx+1], img.pixels[idx+2], img.pixels[idx+3]];
-            } else if (typeof img.get === 'function') {
-              s = img.get(sx, sy);
-            }
-            report.samples.push({ type: 'hill', key: k, sx, sy, rgba: s });
-          } catch (e) {}
-        }
-      }
-    } catch (e) {}
-
-    try { console.log('[diagnose] mapPixel', JSON.stringify(report)); } catch (e) { console.log('[diagnose]', report); }
-    return report;
-  } catch (e) { console.warn('[diagnoseMapPixel] failed', e); return null; }
-}
-
-
-try { if (typeof window !== 'undefined') window.diagnoseMapPixel = diagnoseMapPixel; } catch (e) {}
+// diagnoseMapPixel removed — runtime diagnosis no longer supported.
 
 function getTileState(x, y, layer = mapStates) {
   if (x < 0 || x >= logicalW || y < 0 || y >= logicalH) return -1;
@@ -5043,101 +4418,551 @@ function getColorForState(state) {
   return [255, 0, 255]; 
 }
 
-function isBrownPixel(r, g, b, tolerance = 10, strict = false) {
-  // Simple check for "brown-ish" pixels usually found in assets
-  // Adjust these values if your specific assets need different tuning
-  return (r > 60 && r < 180 && g > 30 && g < 120 && b < 80);
+// (removed) brown pixel helper — checks are now inlined and sampled
+
+// --- UNIFIED SETTINGS BUILDERS (Upscaled) ---
+
+function buildAudioSettings(ctx) {
+  ctx
+    .addSliderRow("Master Volume", 0, 100, masterVol * 100, v => { 
+        masterVol = v / 100; 
+        if(typeof applyVolumes === 'function') applyVolumes();
+        if(gameMusic) gameMusic.setVolume(musicVol * masterVol); 
+    }, { isAudio: true })
+    .addSliderRow("Music Volume", 0, 100, musicVol * 100, v => { 
+        musicVol = v / 100; 
+        if(typeof applyVolumes === 'function') applyVolumes();
+        if(gameMusic) gameMusic.setVolume(musicVol * masterVol);
+    }, { isAudio: true })
+    .addSliderRow("SFX Volume", 0, 100, sfxVol * 100, v => { 
+        sfxVol = v / 100; 
+    }, { isAudio: true });
+}
+
+function buildGameplaySettings(ctx) {
+  ctx
+    .addCheckboxRow("Show Tutorials", true)
+    .addCheckboxRow("Enable HUD", true)
+    .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
+      value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
+      onChange: (val) => {
+        const normalized = val.toLowerCase();
+        difficultySetting = normalized;
+        if(typeof setDifficulty === 'function') setDifficulty(normalized, { regenerate: false });
+      }
+    });
+}
+
+function buildControlsSettings(ctx) {
+  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {})
+     .addCheckboxRow("Invert Y Axis", false);
+}
+
+function buildAccessibilitySettings(ctx) {
+  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
+  
+  // Custom buttons for Text Size (Upscaled)
+  const { labelX, controlX, controlWidth, panelH, spacingY } = ctx.layout;
+  
+  // Create a Label manually
+  const lbl = createDiv("Text Size");
+  lbl.class('setting-label');
+  lbl.position(labelX, ctx.y);
+  lbl.style('width', (controlX - labelX - 20) + 'px');
+  lbl.style('text-align', 'right');
+  lbl.style('color', 'white');
+  lbl.style('font-size', '48px'); // BIGGER
+  lbl.style('z-index', '20005');
+  ctx.pushElement(lbl);
+
+  // Create Buttons
+  const sizes = ["Small", "Default", "Big"];
+  const btnW = (controlWidth / 3) - 15;
+  let currX = controlX;
+  
+  sizes.forEach(size => {
+      const btn = createButton(size);
+      btn.position(currX, ctx.y);
+      btn.size(btnW, 80); // TALLER
+      styleButton(btn);
+      btn.style('font-size', '35px'); // BIGGER
+      btn.style('background', '#333');
+      btn.style('z-index', '20005');
+      btn.mousePressed(() => { console.log("Text size:", size); });
+      ctx.pushElement(btn);
+      currX += btnW + 15;
+  });
+  
+  ctx.y += spacingY + 30; 
+}
+
+function buildLanguageSettings(ctx) {
+  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
+}
+
+// --- HELPER: Pixel Art Button Styling ---
+function stylePixelButton(btn) {
+  // Reset basic styles
+  btn.style('background-color', 'transparent');
+  btn.style('border', 'none');
+  btn.style('color', 'white');
+  btn.style('cursor', 'pointer');
+  
+  // Apply the Asset
+  btn.style('background-image', "url('assets/3-GUI/Button BG.png')");
+  btn.style('background-size', '100% 100%');
+  btn.style('background-repeat', 'no-repeat');
+  btn.style('image-rendering', 'pixelated'); // Keep it crisp
+  
+  // Font & Shadow
+  btn.style('font-family', 'MyFont, sans-serif'); // Ensure your font is used
+  btn.style('text-shadow', '3px 3px 0 #000');
+  
+  // Hover Effect
+  btn.mouseOver(() => {
+    btn.style('filter', 'brightness(1.2)');
+    btn.style('transform', 'scale(1.05)');
+  });
+  btn.mouseOut(() => {
+    btn.style('filter', 'brightness(1.0)');
+    btn.style('transform', 'scale(1.0)');
+  });
+  
+  // Initial Z-Index
+  btn.style('z-index', '20005');
+}
+
+
+// --- UNIFIED SETTINGS BUILDERS ---
+
+function buildAudioSettings(ctx) {
+  ctx
+    .addSliderRow("Master Volume", 0, 100, masterVol * 100, v => { 
+        masterVol = v / 100; 
+        if(typeof applyVolumes === 'function') applyVolumes();
+        if(gameMusic) gameMusic.setVolume(musicVol * masterVol); 
+    })
+    .addSliderRow("Music Volume", 0, 100, musicVol * 100, v => { 
+        musicVol = v / 100; 
+        if(typeof applyVolumes === 'function') applyVolumes();
+        if(gameMusic) gameMusic.setVolume(musicVol * masterVol);
+    })
+    .addSliderRow("SFX Volume", 0, 100, sfxVol * 100, v => { 
+        sfxVol = v / 100; 
+    });
+}
+
+function buildGameplaySettings(ctx) {
+  ctx
+    .addCheckboxRow("Show Tutorials", true)
+    .addCheckboxRow("Enable HUD", true)
+    .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
+      value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
+      onChange: (val) => {
+        difficultySetting = val.toLowerCase();
+        if(typeof setDifficulty === 'function') setDifficulty(difficultySetting, { regenerate: false });
+      }
+    });
+}
+
+function buildControlsSettings(ctx) {
+  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {})
+     .addCheckboxRow("Invert Y Axis", false);
+}
+
+function buildAccessibilitySettings(ctx) {
+  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
+  
+  // Custom buttons for Text Size (using Assets)
+  const { labelX, controlX, controlWidth, spacingY } = ctx.layout;
+  
+  // Label
+  const lbl = createDiv("Text Size");
+  lbl.class('setting-label');
+  lbl.position(labelX, ctx.y);
+  lbl.size(ctx.layout.labelWidth, 60); // Use calculated width
+  lbl.style('text-align', 'right');
+  lbl.style('color', 'white');
+  lbl.style('font-size', '48px');
+  lbl.style('text-shadow', '3px 3px 0 #000');
+  lbl.style('z-index', '20005');
+  ctx.pushElement(lbl);
+
+  // Buttons
+  const sizes = ["Small", "Default", "Big"];
+  const btnGap = 10;
+  // Calculate button width to fit exactly in the control area
+  const btnW = (controlWidth - (btnGap * (sizes.length - 1))) / sizes.length;
+  let currX = controlX;
+  
+  sizes.forEach(size => {
+      const btn = createButton(size);
+      btn.position(currX, ctx.y - 10); // Slight nudge up to align with text
+      btn.size(btnW, 80); 
+      
+      stylePixelButton(btn); // <--- APPLY ASSET HERE
+      btn.style('font-size', '30px'); 
+      
+      btn.mousePressed(() => { console.log("Text size:", size); });
+      ctx.pushElement(btn);
+      currX += btnW + btnGap;
+  });
+  
+  ctx.y += spacingY + 30; 
+}
+
+function buildLanguageSettings(ctx) {
+  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
+}
+
+// --- UNIFIED CONTEXT CREATOR ---
+function createSettingsContext({ cx, startY, spacingY }) {
+  let y = startY;
+  
+  // --- CENTER ALIGNMENT MATH ---
+  // We define a fixed width for labels and controls relative to the center (cx)
+  const labelWidth = 500;   // Width of the text area to the left
+  const controlWidth = 500; // Width of the input area to the right
+  const gap = 40;           // Gap between label and input in the exact center
+  
+  const labelX = cx - labelWidth - (gap / 2);
+  const controlX = cx + (gap / 2);
+
+  const styleLabel = (el) => {
+      el.class('setting-label');
+      el.style('color', 'white');
+      el.style('font-size', '45px');
+      el.style('text-align', 'right'); // Align text to the center gap
+      el.style('z-index', '20005');
+      el.style('pointer-events', 'none');
+      el.style('text-shadow', '3px 3px 0 #000');
+      el.style('display', 'flex');
+      el.style('align-items', 'center');
+      el.style('justify-content', 'flex-end');
+  };
+
+  const styleInput = (el) => {
+      el.style('z-index', '20005');
+      el.style('cursor', 'pointer');
+  };
+
+  const ctx = {
+    get y() { return y; },
+    set y(value) { y = value; },
+    layout: { labelX, controlX, labelWidth, controlWidth, spacingY },
+    
+    pushElement(el) {
+        activeSettingElements.push(el);
+        return ctx;
+    },
+
+    addSliderRow(name, min, max, val, callback) {
+      const lbl = createDiv(name);
+      lbl.position(labelX, y);
+      lbl.size(labelWidth, 60);
+      styleLabel(lbl);
+      activeSettingElements.push(lbl);
+
+      const slider = createSlider(min, max, val);
+      slider.position(controlX, y + 20); 
+      slider.style('width', (controlWidth * 0.8) + 'px'); // Slightly shorter than full width
+      slider.style('height', '30px');
+      styleInput(slider);
+      
+      slider.style('transform', 'scale(2.5)'); 
+      slider.style('transform-origin', 'left center');
+      
+      slider.input(() => callback(slider.value()));
+      
+      activeSettingElements.push(slider);
+      y += spacingY;
+      return ctx;
+    },
+
+    addCheckboxRow(name, state) {
+      const cb = createCheckbox(' ' + name, state);
+      // For checkboxes, p5 creates a label. We position it at controlX
+      cb.position(controlX, y);
+      cb.style('color', 'white');
+      cb.style('font-size', '45px');
+      cb.style('text-shadow', '3px 3px 0 #000');
+      styleInput(cb);
+      
+      cb.style('transform', 'scale(2.5)');
+      cb.style('transform-origin', 'left top');
+      
+      // Since p5 checkboxes include the text, we don't need a separate label on the left usually.
+      // But to keep alignment, if 'name' is long, we might want to split it.
+      // For now, standard p5 behavior:
+      activeSettingElements.push(cb);
+      y += spacingY;
+      return ctx;
+    },
+
+    addSelectRow(name, opts, options = {}) {
+      const lbl = createDiv(name);
+      lbl.position(labelX, y);
+      lbl.size(labelWidth, 60);
+      styleLabel(lbl);
+      activeSettingElements.push(lbl);
+
+      const sel = createSelect();
+      sel.position(controlX, y);
+      sel.size(controlWidth * 0.8, 70); 
+      sel.style('font-size', '35px');
+      sel.style('background', '#222');
+      sel.style('color', 'white');
+      sel.style('border', '4px solid #555'); // Thicker border for visibility
+      sel.style('border-radius', '8px');
+      styleInput(sel);
+      
+      opts.forEach(opt => sel.option(opt));
+      
+      if (options.value) sel.value(options.value);
+      if (options.onChange) sel.changed(() => options.onChange(sel.value()));
+
+      activeSettingElements.push(sel);
+      y += spacingY;
+      return ctx;
+    }
+  };
+  return ctx;
+}
+
+// --- IN-GAME MENU FUNCTIONS ---
+
+function openInGameSettings(payload = {}) {
+  closeInGameSettings(); 
+
+  if (payload.masterVol !== undefined) masterVol = payload.masterVol;
+  if (payload.musicVol !== undefined) musicVol = payload.musicVol;
+  if (payload.sfxVol !== undefined) sfxVol = payload.sfxVol;
+  if (payload.difficulty) difficultySetting = payload.difficulty;
+
+  // Background
+  settingsOverlayDiv = createDiv('');
+  settingsOverlayDiv.style('position', 'fixed');
+  settingsOverlayDiv.style('top', '0');
+  settingsOverlayDiv.style('left', '0');
+  settingsOverlayDiv.style('width', '100%');
+  settingsOverlayDiv.style('height', '100%');
+  settingsOverlayDiv.style('background', '#000000'); 
+  settingsOverlayDiv.style('z-index', '20000'); 
+  
+  renderSettingsCategories();
+}
+
+function renderSettingsCategories() {
+  activeSettingElements.forEach(e => e.remove());
+  activeSettingElements = [];
+
+  const menuWidth = 600;       
+  const buttonHeight = 110;  
+  const spacing = 30;          
+  const cx = windowWidth / 2;
+  const cy = windowHeight / 2;
+  
+  const totalMenuH = (SETTINGS_CATEGORIES.length * (buttonHeight + spacing)) + 220; 
+  const startY = cy - (totalMenuH / 2);
+  const xPos = cx - (menuWidth / 2);
+
+  // Title
+  const title = createDiv("SETTINGS");
+  title.style('color', '#ffcc00');
+  title.style('font-size', '100px'); 
+  title.style('font-weight', 'bold');
+  title.style('text-align', 'center');
+  title.style('text-shadow', '6px 6px 0 #333');
+  title.position(cx - 400, startY);
+  title.size(800, 140);
+  title.style('z-index', '20005');
+  activeSettingElements.push(title);
+
+  let currentY = startY + 160;
+
+  // Category Buttons
+  SETTINGS_CATEGORIES.forEach((label) => {
+    const btn = createButton(label);
+    btn.position(xPos, currentY);
+    btn.size(menuWidth, buttonHeight);
+    
+    stylePixelButton(btn); // <--- APPLY ASSET HERE
+    btn.style('font-size', '55px'); 
+    
+    btn.mousePressed(() => {
+       showSubSettingsInGame(label);
+    });
+    
+    activeSettingElements.push(btn);
+    currentY += buttonHeight + spacing;
+  });
+
+  // Close Button
+  const btnClose = createButton("Close");
+  btnClose.position(xPos, currentY + 50);
+  btnClose.size(menuWidth, buttonHeight);
+  
+  stylePixelButton(btnClose); // <--- APPLY ASSET HERE
+  btnClose.style('font-size', '55px');
+  btnClose.style('color', '#ff5555'); // Red tint text for close
+  
+  btnClose.mousePressed(() => {
+    closeInGameSettings();
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'sync-settings',
+        masterVol, musicVol, sfxVol, difficulty: difficultySetting
+      }, '*');
+    }
+  });
+  activeSettingElements.push(btnClose);
+}
+
+function showSubSettingsInGame(label) {
+  activeSettingElements.forEach(e => e.remove());
+  activeSettingElements = [];
+
+  const cx = windowWidth / 2;
+  const cy = windowHeight / 2;
+  
+  // Title
+  const title = createDiv(label);
+  title.style('color', '#ffcc00');
+  title.style('font-size', '80px'); 
+  title.style('font-weight', 'bold');
+  title.style('text-align', 'center');
+  title.style('text-shadow', '5px 5px 0 #333');
+  title.position(cx - 400, 50);
+  title.size(800, 100);
+  title.style('z-index', '20005');
+  activeSettingElements.push(title);
+
+  // Layout Context (Centered)
+  const startY = 220; 
+  const ctx = createSettingsContext({
+    cx: cx,
+    startY: startY,
+    spacingY: 140
+  });
+
+  const builders = {
+      Audio: buildAudioSettings,
+      Gameplay: buildGameplaySettings,
+      Controls: buildControlsSettings,
+      Accessibility: buildAccessibilitySettings,
+      Language: buildLanguageSettings
+  };
+
+  const builder = builders[label];
+  if (builder) {
+    builder(ctx);
+  }
+
+  // Back Button
+  const backBtn = createButton("← Back");
+  backBtn.position(cx - 200, windowHeight - 160);
+  backBtn.size(400, 100);
+  
+  stylePixelButton(backBtn); // <--- APPLY ASSET HERE
+  backBtn.style('font-size', '50px'); 
+  
+  backBtn.mousePressed(() => {
+    renderSettingsCategories(); 
+  });
+  activeSettingElements.push(backBtn);
 }
 
 function ensureLoadingOverlayDom() {
   try {
     if (typeof document === 'undefined') return null;
     
-    if (!document.body) return null; // Safety check
+    if (!document.body) {
+      setTimeout(ensureLoadingOverlayDom, 50);
+      return null;
+    }
 
     let el = document.getElementById('gd-loading-overlay');
     if (el) return el;
 
-    // --- Create the Main Container ---
+    // --- 1. Font Configuration ---
+    // Ensure this path matches your file structure exactly
+    const fontPath = 'assets/3-GUI/font.ttf'; 
+
+    const styleId = 'gd-loading-style';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.innerHTML = `
+        @font-face {
+          font-family: 'PixelGameFont';
+          src: url('${fontPath}');
+        }
+        #gd-loading-overlay {
+          font-family: 'PixelGameFont', 'Courier New', monospace !important;
+          background-color: #000000 !important; /* SOLID BLACK */
+          color: #ffcc00;
+        }
+        .gd-loading-message {
+          font-size: 48px; 
+          text-transform: uppercase;
+          margin-bottom: 25px;
+          text-shadow: 4px 4px 0px #333;
+          letter-spacing: 2px;
+        }
+        .gd-progress-container {
+          width: 500px;
+          max-width: 85%;
+          height: 30px;
+          border: 4px solid #ffcc00;
+          background-color: #111; /* Dark inner bar */
+          padding: 3px;
+          margin-bottom: 10px;
+        }
+        .gd-progress-fill {
+          height: 100%;
+          width: 0%;
+          background-color: #ffcc00; /* Yellow Fill */
+          transition: width 0.1s linear;
+        }
+        .gd-progress-text {
+          font-size: 24px;
+          color: #888;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // --- 2. Create Elements ---
     el = document.createElement('div');
     el.id = 'gd-loading-overlay';
-    el.style.position = 'fixed';
-    el.style.left = '0';
-    el.style.top = '0';
-    el.style.width = '100%';
-    el.style.height = '100%';
-    el.style.display = 'flex';
-    el.style.alignItems = 'center';
-    el.style.justifyContent = 'center';
-    el.style.zIndex = '2147483647';
-    el.style.background = 'rgba(0,0,0,0.95)'; // Darker background
-    el.style.color = '#fff';
-    el.style.fontFamily = 'sans-serif';
-    el.style.flexDirection = 'column'; // Stack text and bar vertically
+    Object.assign(el.style, {
+      position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      zIndex: '2147483647',
+      userSelect: 'none',
+      opacity: '1' // Force opacity
+    });
 
-    // --- Inner Container ---
-    const inner = document.createElement('div');
-    inner.className = 'gd-loading-inner';
-    inner.style.textAlign = 'center';
-    inner.style.maxWidth = '600px';
-    inner.style.width = '80%';
-
-    // --- The Main Message ---
     const msg = document.createElement('div');
-    msg.className = 'message';
-    msg.innerText = overlayMessage || 'Loading...';
-    msg.style.color = '#ffd700'; // Gold color
-    msg.style.fontWeight = 'bold';
-    msg.style.fontSize = '40px'; 
-    msg.style.marginBottom = '20px';
-    msg.style.textShadow = '0 2px 10px rgba(255, 215, 0, 0.4)';
+    msg.className = 'gd-loading-message';
+    msg.innerText = overlayMessage || 'LOADING MAP...';
 
-    // --- The Progress Bar Container ---
-    const barContainer = document.createElement('div');
-    barContainer.style.width = '100%';
-    barContainer.style.height = '12px';
-    barContainer.style.background = '#333';
-    barContainer.style.borderRadius = '10px';
-    barContainer.style.overflow = 'hidden';
-    barContainer.style.boxShadow = 'inset 0 1px 3px rgba(0,0,0,0.5)';
-    barContainer.style.position = 'relative';
-
-    // --- The Moving Bar (Animation) ---
-    const barFill = document.createElement('div');
-    barFill.id = 'gd-loading-bar-fill';
-    barFill.style.width = '30%'; // Initial width
-    barFill.style.height = '100%';
-    barFill.style.background = 'linear-gradient(90deg, #ff8c00, #ffd700)';
-    barFill.style.borderRadius = '10px';
-    barFill.style.transition = 'width 0.2s';
+    const barCont = document.createElement('div');
+    barCont.className = 'gd-progress-container';
     
-    // Add a simple animation pulse
-    const styleSheet = document.createElement("style");
-    styleSheet.innerText = `
-      @keyframes gd-load-pulse {
-        0% { width: 10%; margin-left: 0%; }
-        50% { width: 60%; margin-left: 20%; }
-        100% { width: 10%; margin-left: 90%; }
-      }
-    `;
-    document.head.appendChild(styleSheet);
-    barFill.style.animation = "gd-load-pulse 1.5s infinite ease-in-out alternate";
+    const barFill = document.createElement('div');
+    barFill.className = 'gd-progress-fill';
+    
+    const pct = document.createElement('div');
+    pct.className = 'gd-progress-text';
+    pct.innerText = '0%';
 
-    // --- Subtitle ---
-    const sub = document.createElement('div');
-    sub.className = 'sub';
-    sub.style.marginTop = '15px';
-    sub.style.fontSize = '18px';
-    sub.innerText = 'Please wait...';
-    sub.style.color = '#aaa';
-
-    // --- Assemble ---
-    barContainer.appendChild(barFill);
-    inner.appendChild(msg);
-    inner.appendChild(barContainer);
-    inner.appendChild(sub);
-    el.appendChild(inner);
+    barCont.appendChild(barFill);
+    el.appendChild(msg);
+    el.appendChild(barCont);
+    el.appendChild(pct);
     document.body.appendChild(el);
+
     return el;
   } catch (e) { return null; }
-} 
+}
