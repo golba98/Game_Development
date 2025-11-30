@@ -590,12 +590,13 @@ function createSettingsContext(layout) {
 
     pushElement(el) { activeSettingElements.push(el); },
 
+    // --- SLIDER ROW ---
     addSliderRow(labelText, min, max, currentVal, onChange, opts) {
       this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y));
 
       const slider = createSlider(min, max, currentVal);
-      // Center slider vertically relative to label
-      slider.position(this.layout.controlX, this.y + 15); 
+      // Adjusted position for the thicker slider
+      slider.position(this.layout.controlX, this.y + 20); 
       slider.style('width', this.layout.controlWidth + 'px');
       slider.style('z-index', '20000');
       
@@ -610,13 +611,18 @@ function createSettingsContext(layout) {
       return this;
     },
 
+    // --- CHECKBOX ROW ---
     addCheckboxRow(labelText, isChecked, onChange) {
       this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y));
 
       const chk = createCheckbox('', isChecked);
-      chk.position(this.layout.controlX, this.y + 5); 
+      
+      // IMPORTANT: Add the class so our CSS works
+      chk.class('setting-checkbox'); 
+      
+      // Move it down slightly (+10) to center with text
+      chk.position(this.layout.controlX, this.y + 10); 
       chk.style('z-index', '20000');
-      if(chk.elt) chk.elt.classList.add('setting-checkbox');
 
       if (onChange) chk.changed(() => onChange(chk.checked()));
       this.pushElement(chk);
@@ -625,21 +631,23 @@ function createSettingsContext(layout) {
       return this;
     },
 
+    // --- SELECT ROW (Dropdown) ---
     addSelectRow(labelText, options, config) {
       this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y));
 
       const sel = createSelect();
-      
-      // --- HEIGHT FIX IS HERE ---
-      sel.position(this.layout.controlX, this.y - 10); // Moved up slightly
-      sel.size(this.layout.controlWidth, 70);          // Increased height to 70px
-      sel.style('height', '100px');                     // Force CSS height
-      sel.style('line-height', '100px');                // Center text vertically
+      sel.position(this.layout.controlX, this.y - 10);
+      sel.size(this.layout.controlWidth, 70); 
+      sel.style('font-size', '28px');
       sel.style('z-index', '20000');
-      sel.style('font-size', '28px');                  // Large clear font
-      sel.style('padding-left', '15px');               // Space from left edge
-      sel.style('padding-top', '0px');                 // Remove top padding so line-height works
       
+      // Dropdown styling
+      sel.style('background', '#222');
+      sel.style('color', 'white');
+      sel.style('border', '2px solid #555');
+      sel.style('border-radius', '5px');
+      sel.style('padding-left', '10px');
+
       options.forEach(opt => sel.option(opt));
 
       let initialVal = null;
@@ -1164,7 +1172,6 @@ function saveAccessibilitySettings() {
 }
 
 function injectCustomStyles() {
-  // Remove existing style if present to avoid duplicates
   const existingStyle = document.getElementById('custom-menu-styles');
   if (existingStyle) existingStyle.remove();
 
@@ -1175,84 +1182,86 @@ function injectCustomStyles() {
     }
     * {
       font-family: "MyFont", sans-serif !important;
-      transition: all 0.25s ease;
-      box-sizing: border-box; /* Helps with padding calculations */
+      box-sizing: border-box;
     }
 
-    /* --- BUTTON STYLES --- */
-    button:hover {
-      transform: scale(1.05);
-      text-shadow: 0 0 10px #ffffff80;
-      color: #ffea80 !important;
-    }
-
-    /* --- CHECKBOX FIX --- */
-    input[type="checkbox"] {
-      appearance: none;         /* Remove default styling */
-      -webkit-appearance: none;
-      width: 40px !important;   /* Force width */
-      height: 40px !important;  /* Force height */
-      background-color: rgba(0,0,0,0.5);
-      border: 2px solid white;
-      border-radius: 4px;
-      cursor: pointer;
-      position: relative;
-    }
-    /* The checkmark */
-    input[type="checkbox"]:checked {
-      background-color: #ffcc00;
-      border-color: #ffcc00;
-    }
-    input[type="checkbox"]:checked::after {
-      content: '✔';
-      color: black;
-      font-size: 28px;
-      position: absolute;
-      top: -4px;
-      left: 6px;
-    }
-
-    /* --- DROPDOWN (SELECT) FIX --- */
-    select {
-      appearance: none; /* Removes default system styling */
-      -webkit-appearance: none;
-      background-color: #222;
-      color: white;
-      border: 2px solid #555;
-      padding-left: 15px;
-      cursor: pointer;
-      background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23ffcc00%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
-      background-repeat: no-repeat;
-      background-position: right 15px center;
-      background-size: 15px;
-    }
-    select:focus {
-      border-color: #ffcc00;
-      outline: none;
-    }
-
-    /* --- SLIDER STYLES --- */
+    /* ============================
+       1. CHUNKY SLIDER STYLES
+       ============================ */
     input[type="range"] {
-      height: 10px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.25);
-      outline: none;
-      -webkit-appearance: none;
+      -webkit-appearance: none;  /* Remove default styling */
+      width: 100%;
+      background: transparent;
+      margin: 10px 0;
     }
+
+    /* The Track (Background Bar) */
+    input[type="range"]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 24px !important;    /* MUCH THICKER NOW */
+      cursor: pointer;
+      background: #222;
+      border: 3px solid #555;
+      border-radius: 12px;
+    }
+
+    /* The Thumb (The draggable square) */
     input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 40px;  /* Made handle bigger */
-      height: 40px; /* Made handle bigger */
-      border-radius: 50%;
-      background: #ffcc00;
-      box-shadow: 0 0 6px #ffcc0070;
-      border: 2px solid white;
+      height: 45px !important;    /* HUGE HANDLE */
+      width: 30px !important;     /* WIDE HANDLE */
+      background: #ffcc00;        /* Gold Color */
+      border: 3px solid white;
+      border-radius: 6px;
       cursor: pointer;
-      margin-top: -15px; /* Centers the thumb on the track */
+      margin-top: -14px;          /* Centers the thumb vertically on the track */
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
     }
 
-    label { color: white !important; }
+    /* ============================
+       2. CHECKBOX VISIBILITY FIX
+       ============================ */
+    /* Target ALL checkboxes to ensure we don't miss it */
+    input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 50px !important;
+      height: 50px !important;
+      background-color: #333; /* Dark Grey when unchecked */
+      border: 4px solid #888;
+      border-radius: 8px;
+      cursor: pointer;
+      position: relative;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    /* Checked State - Background turns Gold */
+    input[type="checkbox"]:checked {
+      background-color: #ffcc00 !important; /* Gold background */
+      border-color: #fff !important;
+      box-shadow: 0 0 15px #ffcc0060;
+    }
+
+    /* The Checkmark Icon (using pseudo-element) */
+    input[type="checkbox"]:checked::after {
+      content: '✔';
+      font-size: 35px;
+      color: black;      /* Black check on Gold background is very high contrast */
+      font-weight: bold;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -55%); /* Center it perfectly */
+      line-height: 1;
+    }
+
+    /* Button Hover Effects */
+    button:hover {
+      transform: scale(1.05);
+      color: #ffea80 !important;
+    }
   `);
-  style.id = 'custom-menu-styles'; // Tag it so we don't duplicate
+  style.id = 'custom-menu-styles';
   style.parent(document.head);
 }

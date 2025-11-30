@@ -4458,43 +4458,7 @@ function buildControlsSettings(ctx) {
      .addCheckboxRow("Invert Y Axis", false);
 }
 
-function buildAccessibilitySettings(ctx) {
-  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
-  
-  // Custom buttons for Text Size (Upscaled)
-  const { labelX, controlX, controlWidth, panelH, spacingY } = ctx.layout;
-  
-  // Create a Label manually
-  const lbl = createDiv("Text Size");
-  lbl.class('setting-label');
-  lbl.position(labelX, ctx.y);
-  lbl.style('width', (controlX - labelX - 20) + 'px');
-  lbl.style('text-align', 'right');
-  lbl.style('color', 'white');
-  lbl.style('font-size', '48px'); // BIGGER
-  lbl.style('z-index', '20005');
-  ctx.pushElement(lbl);
 
-  // Create Buttons
-  const sizes = ["Small", "Default", "Big"];
-  const btnW = (controlWidth / 3) - 15;
-  let currX = controlX;
-  
-  sizes.forEach(size => {
-      const btn = createButton(size);
-      btn.position(currX, ctx.y);
-      btn.size(btnW, 80); // TALLER
-      styleButton(btn);
-      btn.style('font-size', '35px'); // BIGGER
-      btn.style('background', '#333');
-      btn.style('z-index', '20005');
-      btn.mousePressed(() => { console.log("Text size:", size); });
-      ctx.pushElement(btn);
-      currX += btnW + 15;
-  });
-  
-  ctx.y += spacingY + 30; 
-}
 
 function buildLanguageSettings(ctx) {
   ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
