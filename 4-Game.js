@@ -31,7 +31,10 @@ const SELECT_VERTICAL_NUDGE = 15;
 const TEXTSIZE_BUTTON_Y_OFFSET = 10;
 const BACK_BUTTON_VERTICAL_OFFSET = 120;
 
-
+// Add these with your other global variables
+let genPhase = 0;      // 0 = idle, 1 = start, 2 = roughening
+let genTimer = 0;      // To track the pause duration
+let genTempData = {};  // To pass data between generation steps
 
 
 const CATEGORY_BUILDERS = {
@@ -1839,12 +1842,66 @@ function setup() {
 }
 
 function draw() {
-  if (typeof window !== 'undefined' && window && window.__gameDebugShown !== true) { console.log('[game] draw() running'); window.__gameDebugShown = true; }
-  
+  // --- NEW LOADING SEQUENCE LOGIC ---
+  if (genPhase > 0) {
+    // Phase 1: Initialize loading screen
+    if (genPhase === 1) {
+      showLoadingOverlay = true;
+      overlayMessage = 'Initializing World...';
+      updateLoadingOverlayDom();
+      
+      // Force a black background immediately
+      background(0);
+      
+      // Wait 100ms to ensure the screen paints
+      genTimer = millis() + 100;
+      genPhase = 2; 
+      return; 
+    }
+
+    // Phase 2: Generate Base Terrain
+    if (genPhase === 2) {
+      background(0); // Keep screen black
+      if (millis() < genTimer) return; // Wait for timer
+
+      // Run Part 1
+      generateMap_Part1();
+      
+      // Update text for the next phase
+      overlayMessage = 'Roughening & Eroding...';
+      updateLoadingOverlayDom();
+      
+      // Set the "Roughening" wait time (e.g., 800ms)
+      genTimer = millis() + 800;
+      genPhase = 3;
+      return;
+    }
+
+    // Phase 3: Roughening & Finalize
+    if (genPhase === 3) {
+      background(0); // Keep screen black
+      if (millis() < genTimer) return; // Wait for timer
+
+      // Run Part 2
+      generateMap_Part2();
+      
+      // Finish
+      genPhase = 0;
+      showLoadingOverlay = false;
+      updateLoadingOverlayDom();
+      // Allow the function to continue to normal drawing below...
+    }
+  }
+  // --- END NEW LOGIC ---
+
+  if (typeof window !== 'undefined' && window && window.__gameDebugShown !== true) { 
+    console.log('[game] draw() running'); window.__gameDebugShown = true; 
+  }
   
   try { ensureLoadingOverlayDom(); updateLoadingOverlayDom(); } catch (e) {}
 
-  push(); 
+  // ... (The rest of your existing draw function continues here) ...
+  push();
 
   const mapW = (logicalW || 0) * cellSize;
   if (mapW > 0) {
@@ -2898,27 +2955,10 @@ window.addEventListener('keydown', (ev) => {
     try { tryMoveDirection(k); } catch (e) {  }
   }
   if (k === 'P') {
-    try {
-      // 1. Turn on the loading screen visually
-      showLoadingOverlay = true;
-      overlayMessage = 'Generating New Map...';
-      updateLoadingOverlayDom();
-
-      // 2. Wait 100ms so the screen actually turns black, THEN generate
-      setTimeout(() => {
-        console.log('[game] key P pressed — generating new map');
-        nextGenerateIsManual = true;
-        generateMap();
-        // generateMap will handle turning the overlay off when it's done
-      }, 100);
-
-    } catch (e) {
-      console.warn('[game] generateMap() failed from key press', e);
-      showLoadingOverlay = false; // Turn off if it fails
-      updateLoadingOverlayDom();
-    }
+    console.log('[game] P pressed - Starting Phase 1');
+    genPhase = 1; // This triggers the logic in draw()
     return;
-  }
+}
 });
 
 function saveMap(name) {
@@ -3719,49 +3759,23 @@ function getHillTileType(grid, x, y, w) {
 }
 
 
-function generateMap() {
-  console.log('[game] generateMap() start');
-  const manual = !!nextGenerateIsManual;
-  nextGenerateIsManual = false;
-
-  if (!manual && !mapLoadComplete && !isNewGame) {
-    console.log('[game] skipping auto-generate: authoritative map not yet applied');
-    return;
-  }
-  if (!W || !H) return;
-
-  try {
-    showLoadingOverlay = true;
-    overlayMessage = 'Generating new map...';
-  } catch (e) {}
-
-  logicalW = Math.ceil((virtualW || W) / cellSize);
-  logicalH = Math.ceil((virtualH || H) / cellSize);
-
-  mapStates = new Uint8Array(logicalW * logicalH);
-  terrainLayer = new Uint8Array(logicalW * logicalH);
-
-  // --- Helper 1: Calculate the center clearing ---
-  function computeClearArea() {
+// --- HELPER FUNCTIONS (Moved to global scope) ---
+function computeClearArea() {
     const centerX = logicalW / 2;
     const centerY = logicalH / 2;
     const clearAreaRatio = 0.75 + Math.random() * 0.15;
     const baseClearWidth = logicalW * clearAreaRatio;
     const baseClearHeight = logicalH * clearAreaRatio;
     return {
-      centerX,
-      centerY,
-      baseClearWidth,
-      baseClearHeight,
+      centerX, centerY, baseClearWidth, baseClearHeight,
       clearStartX: centerX - baseClearWidth / 2,
       clearEndX: centerX + baseClearWidth / 2,
       clearStartY: centerY - baseClearHeight / 2,
       clearEndY: centerY + baseClearHeight / 2
     };
-  }
+}
 
-  // --- Helper 2: Apply noise for grass/forest distribution ---
-  function applyNoiseTerrain(centerX, centerY, baseClearWidth, baseClearHeight) {
+function applyNoiseTerrain(centerX, centerY, baseClearWidth, baseClearHeight) {
     const lowFreqScale = 0.07;
     const highFreqScale = 0.2;
     const pathNoiseScale = 0.15;
@@ -3785,162 +3799,111 @@ function generateMap() {
         }
       }
     }
-  }
+}
 
-  // --- Helper 3: Handle Rivers ---
-  function postProcessRiversAndClearArea(clearStartX, clearEndX, clearStartY, clearEndY) {
+function postProcessRiversAndClearArea(clearStartX, clearEndX, clearStartY, clearEndY) {
     const RIVER_TILE = (typeof TILE_TYPES !== 'undefined' && TILE_TYPES.RIVER) ? TILE_TYPES.RIVER : null;
 
-    carveRivers(mapStates, logicalW, logicalH, {
-      clearStartX,
-      clearEndX,
-      clearStartY,
-      clearEndY,
-      RIVER_TILE
-    });
+    carveRivers(mapStates, logicalW, logicalH, { clearStartX, clearEndX, clearStartY, clearEndY, RIVER_TILE });
 
     const spawnX = Math.floor(logicalW / 2);
     const spawnY = Math.floor(logicalH / 2);
-
     const allowClearOverride = riverClearMode === RIVER_CLEAR_MODES.AUTO ? null : (riverClearMode === RIVER_CLEAR_MODES.ALWAYS);
 
     carveRiversMaybeThrough(mapStates, logicalW, logicalH, {
-      clearStartX,
-      clearEndX,
-      clearStartY,
-      clearEndY,
-      RIVER_TILE,
-      playerX: spawnX,
-      playerY: spawnY,
-      allowClearOverride
+      clearStartX, clearEndX, clearStartY, clearEndY, RIVER_TILE,
+      playerX: spawnX, playerY: spawnY, allowClearOverride
     });
 
     const branchChance = allowClearOverride === true ? 1 : 0.55;
     if (allowClearOverride !== false && Math.random() < branchChance) {
       carveBranchFromRiver(mapStates, logicalW, logicalH, {
-        clearStartX,
-        clearEndX,
-        clearStartY,
-        clearEndY,
-        RIVER_TILE,
-        playerX: spawnX,
-        playerY: spawnY
+        clearStartX, clearEndX, clearStartY, clearEndY, RIVER_TILE, playerX: spawnX, playerY: spawnY
       });
     }
 
     ensureInteractiveClearArea(mapStates, logicalW, logicalH, {
-      clearStartX,
-      clearEndX,
-      clearStartY,
-      clearEndY,
-      playerX: spawnX,
-      playerY: spawnY,
-      RIVER_TILE
+      clearStartX, clearEndX, clearStartY, clearEndY, playerX: spawnX, playerY: spawnY, RIVER_TILE
     });
 
-    smoothRiverTiles(mapStates, logicalW, logicalH, {
-      RIVER_TILE,
-      clearStartX,
-      clearEndX,
-      clearStartY,
-      clearEndY
-    });
-    roundRiverTips(mapStates, logicalW, logicalH, {
-      RIVER_TILE,
-      clearStartX,
-      clearEndX,
-      clearStartY,
-      clearEndY
-    });
+    smoothRiverTiles(mapStates, logicalW, logicalH, { RIVER_TILE, clearStartX, clearEndX, clearStartY, clearEndY });
+    roundRiverTips(mapStates, logicalW, logicalH, { RIVER_TILE, clearStartX, clearEndX, clearStartY, clearEndY });
 
-    return {
-      spawnX: Math.floor(logicalW / 2),
-      spawnY: Math.floor(logicalH / 2)
-    };
-  }
+    return { spawnX, spawnY };
+}
 
-  // --- Helper 4: Remove Unreachable Areas (UPDATED) ---
-  function pruneUnreachable(startX, startY) {
-    // Safety: ensure spawn isn't solid before we start
+function pruneUnreachable(startX, startY) {
     const startIdx = startY * logicalW + startX;
-    if (isSolid(mapStates[startIdx])) {
-      console.warn("Prune warning: Spawn point is solid.");
-      return; 
-    }
-
+    if (isSolid(mapStates[startIdx])) return; 
     const q = [{ x: startX, y: startY }];
     const visited = new Set([`${startX},${startY}`]);
     let head = 0;
-
-    // 8-Way Directions (Horizontal, Vertical, Diagonal)
     const dirs = [
       { dx: 0, dy: -1 }, { dx: 1, dy: -1 }, { dx: 1, dy: 0 }, { dx: 1, dy: 1 },
       { dx: 0, dy: 1 },  { dx: -1, dy: 1 }, { dx: -1, dy: 0 }, { dx: -1, dy: -1 }
     ];
-
     while (head < q.length) {
       const { x, y } = q[head++];
-
       for (const d of dirs) {
-        const nx = x + d.dx;
-        const ny = y + d.dy;
-
-        // Boundary check
+        const nx = x + d.dx; const ny = y + d.dy;
         if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH) {
-          const key = `${nx},${ny}`;
-          const idx = ny * logicalW + nx;
-          
-          // If not visited AND NOT SOLID, we can walk there
+          const key = `${nx},${ny}`; const idx = ny * logicalW + nx;
           if (!visited.has(key) && !isSolid(mapStates[idx])) {
-            visited.add(key);
-            q.push({ x: nx, y: ny });
+            visited.add(key); q.push({ x: nx, y: ny });
           }
         }
       }
     }
-
-    // Replace ONLY unreachable GRASS with FOREST
     for (let i = 0; i < mapStates.length; i++) {
-      const x = i % logicalW;
-      const y = Math.floor(i / logicalW);
-      const key = `${x},${y}`;
-
-      if (mapStates[i] === TILE_TYPES.GRASS && !visited.has(key)) {
+      const x = i % logicalW; const y = Math.floor(i / logicalW);
+      if (mapStates[i] === TILE_TYPES.GRASS && !visited.has(`${x},${y}`)) {
         mapStates[i] = TILE_TYPES.FOREST;
       }
     }
-  }
+}
 
-  // --- EXECUTION START ---
+// --- PART 1: SETUP & BASE NOISE ---
+function generateMap_Part1() {
+  console.log('[game] Generating Part 1 (Base)...');
+  
+  if (!W || !H) return;
+  logicalW = Math.ceil((virtualW || W) / cellSize);
+  logicalH = Math.ceil((virtualH || H) / cellSize);
 
+  mapStates = new Uint8Array(logicalW * logicalH);
+  terrainLayer = new Uint8Array(logicalW * logicalH);
+
+  // Run Base Generation
   const clearArea = computeClearArea();
   applyNoiseTerrain(clearArea.centerX, clearArea.centerY, clearArea.baseClearWidth, clearArea.baseClearHeight);
   
-  // Create rivers and get spawn point
+  // Store data for Part 2
+  genTempData = { clearArea };
+}
+
+// --- PART 2: RIVERS, HILLS & FINALIZING ---
+function generateMap_Part2() {
+  console.log('[game] Generating Part 2 (Roughness)...');
+  
+  const { clearArea } = genTempData;
+  
+  // Rivers & Erosion
   const spawn = postProcessRiversAndClearArea(clearArea.clearStartX, clearArea.clearEndX, clearArea.clearStartY, clearArea.clearEndY);
 
-  // 1. PRUNE FIRST (Removes unreachable grass before hills are made)
+  // Pruning
   pruneUnreachable(spawn.spawnX, spawn.spawnY);
 
-  // 2. GENERATE HILLS (Decorate the valid map)
+  // Hills
   generateHills(mapStates, logicalW, logicalH);
 
-
-  // --- Finalization ---
+  // Finalize
   terrainLayer = mapStates.slice();
   counts = {};
   for (let i = 0; i < mapStates.length; i++) counts[mapStates[i]] = (counts[mapStates[i]] || 0) + 1;
 
-  playerPosition = {
-    x: spawn.spawnX,
-    y: spawn.spawnY
-  };
-  renderX = playerPosition.x;
-  renderY = playerPosition.y;
-  renderStartX = renderX;
-  renderStartY = renderY;
-  renderTargetX = renderX;
-  renderTargetY = renderY;
+  playerPosition = { x: spawn.spawnX, y: spawn.spawnY };
+  renderX = playerPosition.x; renderY = playerPosition.y;
+  renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY;
   isMoving = false;
 
   createMapImage();
@@ -3952,35 +3915,22 @@ function generateMap() {
         const idx = y * logicalW + x;
         if (mapStates[idx] !== TILE_TYPES.FOREST) continue;
         if (x === spawn.spawnX && y === spawn.spawnY) continue;
-        if (Math.random() < TREE_SPAWN_CHANCE) {
-          treeObjects.push({
-            x,
-            y
-          });
-        }
+        if (Math.random() < TREE_SPAWN_CHANCE) treeObjects.push({ x, y });
       }
     }
     createMapImage();
   }
-
+  
+  // Clean up
+  genTempData = {};
+  
   redraw();
+  autosaveMap();
+}
 
-  try {
-    let existing = null;
-    try {
-      existing = localStorage.getItem('autosave_map');
-    } catch (e) {
-      existing = null;
-    }
-    if (manual || !existing) autosaveMap();
-  } catch (err) {
-    console.warn('[game] autosave after generateMap failed', err);
-  }
-
-  try {
-    mapLoadComplete = true;
-    showLoadingOverlay = false;
-  } catch (e) {}
+// Keep the old function name as a fallback/wrapper just in case
+function generateMap() {
+    genPhase = 1; // Trigger the sequence instead of running directly
 }
 
 
