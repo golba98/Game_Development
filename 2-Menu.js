@@ -503,14 +503,14 @@ function showSubSettings(label) {
   const panelH = 0.7 * height;
   const panelLeft = cx - panelW / 2;
   
-  // --- WIDTH FIX ---
-  // 1. Move the start of the controls further left (0.35 instead of 0.42)
+  
+  
   const controlX = panelLeft + (panelW * 0.35);
   
-  // 2. FORCE the width to be 55% of the panel. This guarantees they are wide.
+  
   const controlWidth = panelW * 0.55; 
   
-  // 3. Position the text labels
+  
   const labelX = panelLeft + (panelW * 0.05);
   
   const spacingY = panelH * 0.14;
@@ -581,7 +581,7 @@ function createSettingLabel(txt, x, y, maxWidth = 200) {
   return d;
 }
 
-// --- PASTE THIS BEFORE 'const CATEGORY_BUILDERS' ---
+
 
 function createSettingsContext(layout) {
   return {
@@ -708,10 +708,10 @@ function buildControlsSettings(ctx) {
 }
 
 function buildAccessibilitySettings(ctx) {
-  // 1. Color Mode
+  
   ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
   
-  // 2. Custom Buttons
+  
   const { labelX, controlX, controlWidth, panelH, spacingY } = ctx.layout;
   
   const lbl = createDiv("Text Size");
@@ -734,7 +734,7 @@ function buildAccessibilitySettings(ctx) {
   const gap = 15;
   const btnW = (controlWidth - (gap * (sizes.length - 1))) / sizes.length;
   
-  // --- MASSIVE BUTTON HEIGHT ---
+  
   const btnH = 100; 
   
   let currX = controlX;
@@ -748,7 +748,7 @@ function buildAccessibilitySettings(ctx) {
       btn.style('background', '#333'); 
       btn.style('border', '4px solid #555'); 
       btn.style('border-radius', '15px');    
-      btn.style('font-size', '36px');        // Huge Text
+      btn.style('font-size', '36px');        
       btn.style('font-weight', 'bold');      
       btn.style('z-index', '20005');
       
@@ -1174,10 +1174,7 @@ function injectCustomStyles() {
       font-family: "MyFont", sans-serif !important;
       box-sizing: border-box;
     }
-
-    /* ============================
-       1. MASSIVE SLIDER HANDLE
-       ============================ */
+      
     input[type="range"] {
       -webkit-appearance: none; 
       width: 100%;
@@ -1210,9 +1207,6 @@ function injectCustomStyles() {
       position: relative;
     }
 
-    /* ============================
-       2. CHECKBOX
-       ============================ */
     input[type="checkbox"] {
       appearance: none;
       -webkit-appearance: none;
@@ -1249,6 +1243,7 @@ function injectCustomStyles() {
       color: #ffea80 !important;
     }
   `);
+
   style.id = 'custom-menu-styles';
   style.parent(document.head);
 }

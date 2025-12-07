@@ -4,6 +4,13 @@ let pendingGameActivated = false;
 
 let mapLoadComplete = false;
 
+
+let cloudImages = [];
+let clouds = [];
+const MAX_CLOUDS = 100;
+const CLOUD_SPAWN_INTERVAL = 8000; 
+let lastCloudSpawn = 0;
+
 let showLoadingOverlay = true;
 let overlayMessage = 'Loading map...';
 
@@ -31,10 +38,10 @@ const SELECT_VERTICAL_NUDGE = 15;
 const TEXTSIZE_BUTTON_Y_OFFSET = 10;
 const BACK_BUTTON_VERTICAL_OFFSET = 120;
 
-// Add these with your other global variables
-let genPhase = 0;      // 0 = idle, 1 = start, 2 = roughening
-let genTimer = 0;      // To track the pause duration
-let genTempData = {};  // To pass data between generation steps
+
+let genPhase = 0;      
+let genTimer = 0;      
+let genTempData = {};  
 
 
 const CATEGORY_BUILDERS = {
@@ -212,11 +219,11 @@ function updateLoadingOverlayDom() {
       return; 
     }
 
-    // Update Message
+    
     const msg = el.querySelector('.gd-loading-message');
     if (msg && overlayMessage) msg.innerText = overlayMessage;
 
-    // Calculate %
+    
     let p = 0;
     if (typeof AssetTracker !== 'undefined' && AssetTracker.expected > 0) {
         p = (AssetTracker.loaded / AssetTracker.expected) * 100;
@@ -225,7 +232,7 @@ function updateLoadingOverlayDom() {
     }
     p = Math.floor(Math.max(0, Math.min(100, p)));
 
-    // Update Bar
+    
     const fill = el.querySelector('.gd-progress-fill');
     const pct = el.querySelector('.gd-progress-text');
     
@@ -249,6 +256,7 @@ let gameMusicStarted = false;
 let persistentGameId = null;
 let isNewGame = false;
 let localStorageAvailable = true;
+
 try {
   const testKey = '__gd_test__';
   window.localStorage.setItem(testKey, '1');
@@ -315,6 +323,7 @@ const AssetTracker = {
       } catch (e) {}
     }
   },
+
   waitReady(timeoutMs = 3000) {
     if (this.loaded >= this.expected) return Promise.resolve(true);
     if (this._readyPromise) return this._readyPromise;
@@ -438,8 +447,6 @@ function applyLoadedMap(obj) {
   }
 }
 
-
-
 function showFilePickerToLoadActiveMap() {
   try {
     if (typeof document === 'undefined') return;
@@ -468,6 +475,7 @@ function showFilePickerToLoadActiveMap() {
     input.click();
   } catch (e) { console.warn('[game] showFilePicker failed', e); }
 }
+
 function carveRiversMaybeThrough(map, w, h, opts = {}) {
   const clearStartX = opts.clearStartX ?? -1;
   const clearEndX   = opts.clearEndX ?? -1;
@@ -1182,9 +1190,11 @@ let jumpSheets = { N:null, NE:null, E:null, SE:null, S:null, SW:null, W:null, NW
 let isJumping = false;
 let jumpTimer = 0;
 let jumpFrame = 0;
+
 const JUMP_FRAME_COUNT = 5;
 const JUMP_ANIM_SPEED = 100; 
 const JUMP_DURATION = JUMP_FRAME_COUNT * JUMP_ANIM_SPEED;
+
 let jumpStartY = 0;
 let facing = 'right';
 let lastMoveDX = 0;
@@ -1220,22 +1230,15 @@ function directionToDelta(dir) {
   }
 }
 
-
 let W, H;
 let logicalW, logicalH;
 const cellSize = 32;
 
-
-// Brown-pixel diagnostic removed. No runtime diagnostic state required.
-
-
 const BASE_ELEVATION_THRESHOLD = 0.5;
 const BASE_BUSH_THRESHOLD = 0.65;
 
-
 let mapStates;
 let terrainLayer;
-
 
 let playerPosition = null;
 
@@ -1245,7 +1248,6 @@ const SPRINT_MOVE_DURATION_MS = 48;
 const SPRINT_MOVE_COOLDOWN_MS = 140;
 const SPRINT_MAX_DURATION_MS = 3000;
 const SPRINT_COOLDOWN_MS = 4000;
-
 
 let renderX = 0;
 let renderY = 0;
@@ -1342,6 +1344,7 @@ let edgeLayer = null;
 let EDGE_LAYER_ENABLED = false; 
 let EDGE_LAYER_DEBUG = false;
 let EDGE_LAYER_COLOR = [76, 175, 80, 200];
+
 function setEdgeLayerColor(r, g, b, a = 200) { EDGE_LAYER_COLOR = [Number(r)||0, Number(g)||0, Number(b)||0, Number(a)||0]; console.log('[game] EDGE_LAYER_COLOR=', EDGE_LAYER_COLOR); }
 function setEdgeLayerEnabled(v) { EDGE_LAYER_ENABLED = !!v; console.log('[game] EDGE_LAYER_ENABLED=', EDGE_LAYER_ENABLED); }
 function setEdgeLayerDebug(v) { EDGE_LAYER_DEBUG = !!v; console.log('[game] EDGE_LAYER_DEBUG=', EDGE_LAYER_DEBUG); }
@@ -1352,6 +1355,7 @@ let TILE_IMAGES = { };
 
 let CUSTOM_ASSETS_OFF = false;
 let __ASSET_BACKUP = null;
+
 function backupCustomAssets() {
   try {
     __ASSET_BACKUP = {
@@ -1597,6 +1601,17 @@ function preload() {
   try { trackLoadImage('idle_sheet:' + IDLE_SHEET_PATH, IDLE_SHEET_PATH, (img) => { console.log('[game] loaded idle spritesheet', IDLE_SHEET_PATH, img.width, 'x', img.height); spritesheetIdle = img; }, (err) => { console.warn('[game] failed to load idle spritesheet', err); spritesheetIdle = null; }); } catch (e) {}
   try { trackLoadImage('walk_sheet_combined:' + WALK_SHEET_COMBINED, WALK_SHEET_COMBINED, (img) => { console.log('[game] loaded walk combined sheet', WALK_SHEET_COMBINED, img.width, 'x', img.height); spritesheetWalk = img; }, (err) => { spritesheetWalk = null; }); } catch (e) {}
   try { trackLoadImage('run_sheet_combined:' + RUN_SHEET_COMBINED, RUN_SHEET_COMBINED, (img) => { console.log('[game] loaded run combined sheet', RUN_SHEET_COMBINED, img.width, 'x', img.height); spritesheetRun = img; }, (err) => { spritesheetRun = null; }); } catch (e) {}
+  
+  
+  for (let i = 1; i <= 5; i++) {
+    try {
+      trackLoadImage(`cloud_${i}`, `assets/5-Objects/cloud_${i}.png`, 
+        (img) => { cloudImages[i - 1] = img; console.log(`[game] loaded cloud_${i}`); },
+        (err) => { console.warn(`[game] failed to load cloud_${i}`, err); }
+      );
+    } catch (e) {}
+  }
+  
   uiFont = loadFont(UI_FONT_PATH, () => {}, (err) => {
     console.warn('[game] failed to load UI font', err);
     uiFont = null;
@@ -1769,7 +1784,7 @@ function setup() {
     }
   } catch (e) { console.warn('[game] loadMapFromStorage/Server init failed', e); serverFetchPromise = Promise.resolve(false); }
 
-  // --- REPLACE THE ENTIRE AssetTracker.waitReady BLOCK WITH THIS ---
+  
   AssetTracker.waitReady(3500).then((ready) => {
     if (ready) {
       console.log('[game] assets loaded before map init');
@@ -1778,7 +1793,7 @@ function setup() {
       try { showToast('Asset load timeout — processing map...', 'warn', 3000); } catch (e) {}
     }
 
-    // Helper function to handle missing map
+    
     const ensureGameStarts = () => {
         console.log('[game] No saved map found (or load failed). Auto-generating new map...');
         generateMap();
@@ -1789,16 +1804,16 @@ function setup() {
         try {
           loadedFromServer = !!serverLoaded;
           
-          // If server didn't have a map, try local storage
+          
           if (!loadedFromServer) {
             loadedFromStorage = !!loadMapFromStorage();
           }
 
-          // If NEITHER had a map, generate one automatically
+          
           if (!loadedFromStorage && !loadedFromServer) {
              ensureGameStarts();
           } else {
-            // We found a map! Draw it.
+            
             try { createMapImage(); redraw(); } catch (e) { console.warn('[game] failed to recreate mapImage', e); }
           }
         } catch (e) { 
@@ -1806,7 +1821,7 @@ function setup() {
           ensureGameStarts();
         }
       }).catch((e) => {
-        // If the server check completely crashed/failed, we still need to start the game!
+        
         console.warn('[game] serverFetchPromise failed, checking storage...', e);
         if (!loadMapFromStorage()) {
            ensureGameStarts();
@@ -1820,7 +1835,7 @@ function setup() {
     }
     
     if (!ready) {
-      // If assets were late, register a callback to refresh the map once they arrive
+      
       try {
         AssetTracker.onReady(() => {
           try {
@@ -1832,7 +1847,7 @@ function setup() {
       } catch (e) {}
     }
   });
-  // --- END REPLACEMENT ---
+  
   if (gameMusic) {
     gameMusic.setVolume(musicVol * masterVol);
   }
@@ -1842,57 +1857,57 @@ function setup() {
 }
 
 function draw() {
-  // --- NEW LOADING SEQUENCE LOGIC ---
+  
   if (genPhase > 0) {
-    // Phase 1: Initialize loading screen
+    
     if (genPhase === 1) {
       showLoadingOverlay = true;
       overlayMessage = 'Initializing World...';
       updateLoadingOverlayDom();
       
-      // Force a black background immediately
+      
       background(0);
       
-      // Wait 100ms to ensure the screen paints
+      
       genTimer = millis() + 100;
       genPhase = 2; 
       return; 
     }
 
-    // Phase 2: Generate Base Terrain
+    
     if (genPhase === 2) {
-      background(0); // Keep screen black
-      if (millis() < genTimer) return; // Wait for timer
+      background(0); 
+      if (millis() < genTimer) return; 
 
-      // Run Part 1
+      
       generateMap_Part1();
       
-      // Update text for the next phase
+      
       overlayMessage = 'Roughening & Eroding...';
       updateLoadingOverlayDom();
       
-      // Set the "Roughening" wait time (e.g., 800ms)
+      
       genTimer = millis() + 800;
       genPhase = 3;
       return;
     }
 
-    // Phase 3: Roughening & Finalize
+    
     if (genPhase === 3) {
-      background(0); // Keep screen black
-      if (millis() < genTimer) return; // Wait for timer
+      background(0); 
+      if (millis() < genTimer) return; 
 
-      // Run Part 2
+      
       generateMap_Part2();
       
-      // Finish
+      
       genPhase = 0;
       showLoadingOverlay = false;
       updateLoadingOverlayDom();
-      // Allow the function to continue to normal drawing below...
+      
     }
   }
-  // --- END NEW LOGIC ---
+  
 
   if (typeof window !== 'undefined' && window && window.__gameDebugShown !== true) { 
     console.log('[game] draw() running'); window.__gameDebugShown = true; 
@@ -1900,7 +1915,7 @@ function draw() {
   
   try { ensureLoadingOverlayDom(); updateLoadingOverlayDom(); } catch (e) {}
 
-  // ... (The rest of your existing draw function continues here) ...
+  
   push();
 
   const mapW = (logicalW || 0) * cellSize;
@@ -1917,8 +1932,8 @@ function draw() {
   }
 
   if (showLoadingOverlay) {
-    background(0); // Draws a solid black background
-    return;        // Stops the game from drawing anything else underneath
+    background(0); 
+    return;        
   }
   
   if (playerPosition) {
@@ -1983,6 +1998,10 @@ function draw() {
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
   } catch (e) { console.warn('[game] drawInGameMenu failed', e); }
+
+  
+  updateClouds();
+  drawClouds();
 }
 
 
@@ -2956,7 +2975,7 @@ window.addEventListener('keydown', (ev) => {
   }
   if (k === 'P') {
     console.log('[game] P pressed - Starting Phase 1');
-    genPhase = 1; // This triggers the logic in draw()
+    genPhase = 1; 
     return;
 }
 });
@@ -3404,7 +3423,7 @@ function createMapImage() {
 
   
   
-  // Brown-pixel diagnose/fix removed to avoid runtime diagnostics and asset mutation.
+  
 }
 
 function loadMapFromStorage() {
@@ -3759,7 +3778,7 @@ function getHillTileType(grid, x, y, w) {
 }
 
 
-// --- HELPER FUNCTIONS (Moved to global scope) ---
+
 function computeClearArea() {
     const centerX = logicalW / 2;
     const centerY = logicalH / 2;
@@ -3862,7 +3881,7 @@ function pruneUnreachable(startX, startY) {
     }
 }
 
-// --- PART 1: SETUP & BASE NOISE ---
+
 function generateMap_Part1() {
   console.log('[game] Generating Part 1 (Base)...');
   
@@ -3873,30 +3892,30 @@ function generateMap_Part1() {
   mapStates = new Uint8Array(logicalW * logicalH);
   terrainLayer = new Uint8Array(logicalW * logicalH);
 
-  // Run Base Generation
+  
   const clearArea = computeClearArea();
   applyNoiseTerrain(clearArea.centerX, clearArea.centerY, clearArea.baseClearWidth, clearArea.baseClearHeight);
   
-  // Store data for Part 2
+  
   genTempData = { clearArea };
 }
 
-// --- PART 2: RIVERS, HILLS & FINALIZING ---
+
 function generateMap_Part2() {
   console.log('[game] Generating Part 2 (Roughness)...');
   
   const { clearArea } = genTempData;
   
-  // Rivers & Erosion
+  
   const spawn = postProcessRiversAndClearArea(clearArea.clearStartX, clearArea.clearEndX, clearArea.clearStartY, clearArea.clearEndY);
 
-  // Pruning
+  
   pruneUnreachable(spawn.spawnX, spawn.spawnY);
 
-  // Hills
+  
   generateHills(mapStates, logicalW, logicalH);
 
-  // Finalize
+  
   terrainLayer = mapStates.slice();
   counts = {};
   for (let i = 0; i < mapStates.length; i++) counts[mapStates[i]] = (counts[mapStates[i]] || 0) + 1;
@@ -3921,16 +3940,16 @@ function generateMap_Part2() {
     createMapImage();
   }
   
-  // Clean up
+  
   genTempData = {};
   
   redraw();
   autosaveMap();
 }
 
-// Keep the old function name as a fallback/wrapper just in case
+
 function generateMap() {
-    genPhase = 1; // Trigger the sequence instead of running directly
+    genPhase = 1; 
 }
 
 
@@ -3944,7 +3963,7 @@ function cleanImageBrown(img) {
       const r = img.pixels[i];
       const g = img.pixels[i + 1];
       const b = img.pixels[i + 2];
-      // Inline brown-ish test to avoid a function call per pixel
+      
       if (r > 60 && r < 180 && g > 30 && g < 120 && b < 80) {
         if (img.pixels[i + 3] !== 0) {
           img.pixels[i + 3] = 0;
@@ -3960,7 +3979,7 @@ function cleanImageBrown(img) {
 }
 
 
-// diagnoseMapPixel removed — runtime diagnosis no longer supported.
+
 
 function getTileState(x, y, layer = mapStates) {
   if (x < 0 || x >= logicalW || y < 0 || y >= logicalH) return -1;
@@ -4357,20 +4376,20 @@ try {
   }, false);
 } catch (e) { console.warn('[game] failed to attach global Escape handler', e); }
 
-// --- HELPER FUNCTIONS TO FIX CRASHES ---
+
 
 function getColorForState(state) {
-  // Uses the COLORS object defined earlier in your code
+  
   if (typeof COLORS !== 'undefined' && COLORS[state]) {
     return COLORS[state];
   }
-  // Fallback default color (Magenta to make it obvious if something is missing)
+  
   return [255, 0, 255]; 
 }
 
-// (removed) brown pixel helper — checks are now inlined and sampled
 
-// --- UNIFIED SETTINGS BUILDERS (Upscaled) ---
+
+
 
 function buildAudioSettings(ctx) {
   ctx
@@ -4414,25 +4433,25 @@ function buildLanguageSettings(ctx) {
   ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
 }
 
-// --- HELPER: Pixel Art Button Styling ---
+
 function stylePixelButton(btn) {
-  // Reset basic styles
+  
   btn.style('background-color', 'transparent');
   btn.style('border', 'none');
   btn.style('color', 'white');
   btn.style('cursor', 'pointer');
   
-  // Apply the Asset
+  
   btn.style('background-image', "url('assets/3-GUI/Button BG.png')");
   btn.style('background-size', '100% 100%');
   btn.style('background-repeat', 'no-repeat');
-  btn.style('image-rendering', 'pixelated'); // Keep it crisp
+  btn.style('image-rendering', 'pixelated'); 
   
-  // Font & Shadow
-  btn.style('font-family', 'MyFont, sans-serif'); // Ensure your font is used
+  
+  btn.style('font-family', 'MyFont, sans-serif'); 
   btn.style('text-shadow', '3px 3px 0 #000');
   
-  // Hover Effect
+  
   btn.mouseOver(() => {
     btn.style('filter', 'brightness(1.2)');
     btn.style('transform', 'scale(1.05)');
@@ -4442,12 +4461,12 @@ function stylePixelButton(btn) {
     btn.style('transform', 'scale(1.0)');
   });
   
-  // Initial Z-Index
+  
   btn.style('z-index', '20005');
 }
 
 
-// --- UNIFIED SETTINGS BUILDERS ---
+
 
 function buildAudioSettings(ctx) {
   ctx
@@ -4487,14 +4506,14 @@ function buildControlsSettings(ctx) {
 function buildAccessibilitySettings(ctx) {
   ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
   
-  // Custom buttons for Text Size (using Assets)
+  
   const { labelX, controlX, controlWidth, spacingY } = ctx.layout;
   
-  // Label
+  
   const lbl = createDiv("Text Size");
   lbl.class('setting-label');
   lbl.position(labelX, ctx.y);
-  lbl.size(ctx.layout.labelWidth, 60); // Use calculated width
+  lbl.size(ctx.layout.labelWidth, 60); 
   lbl.style('text-align', 'right');
   lbl.style('color', 'white');
   lbl.style('font-size', '48px');
@@ -4502,19 +4521,19 @@ function buildAccessibilitySettings(ctx) {
   lbl.style('z-index', '20005');
   ctx.pushElement(lbl);
 
-  // Buttons
+  
   const sizes = ["Small", "Default", "Big"];
   const btnGap = 10;
-  // Calculate button width to fit exactly in the control area
+  
   const btnW = (controlWidth - (btnGap * (sizes.length - 1))) / sizes.length;
   let currX = controlX;
   
   sizes.forEach(size => {
       const btn = createButton(size);
-      btn.position(currX, ctx.y - 10); // Slight nudge up to align with text
+      btn.position(currX, ctx.y - 10); 
       btn.size(btnW, 80); 
       
-      stylePixelButton(btn); // <--- APPLY ASSET HERE
+      stylePixelButton(btn); 
       btn.style('font-size', '30px'); 
       
       btn.mousePressed(() => { console.log("Text size:", size); });
@@ -4529,15 +4548,15 @@ function buildLanguageSettings(ctx) {
   ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
 }
 
-// --- UNIFIED CONTEXT CREATOR ---
+
 function createSettingsContext({ cx, startY, spacingY }) {
   let y = startY;
   
-  // --- CENTER ALIGNMENT MATH ---
-  // We define a fixed width for labels and controls relative to the center (cx)
-  const labelWidth = 500;   // Width of the text area to the left
-  const controlWidth = 500; // Width of the input area to the right
-  const gap = 40;           // Gap between label and input in the exact center
+  
+  
+  const labelWidth = 500;   
+  const controlWidth = 500; 
+  const gap = 40;           
   
   const labelX = cx - labelWidth - (gap / 2);
   const controlX = cx + (gap / 2);
@@ -4546,7 +4565,7 @@ function createSettingsContext({ cx, startY, spacingY }) {
       el.class('setting-label');
       el.style('color', 'white');
       el.style('font-size', '45px');
-      el.style('text-align', 'right'); // Align text to the center gap
+      el.style('text-align', 'right'); 
       el.style('z-index', '20005');
       el.style('pointer-events', 'none');
       el.style('text-shadow', '3px 3px 0 #000');
@@ -4579,7 +4598,7 @@ function createSettingsContext({ cx, startY, spacingY }) {
 
       const slider = createSlider(min, max, val);
       slider.position(controlX, y + 20); 
-      slider.style('width', (controlWidth * 0.8) + 'px'); // Slightly shorter than full width
+      slider.style('width', (controlWidth * 0.8) + 'px'); 
       slider.style('height', '30px');
       styleInput(slider);
       
@@ -4595,7 +4614,7 @@ function createSettingsContext({ cx, startY, spacingY }) {
 
     addCheckboxRow(name, state) {
       const cb = createCheckbox(' ' + name, state);
-      // For checkboxes, p5 creates a label. We position it at controlX
+      
       cb.position(controlX, y);
       cb.style('color', 'white');
       cb.style('font-size', '45px');
@@ -4605,9 +4624,9 @@ function createSettingsContext({ cx, startY, spacingY }) {
       cb.style('transform', 'scale(2.5)');
       cb.style('transform-origin', 'left top');
       
-      // Since p5 checkboxes include the text, we don't need a separate label on the left usually.
-      // But to keep alignment, if 'name' is long, we might want to split it.
-      // For now, standard p5 behavior:
+      
+      
+      
       activeSettingElements.push(cb);
       y += spacingY;
       return ctx;
@@ -4626,7 +4645,7 @@ function createSettingsContext({ cx, startY, spacingY }) {
       sel.style('font-size', '35px');
       sel.style('background', '#222');
       sel.style('color', 'white');
-      sel.style('border', '4px solid #555'); // Thicker border for visibility
+      sel.style('border', '4px solid #555'); 
       sel.style('border-radius', '8px');
       styleInput(sel);
       
@@ -4643,7 +4662,7 @@ function createSettingsContext({ cx, startY, spacingY }) {
   return ctx;
 }
 
-// --- IN-GAME MENU FUNCTIONS ---
+
 
 function openInGameSettings(payload = {}) {
   closeInGameSettings(); 
@@ -4653,7 +4672,7 @@ function openInGameSettings(payload = {}) {
   if (payload.sfxVol !== undefined) sfxVol = payload.sfxVol;
   if (payload.difficulty) difficultySetting = payload.difficulty;
 
-  // Background
+  
   settingsOverlayDiv = createDiv('');
   settingsOverlayDiv.style('position', 'fixed');
   settingsOverlayDiv.style('top', '0');
@@ -4680,7 +4699,7 @@ function renderSettingsCategories() {
   const startY = cy - (totalMenuH / 2);
   const xPos = cx - (menuWidth / 2);
 
-  // Title
+  
   const title = createDiv("SETTINGS");
   title.style('color', '#ffcc00');
   title.style('font-size', '100px'); 
@@ -4694,13 +4713,13 @@ function renderSettingsCategories() {
 
   let currentY = startY + 160;
 
-  // Category Buttons
+  
   SETTINGS_CATEGORIES.forEach((label) => {
     const btn = createButton(label);
     btn.position(xPos, currentY);
     btn.size(menuWidth, buttonHeight);
     
-    stylePixelButton(btn); // <--- APPLY ASSET HERE
+    stylePixelButton(btn); 
     btn.style('font-size', '55px'); 
     
     btn.mousePressed(() => {
@@ -4711,14 +4730,14 @@ function renderSettingsCategories() {
     currentY += buttonHeight + spacing;
   });
 
-  // Close Button
+  
   const btnClose = createButton("Close");
   btnClose.position(xPos, currentY + 50);
   btnClose.size(menuWidth, buttonHeight);
   
-  stylePixelButton(btnClose); // <--- APPLY ASSET HERE
+  stylePixelButton(btnClose); 
   btnClose.style('font-size', '55px');
-  btnClose.style('color', '#ff5555'); // Red tint text for close
+  btnClose.style('color', '#ff5555'); 
   
   btnClose.mousePressed(() => {
     closeInGameSettings();
@@ -4739,7 +4758,7 @@ function showSubSettingsInGame(label) {
   const cx = windowWidth / 2;
   const cy = windowHeight / 2;
   
-  // Title
+  
   const title = createDiv(label);
   title.style('color', '#ffcc00');
   title.style('font-size', '80px'); 
@@ -4751,7 +4770,7 @@ function showSubSettingsInGame(label) {
   title.style('z-index', '20005');
   activeSettingElements.push(title);
 
-  // Layout Context (Centered)
+  
   const startY = 220; 
   const ctx = createSettingsContext({
     cx: cx,
@@ -4772,12 +4791,12 @@ function showSubSettingsInGame(label) {
     builder(ctx);
   }
 
-  // Back Button
+  
   const backBtn = createButton("← Back");
   backBtn.position(cx - 200, windowHeight - 160);
   backBtn.size(400, 100);
   
-  stylePixelButton(backBtn); // <--- APPLY ASSET HERE
+  stylePixelButton(backBtn); 
   backBtn.style('font-size', '50px'); 
   
   backBtn.mousePressed(() => {
@@ -4798,8 +4817,8 @@ function ensureLoadingOverlayDom() {
     let el = document.getElementById('gd-loading-overlay');
     if (el) return el;
 
-    // --- 1. Font Configuration ---
-    // Ensure this path matches your file structure exactly
+    
+    
     const fontPath = 'assets/3-GUI/font.ttf'; 
 
     const styleId = 'gd-loading-style';
@@ -4846,7 +4865,7 @@ function ensureLoadingOverlayDom() {
       document.head.appendChild(style);
     }
 
-    // --- 2. Create Elements ---
+    
     el = document.createElement('div');
     el.id = 'gd-loading-overlay';
     Object.assign(el.style, {
@@ -4854,7 +4873,7 @@ function ensureLoadingOverlayDom() {
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       zIndex: '2147483647',
       userSelect: 'none',
-      opacity: '1' // Force opacity
+      opacity: '1' 
     });
 
     const msg = document.createElement('div');
@@ -4879,4 +4898,95 @@ function ensureLoadingOverlayDom() {
 
     return el;
   } catch (e) { return null; }
+}
+
+
+
+function spawnCloud() {
+  if (clouds.length >= MAX_CLOUDS) return;
+  if (cloudImages.length === 0) return;
+  
+  
+  const cloudIndex = Math.floor(Math.random() * cloudImages.length);
+  const cloudImg = cloudImages[cloudIndex];
+  if (!cloudImg) return;
+  
+  
+  const yPos = Math.random() * height;
+  
+  
+  const baseSpeed = 0.3 + Math.random() * 1; 
+  
+  
+  const scale = 2.0 + Math.random() * 4.0; 
+  
+  
+  const verticalDrift = (Math.random() - 0.5) * 0.15; 
+  
+  
+  const opacity = 180 + Math.random() * 75; 
+  
+  clouds.push({
+    img: cloudImg,
+    x: -cloudImg.width * scale, 
+    y: yPos,
+    baseY: yPos,
+    speed: baseSpeed,
+    scale: scale,
+    opacity: opacity,
+    verticalDrift: verticalDrift,
+    driftPhase: Math.random() * Math.PI * 2 
+  });
+  
+  console.log('[clouds] spawned cloud at y=' + Math.floor(yPos) + ' speed=' + baseSpeed.toFixed(2));
+}
+
+function updateClouds() {
+  const now = millis();
+  
+  
+  if (now - lastCloudSpawn > CLOUD_SPAWN_INTERVAL) {
+    spawnCloud();
+    lastCloudSpawn = now;
+  }
+  
+  
+  for (let i = clouds.length - 1; i >= 0; i--) {
+    const cloud = clouds[i];
+    
+    
+    cloud.x += cloud.speed;
+    
+    
+    cloud.driftPhase += 0.01;
+    cloud.y = cloud.baseY + Math.sin(cloud.driftPhase) * 20 * cloud.verticalDrift;
+    
+    
+    if (cloud.x > width + cloud.img.width * cloud.scale) {
+      clouds.splice(i, 1);
+      console.log('[clouds] removed off-screen cloud');
+    }
+  }
+}
+
+function drawClouds() {
+  push();
+  
+  
+  clouds.sort((a, b) => a.scale - b.scale);
+  
+  for (const cloud of clouds) {
+    push();
+    tint(255, cloud.opacity);
+    imageMode(CORNER);
+    
+    const w = cloud.img.width * cloud.scale;
+    const h = cloud.img.height * cloud.scale;
+    
+    image(cloud.img, cloud.x, cloud.y, w, h);
+    pop();
+  }
+  
+  noTint();
+  pop();
 }

@@ -5,50 +5,45 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Modern Game Menu</title>
 
-    <!-- p5.js Library -->
     <script src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/addons/p5.sound.min.js"></script>
 
-    <!-- Your Game Menu Script -->
+   
     <script src="2-Menu.js"></script>
-    <!-- NOTE: game.js is NOT included here. It will be loaded inside an iframe when Play is pressed. -->
+  
 
     <style>
-      /* Basic reset and full-screen setup */
+      
       html,
       body {
         margin: 0;
         padding: 0;
-        overflow: hidden; /* Prevents scrollbars from appearing */
+        overflow: hidden; 
         height: 100%;
-        background-color: #000; /* Fallback background color */
+        background-color: #000; 
       }
 
-      /* Ensure the p5 canvas is layered correctly behind the UI */
+      
       canvas {
         display: block;
         position: absolute;
         top: 0;
         left: 0;
-        z-index: -1; /* p5.js canvas goes in the background */
+        z-index: -1; 
       }
 
-      /* Your script will inject more specific styles, but this is a good base */
+      
       button,
       div,
       input,
       select {
-        position: absolute; /* All DOM elements are positioned absolutely by the script */
-        z-index: 10; /* Ensure UI is on top of the canvas */
+        position: absolute; 
+        z-index: 10; 
       }
     </style>
   </head>
 
   <body>
-    <!-- 
-      The body is intentionally left empty.
-      Your p5.js script `menu.js` will create and manage all visible 
-      HTML elements (buttons, sliders, labels, etc.) dynamically.
-    -->
+  
   </body>
 </html>
