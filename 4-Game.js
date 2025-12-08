@@ -2980,13 +2980,10 @@ window.addEventListener('keydown', (ev) => {
 }
 });
 
-function saveMap(name) {
+function buildActiveMapPayload() {
   try {
-    if (typeof mapStates === 'undefined' || !mapStates) {
-      console.warn('[game] no map to save');
-      return false;
-    }
-    const payload = {
+    if (typeof mapStates === 'undefined' || !mapStates) return null;
+    return {
       persistentGameId: persistentGameId,
       timestamp: Date.now(),
       logicalW: logicalW || Math.ceil(W / cellSize),
@@ -2996,6 +2993,52 @@ function saveMap(name) {
       terrainLayer: terrainLayer ? Array.from(terrainLayer) : null,
       treeObjects: Array.isArray(treeObjects) ? treeObjects.slice() : []
     };
+  } catch (err) {
+    console.warn('[game] buildActiveMapPayload failed', err);
+    return null;
+  }
+}
+
+function persistActiveMapToServer(reason = 'unspecified') {
+  try {
+    if (typeof fetch === 'undefined') return false;
+    const payload = buildActiveMapPayload();
+    if (!payload) { console.warn('[game] no payload to persist to server'); return false; }
+
+    let allowServer = false;
+    try {
+      if (typeof window !== 'undefined' && window.location) {
+        const params = new URLSearchParams(window.location.search);
+        allowServer = (window.location.hostname === 'localhost') || (params.get('useServer') === '1');
+      }
+    } catch (e) { allowServer = false; }
+    if (!allowServer) return false;
+
+    return fetch('http://localhost:3000/save-map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(resp => resp.json().catch(() => ({}))).then((data) => {
+      if (data && data.ok) {
+        console.log(`[game] workspace active_map.json saved (${reason})`);
+      } else {
+        console.warn('[game] workspace save-map response not ok', data);
+      }
+      return !!(data && data.ok);
+    }).catch((err) => { console.warn('[game] persistActiveMapToServer failed', err); return false; });
+  } catch (err) {
+    console.warn('[game] persistActiveMapToServer error', err);
+    return false;
+  }
+}
+
+function saveMap(name) {
+  try {
+    const payload = buildActiveMapPayload();
+    if (!payload) {
+      console.warn('[game] no map to save');
+      return false;
+    }
     const key = name || ('saved_map_' + payload.timestamp);
     if (localStorageAvailable) {
       try {
@@ -3012,6 +3055,7 @@ function saveMap(name) {
       try { showToast('Map saved locally', 'info', 2200); } catch (e) {}
     } catch (e) {}
     downloadMapJSON(payload, key + '.json');
+    persistActiveMapToServer('manual-save');
     return true;
   } catch (err) {
     console.error('[game] saveMap error', err);
@@ -3093,20 +3137,11 @@ function showToast(message, type = 'info', duration = 3000) {
 
 function autosaveMap() {
   try {
-    if (typeof mapStates === 'undefined' || !mapStates) {
+    const payload = buildActiveMapPayload();
+    if (!payload) {
       console.warn('[game] no map to autosave');
       return false;
     }
-    const payload = {
-      persistentGameId: persistentGameId,
-      timestamp: Date.now(),
-      logicalW: logicalW || Math.ceil(W / cellSize),
-      logicalH: logicalH || Math.ceil(H / cellSize),
-      cellSize: cellSize,
-      mapStates: Array.from(mapStates),
-      terrainLayer: terrainLayer ? Array.from(terrainLayer) : null,
-      treeObjects: Array.isArray(treeObjects) ? treeObjects.slice() : []
-    };
     const key = 'autosave_map';
     if (localStorageAvailable) {
       try {
@@ -3945,6 +3980,7 @@ function generateMap_Part2() {
   
   redraw();
   autosaveMap();
+  persistActiveMapToServer('generated');
 }
 
 
