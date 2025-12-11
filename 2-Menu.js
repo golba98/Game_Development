@@ -1050,6 +1050,7 @@ function draw() {
   if (inGame) return;
 
   updateBackgroundVideo();
+  
   videoBuffer.clear();
   videoBuffer.image(bgVideo, 0, 0, width, height);
   imageMode(CORNER);

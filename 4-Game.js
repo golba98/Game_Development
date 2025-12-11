@@ -281,7 +281,7 @@ function preload() {
 }
 
 function setup() {
-  console.log('[game] setup()');
+  console.log('[game] setup() starting...');
   W = windowWidth;
   H = windowHeight;
   virtualW = W;
@@ -289,12 +289,14 @@ function setup() {
   createCanvas(W, H);
   noSmooth();
   try { injectCustomStyles(); } catch (e) { console.warn('[game] injectCustomStyles call failed', e); }
+  
   const urlParams = new URLSearchParams(window.location.search);
   masterVol = parseFloat(urlParams.get('masterVol')) || 0.8;
   musicVol = parseFloat(urlParams.get('musicVol')) || 0.6;
   sfxVol = parseFloat(urlParams.get('sfxVol')) || 0.7;
   const urlDifficulty = urlParams.get('difficulty');
   setDifficulty(urlDifficulty, { regenerate: false, reason: 'url-param' });
+  
   const urlRiverClear = (urlParams.get('riverClear') || '').toLowerCase();
   if (urlRiverClear === RIVER_CLEAR_MODES.ALWAYS || urlRiverClear === 'true') {
     riverClearMode = RIVER_CLEAR_MODES.ALWAYS;
@@ -307,95 +309,79 @@ function setup() {
   let loadedFromStorage = false;
   let loadedFromServer = false;
   let serverFetchPromise = Promise.resolve(false);
-  try {
-    const tryServer = (typeof window !== 'undefined' && window.location && (window.location.hostname === 'localhost')) || (new URLSearchParams(window.location.search).get('useServer') === '1');
-    if (!isNewGame && tryServer) {
-      try {
-        serverFetchPromise = tryFetchActiveMap();
-      } catch (e) { console.warn('[game] tryFetchActiveMap failed', e); serverFetchPromise = Promise.resolve(false); }
-    } else {
-      if (!isNewGame) console.log('[game] skipping workspace server fetch (not on localhost)');
-      else console.log('[game] new game detected, will generate a fresh map.');
-    }
-  } catch (e) { console.warn('[game] loadMapFromStorage/Server init failed', e); serverFetchPromise = Promise.resolve(false); }
 
-  
+
+  try {
+    const loc = window.location;
+    const isLocal = loc.hostname === 'localhost' || loc.hostname === '127.0.0.1';
+    const forceServer = urlParams.get('useServer') === '1';
+    
+    if (isLocal || forceServer) {
+      console.log('[game] Attempting to fetch map from server...');
+      serverFetchPromise = tryFetchActiveMap();
+    } else {
+       console.log('[game] Not on localhost and useServer!=1. Skipping server fetch.');
+    }
+  } catch (e) { 
+      console.warn('[game] server check init failed', e); 
+  }
+
   AssetTracker.waitReady(3500).then((ready) => {
     if (ready) {
       console.log('[game] assets loaded. Pre-warming clouds...');
-      
-      for(let i = 0; i < 15; i++) {
-        spawnCloud(Math.random() * width); 
-      }
+      for(let i = 0; i < 15; i++) spawnCloud(Math.random() * width); 
     }
 
     const runAutoGenerator = () => {
-        console.log('[game] No saved map found. Auto-generating new map...');
+        console.log('[game] Generator triggered. Creating NEW map...');
         generateMap(); 
     };
 
     serverFetchPromise.then((serverLoaded) => {
-     
+    
       if (serverLoaded) {
-         console.log('[game] Loaded active_map.json from server.');
+         if (persistentGameId && persistentGameId.startsWith('server_default_')) {
+             console.log('[game] Server map is the DEFAULT PLACEHOLDER. Generating fresh map to overwrite it...');
+             runAutoGenerator();
+         } else {
+             console.log('[game] Valid map loaded from server (ID: ' + persistentGameId + '). Using it.');
+            
+         }
          return; 
       }
 
       
-      if (!isNewGame && loadMapFromStorage()) {
-         console.log('[game] Loaded autosave from LocalStorage.');
+      console.log('[game] Server load failed or returned false. Checking LocalStorage...');
+      if (loadMapFromStorage()) {
+         console.log('[game] Loaded map from LocalStorage.');
          return;
       }
 
+    
+      console.log('[game] No map from server or storage. Generating new map.');
       runAutoGenerator();
 
-    }).catch(() => {
+    }).catch((err) => {
+       console.warn('[game] serverFetchPromise chain error:', err);
        runAutoGenerator();
     });
 
     
-    const ensureGameStarts = () => {
-        console.log('[game] No saved map found (or load failed). Auto-generating new map...');
-        generateMap();
-    };
-
     try {
-      serverFetchPromise.then((serverLoaded) => {
-        try {
-          loadedFromServer = !!serverLoaded;
+      serverFetchPromise.finally(() => {
           
-          
-          if (!loadedFromServer) {
-            loadedFromStorage = !!loadMapFromStorage();
-          }
-
-          
-          if (!loadedFromStorage && !loadedFromServer) {
-             ensureGameStarts();
-          } else {
-            
-            try { createMapImage(); redraw(); } catch (e) { console.warn('[game] failed to recreate mapImage', e); }
-          }
-        } catch (e) { 
-          console.warn('[game] error in map load logic, falling back to auto-gen', e);
-          ensureGameStarts();
-        }
-      }).catch((e) => {
-        
-        console.warn('[game] serverFetchPromise failed, checking storage...', e);
-        if (!loadMapFromStorage()) {
-           ensureGameStarts();
-        } else {
-           try { createMapImage(); redraw(); } catch (err) {}
-        }
+          setTimeout(() => {
+             if (typeof mapLoadComplete === 'undefined' || !mapLoadComplete) {
+                 if (genPhase === 0) {
+                    console.log('[game] Safety net: Map not loaded after wait. Generating...');
+                    generateMap();
+                 }
+             }
+          }, 1000);
       });
-    } catch (e) {
-      console.warn('[game] fatal error in setup promise, forcing auto-gen', e);
-      ensureGameStarts();
-    }
+    } catch(e) {}
     
     if (!ready) {
-      
       try {
         AssetTracker.onReady(() => {
           try {
@@ -439,18 +425,26 @@ function _confirmResize() {
   virtualH = H;
 
   resizeCanvas(W, H);
+
+  if (typeof mapStates === 'undefined' || !mapStates || mapStates.length === 0) {
+      console.log('[game] windowResized: Map not ready yet. Skipping resize logic (letting setup handle init).');
+      return;
+  }
+
   const mapW = (logicalW || 0) * cellSize;
   const mapH = (logicalH || 0) * cellSize;
+  
   const needsRegen = mapW < virtualW || mapH < virtualH;
-  if (!needsRegen && typeof mapStates !== 'undefined' && mapStates && mapStates.length > 0 && logicalW && logicalH) {
-    
+
+  if (!needsRegen) {
+ 
+    console.log('[game] windowResized: preserving existing map');
+    try { createMapImage(); } catch (e) { console.warn('createMapImage failed', e); }
     redraw();
-    console.log('[game] windowResized: shrinking, redrawing with existing mapImage');
   } else {
-    if (needsRegen) {
-      console.log('[game] windowResized: map too small for new viewport, regenerating');
-      try { showToast('Viewport expanded — regenerating map', 'info', 2000); } catch (e) {}
-    }
+   
+    console.log('[game] windowResized: map too small for new viewport, regenerating');
+    try { showToast('Viewport expanded — regenerating map', 'info', 2000); } catch (e) {}
     generateMap();
   }
 }
@@ -710,26 +704,27 @@ function computeClearArea() {
 }
 
 function applyNoiseTerrain(centerX, centerY, baseClearWidth, baseClearHeight) {
-    const lowFreqScale = 0.07;
-    const highFreqScale = 0.2;
-    const pathNoiseScale = 0.15;
-    const wobbleFactor = baseClearWidth * 0.12;
+    const noiseScale = 0.12;
+    
+    const radiusX = logicalW / 2;
+    const radiusY = logicalH / 2;
 
     for (let y = 0; y < logicalH; y++) {
       for (let x = 0; x < logicalW; x++) {
         const idx = y * logicalW + x;
-        const lowFreqNoise = noise(x * lowFreqScale, y * lowFreqScale);
-        const highFreqNoise = noise(x * highFreqScale, y * highFreqScale);
-        const combinedNoise = (lowFreqNoise * 0.7) + (highFreqNoise * 0.3);
-        const wobble = (combinedNoise - 0.5) * wobbleFactor * 2;
-        const distFromCenterX = Math.abs(x - centerX);
-        const distFromCenterY = Math.abs(y - centerY);
 
-        if (distFromCenterX < baseClearWidth / 2 + wobble && distFromCenterY < baseClearHeight / 2 + wobble) {
-          mapStates[idx] = TILE_TYPES.GRASS;
+   
+        const dx = (x - centerX) / radiusX;
+        const dy = (y - centerY) / radiusY;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        const n = noise(x * noiseScale, y * noiseScale);
+        const wobble = (n - 0.5) * 0.3; 
+
+        if (dist + wobble > 0.80) {
+            mapStates[idx] = TILE_TYPES.FOREST;
         } else {
-          const pathNoise = noise(x * pathNoiseScale, y * pathNoiseScale);
-          mapStates[idx] = pathNoise < 0.4 ? TILE_TYPES.GRASS : TILE_TYPES.FOREST;
+            mapStates[idx] = TILE_TYPES.GRASS;
         }
       }
     }
@@ -1206,15 +1201,36 @@ function autosaveMap() {
 function tryFetchActiveMap() {
   try {
     if (typeof fetch === 'undefined') return Promise.resolve(false);
-    return fetch('http://localhost:3000/maps/active_map.json', { cache: 'no-cache' })
+
+    // FIX: Use relative path if we are on the server port (3000) to avoid CORS/origin mismatches.
+    // Otherwise, default to standard localhost address.
+    let url = 'http://localhost:3000/maps/active_map.json';
+    if (typeof window !== 'undefined' && window.location && window.location.port === '3000') {
+        url = '/maps/active_map.json';
+    }
+
+    return fetch(url, { cache: 'no-cache' })
       .then(resp => {
-        if (!resp.ok) return false;
+        if (!resp.ok) {
+            console.warn('[game] tryFetchActiveMap: Server returned status', resp.status);
+            return false;
+        }
         return resp.json().then(obj => {
-          try { applyLoadedMap(obj); } catch (e) { console.warn('[game] applyLoadedMap failed', e); }
-          try { showToast('Loaded workspace active_map.json', 'info', 1800); } catch (e) {}
-          return true;
-        }).catch(err => { console.warn('[game] failed to parse active_map.json from server', err); return false; });
-      }).catch(err => { return false; });
+          try { 
+              // applyLoadedMap updates the global persistentGameId
+              const success = applyLoadedMap(obj); 
+              if (success) {
+                  console.log('[game] tryFetchActiveMap: Successfully applied map from server.');
+                  return true;
+              }
+          } catch (e) { console.warn('[game] applyLoadedMap failed', e); }
+          return false;
+        }).catch(err => { console.warn('[game] failed to parse active_map.json', err); return false; });
+      }).catch(err => { 
+          // This usually happens if the server isn't running or port is blocked
+          console.warn('[game] tryFetchActiveMap: Fetch failed', err); 
+          return false; 
+      });
   } catch (e) { return Promise.resolve(false); }
 }
 
@@ -5268,3 +5284,4 @@ function drawClouds() {
   noTint();
   pop();
 }
+
