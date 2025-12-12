@@ -57,6 +57,31 @@ let bgPlayMusic = null;
 let clickSFX = null;
 let menuMusicStopped = false;
 
+let _lastMenuZoomLog = null;
+function installMenuZoomLogger() {
+  const logZoom = () => {
+    try {
+      const vv = window.visualViewport;
+      const scale = vv && vv.scale ? vv.scale : (window.outerWidth / window.innerWidth) || 1;
+      const dpr = window.devicePixelRatio || 1;
+      const ratio = (window.outerWidth && window.innerWidth) ? window.outerWidth / window.innerWidth : 1;
+      const version = [scale, dpr, ratio].map(v => Number(v.toFixed(3))).join(',');
+      if (!_lastMenuZoomLog || Math.abs(scale - _lastMenuZoomLog) > 0.01) {
+        console.log('[menu-zoom] scale', scale, 'dpr', dpr, 'outer/inner ratio', ratio, 'headers zoom', document.documentElement.style.zoom, document.body.style.zoom, 'visualViewport', vv ? vv.scale : 'n/a');
+        _lastMenuZoomLog = scale;
+      }
+    } catch (e) {
+      console.warn('[menu-zoom] logger failed', e);
+    }
+  };
+  if (window.visualViewport && typeof window.visualViewport.addEventListener === 'function') {
+    window.visualViewport.addEventListener('resize', logZoom);
+  }
+  window.addEventListener('resize', logZoom);
+  window.addEventListener('zoom', logZoom);
+  logZoom();
+}
+
 
 
 function stopMenuMusicImmediate() {
@@ -168,6 +193,7 @@ function setup() {
   window.addEventListener('keydown', resumeOnFirstGesture, { once: true });
   calculateLayout();
   createMainMenu();
+  installMenuZoomLogger();
 
   try { getAudioContext && getAudioContext().suspend && getAudioContext().suspend(); } catch (e) {}
 }

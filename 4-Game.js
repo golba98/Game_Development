@@ -11,6 +11,7 @@ let lastCloudSpawn = 0;
 
 let showLoadingOverlay = true;
 let overlayMessage = 'Loading map...';
+let lastLoadingScale = null;
 
 let inGameMenuVisible = false;
 let inGameMenuButtonRects = []; 
@@ -24,10 +25,34 @@ let difficultySetting = 'normal';
 let settingsOverlayDiv = null; 
 let settingsOverlayPanel = null;
 
+const MENU_BUTTON_TEXTURE_PATH = 'assets/3-GUI/Button BG.png';
+const SETTINGS_PANEL_TEXTURE_PATH = 'assets/1-Background/1-Menu/Settings_Background.png';
+
 const SETTINGS_CATEGORIES = Object.freeze(["Audio", "Gameplay", "Controls", "Accessibility", "Language"]);
 const DEFAULT_SETTINGS = Object.freeze({
   masterVol: 0.8, musicVol: 0.6, sfxVol: 0.7, textSize: 75, difficulty: 'normal'
 });
+
+const ALLOW_ACTIVE_MAP_FETCH = false;
+
+const VERBOSE_LOGGING_ENABLED = false;
+function verboseLog(...args) {
+  if (!VERBOSE_LOGGING_ENABLED) return;
+  if (typeof console !== 'undefined' && console.log) {
+    console.log(...args);
+  }
+}
+
+function enforceCanvasSharpness(ctx) {
+  if (!ctx || typeof ctx !== 'object') return;
+  const smoothingProps = ['imageSmoothingEnabled', 'mozImageSmoothingEnabled', 'webkitImageSmoothingEnabled', 'msImageSmoothingEnabled', 'oImageSmoothingEnabled'];
+  for (const prop of smoothingProps) {
+    try {
+      ctx[prop] = false;
+    } catch (e) {}
+  }
+  try { ctx.imageSmoothingQuality = 'low'; } catch (e) {}
+}
 
 const CONTROL_VERTICAL_NUDGE = 8;
 const SELECT_VERTICAL_NUDGE = 15;
@@ -61,7 +86,7 @@ let lastRunTime = 0;
 function preload() {
   try { ensureLoadingOverlayDom(); overlayMessage = 'Loading assets...'; updateLoadingOverlayDom(); } catch (e) {}
   try {
-    trackLoadImage('spritesheet:' + SPRITESHEET_PATH, SPRITESHEET_PATH, (img) => { spritesheet = img; console.log('[game] loaded spritesheet', SPRITESHEET_PATH, img.width, 'x', img.height); }, (err) => { spritesheet = null; console.warn('[game] failed to load spritesheet', SPRITESHEET_PATH, err); });
+    trackLoadImage('spritesheet:' + SPRITESHEET_PATH, SPRITESHEET_PATH, (img) => { spritesheet = img; verboseLog('[game] loaded spritesheet', SPRITESHEET_PATH, img.width, 'x', img.height); }, (err) => { spritesheet = null; console.warn('[game] failed to load spritesheet', SPRITESHEET_PATH, err); });
   } catch (e) {}
   
   HILL_DIRECTIONS.forEach(dir => {
@@ -84,7 +109,7 @@ function preload() {
             try { img.updatePixels(); } catch (e) {}
           }
           
-          try { const fixed = cleanImageBrown(img); if (fixed) console.log('[preload] cleaned brown pixels from hill asset', dir, 'fixed=', fixed); } catch (e) {}
+          try { const fixed = cleanImageBrown(img); if (fixed) verboseLog('[preload] cleaned brown pixels from hill asset', dir, 'fixed=', fixed); } catch (e) {}
         } catch (e) {}
         HILL_ASSETS[dir] = img;
     });
@@ -92,15 +117,15 @@ function preload() {
 
   
   try {
-    trackLoadImage('button_bg', 'assets/3-GUI/Button BG.png', (img) => { BUTTON_BG = img; console.log('[game] loaded BUTTON_BG', img && img.width, 'x', img && img.height); }, (err) => { console.warn('[game] failed to load BUTTON_BG', err); BUTTON_BG = null; });
+    trackLoadImage('button_bg', 'assets/3-GUI/Button BG.png', (img) => { BUTTON_BG = img; verboseLog('[game] loaded BUTTON_BG', img && img.width, 'x', img && img.height); }, (err) => { console.warn('[game] failed to load BUTTON_BG', err); BUTTON_BG = null; });
   } catch (e) {}
 
   try {
-    trackLoadImage('settings_overlay', 'assets/1-Background/1-Menu/Settings_Background.png', (img) => { SETTINGS_OVERLAY = img; console.log('[game] loaded SETTINGS_OVERLAY', img && img.width, 'x', img && img.height); }, (err) => { console.warn('[game] failed to load SETTINGS_OVERLAY', err); SETTINGS_OVERLAY = null; });
+    trackLoadImage('settings_overlay', 'assets/1-Background/1-Menu/Settings_Background.png', (img) => { SETTINGS_OVERLAY = img; verboseLog('[game] loaded SETTINGS_OVERLAY', img && img.width, 'x', img && img.height); }, (err) => { console.warn('[game] failed to load SETTINGS_OVERLAY', err); SETTINGS_OVERLAY = null; });
   } catch (e) {}
 
   try {
-    trackLoadImage('esc_menu_background', 'assets/1-Background/1-Menu/Background.png', (img) => { ESC_MENU_BACKGROUND = img; console.log('[game] loaded ESC_MENU_BACKGROUND'); }, (err) => { console.warn('[game] failed to load ESC_MENU_BACKGROUND', err); ESC_MENU_BACKGROUND = null; });
+    trackLoadImage('esc_menu_background', 'assets/1-Background/1-Menu/Background.png', (img) => { ESC_MENU_BACKGROUND = img; verboseLog('[game] loaded ESC_MENU_BACKGROUND'); }, (err) => { console.warn('[game] failed to load ESC_MENU_BACKGROUND', err); ESC_MENU_BACKGROUND = null; });
   } catch (e) {}
 
   TILE_IMAGES['forest'] = null;
@@ -140,20 +165,20 @@ function preload() {
   if (TREE_OVERLAY_PATH) {
     try {
       trackLoadImage('treeoverlay:' + TREE_OVERLAY_PATH, TREE_OVERLAY_PATH,
-        (img) => { TREE_OVERLAY_IMG = img; console.log('[game] loaded tree overlay', TREE_OVERLAY_PATH, img.width, 'x', img.height); },
+        (img) => { TREE_OVERLAY_IMG = img; verboseLog('[game] loaded tree overlay', TREE_OVERLAY_PATH, img.width, 'x', img.height); },
         (err) => { console.warn('[game] failed to load tree overlay', TREE_OVERLAY_PATH, err); TREE_OVERLAY_IMG = null; }
       );
     } catch (e) {}
   }
-  try { trackLoadImage('idle_sheet:' + IDLE_SHEET_PATH, IDLE_SHEET_PATH, (img) => { console.log('[game] loaded idle spritesheet', IDLE_SHEET_PATH, img.width, 'x', img.height); spritesheetIdle = img; }, (err) => { console.warn('[game] failed to load idle spritesheet', err); spritesheetIdle = null; }); } catch (e) {}
-  try { trackLoadImage('walk_sheet_combined:' + WALK_SHEET_COMBINED, WALK_SHEET_COMBINED, (img) => { console.log('[game] loaded walk combined sheet', WALK_SHEET_COMBINED, img.width, 'x', img.height); spritesheetWalk = img; }, (err) => { spritesheetWalk = null; }); } catch (e) {}
-  try { trackLoadImage('run_sheet_combined:' + RUN_SHEET_COMBINED, RUN_SHEET_COMBINED, (img) => { console.log('[game] loaded run combined sheet', RUN_SHEET_COMBINED, img.width, 'x', img.height); spritesheetRun = img; }, (err) => { spritesheetRun = null; }); } catch (e) {}
+  try { trackLoadImage('idle_sheet:' + IDLE_SHEET_PATH, IDLE_SHEET_PATH, (img) => { verboseLog('[game] loaded idle spritesheet', IDLE_SHEET_PATH, img.width, 'x', img.height); spritesheetIdle = img; }, (err) => { console.warn('[game] failed to load idle spritesheet', err); spritesheetIdle = null; }); } catch (e) {}
+  try { trackLoadImage('walk_sheet_combined:' + WALK_SHEET_COMBINED, WALK_SHEET_COMBINED, (img) => { verboseLog('[game] loaded walk combined sheet', WALK_SHEET_COMBINED, img.width, 'x', img.height); spritesheetWalk = img; }, (err) => { spritesheetWalk = null; }); } catch (e) {}
+  try { trackLoadImage('run_sheet_combined:' + RUN_SHEET_COMBINED, RUN_SHEET_COMBINED, (img) => { verboseLog('[game] loaded run combined sheet', RUN_SHEET_COMBINED, img.width, 'x', img.height); spritesheetRun = img; }, (err) => { spritesheetRun = null; }); } catch (e) {}
   
   
   for (let i = 1; i <= 5; i++) {
     try {
       trackLoadImage(`cloud_${i}`, `assets/5-Objects/cloud_${i}.png`, 
-        (img) => { cloudImages[i - 1] = img; console.log(`[game] loaded cloud_${i}`); },
+        (img) => { cloudImages[i - 1] = img; verboseLog(`[game] loaded cloud_${i}`); },
         (err) => { console.warn(`[game] failed to load cloud_${i}`, err); }
       );
     } catch (e) {}
@@ -171,7 +196,7 @@ function preload() {
         if (p) {
           idleFrames[dir][idx] = null;
           loadImage(p,
-            (img) => { idleFrames[dir][idx] = img; console.log('[game] loaded frame', dir, idx, p, img.width, 'x', img.height); },
+            (img) => { idleFrames[dir][idx] = img; verboseLog('[game] loaded frame', dir, idx, p, img.width, 'x', img.height); },
             (err) => { console.warn('[game] failed to load frame', dir, idx, p, err); idleFrames[dir][idx] = null; }
           );
         } else {
@@ -182,7 +207,7 @@ function preload() {
       for (let i = 0; i < IDLE_SHEET_COLS; i++) {
         const p = IDLE_FRAME_TEMPLATE.replace('{DIR}', dir).replace('{COL}', String(i));
         idleFrames[dir][i] = loadImage(p,
-          () => { console.log('[game] loaded frame', dir, i, p); },
+          () => { verboseLog('[game] loaded frame', dir, i, p); },
           (err) => { console.warn('[game] failed to load frame', dir, i, p, err); idleFrames[dir][i] = null; }
         );
       }
@@ -193,7 +218,7 @@ function preload() {
       idleSheets[dir] = null;
       try {
         trackLoadImage('idle_sheet_dir:' + sheetPath, sheetPath,
-          (img) => { idleSheets[dir] = img; console.log('[game] loaded direction sheet', dir, sheetPath, img.width, 'x', img.height); },
+          (img) => { idleSheets[dir] = img; verboseLog('[game] loaded direction sheet', dir, sheetPath, img.width, 'x', img.height); },
           (err) => { console.warn('[game] failed to load direction sheet', dir, sheetPath, err); idleSheets[dir] = null; }
         );
       } catch (e) { idleSheets[dir] = null; }
@@ -209,7 +234,7 @@ function preload() {
         if (p) {
           walkFrames[dir][idx] = null;
           loadImage(p,
-            (img) => { walkFrames[dir][idx] = img; console.log('[game] loaded walk frame', dir, idx, p, img.width, 'x', img.height); },
+            (img) => { walkFrames[dir][idx] = img; verboseLog('[game] loaded walk frame', dir, idx, p, img.width, 'x', img.height); },
             (err) => { console.warn('[game] failed to load walk frame', dir, idx, p, err); walkFrames[dir][idx] = null; }
           );
         } else {
@@ -220,7 +245,7 @@ function preload() {
       for (let i = 0; i < IDLE_SHEET_COLS; i++) {
         const p = WALK_FRAME_TEMPLATE.replace('{DIR}', dir).replace('{COL}', String(i));
         walkFrames[dir][i] = loadImage(p,
-          () => { console.log('[game] loaded walk frame', dir, i, p); },
+          () => { verboseLog('[game] loaded walk frame', dir, i, p); },
           (err) => { console.warn('[game] failed to load walk frame', dir, i, p, err); walkFrames[dir][i] = null; }
         );
       }
@@ -234,7 +259,7 @@ function preload() {
         if (p) {
           runFrames[dir][idx] = null;
           loadImage(p,
-            (img) => { runFrames[dir][idx] = img; console.log('[game] loaded run frame', dir, idx, p, img.width, 'x', img.height); },
+            (img) => { runFrames[dir][idx] = img; verboseLog('[game] loaded run frame', dir, idx, p, img.width, 'x', img.height); },
             (err) => { console.warn('[game] failed to load run frame', dir, idx, p, err); runFrames[dir][idx] = null; }
           );
         } else {
@@ -245,7 +270,7 @@ function preload() {
       for (let i = 0; i < IDLE_SHEET_COLS; i++) {
         const p = RUN_FRAME_TEMPLATE.replace('{DIR}', dir).replace('{COL}', String(i));
         runFrames[dir][i] = loadImage(p,
-          () => { console.log('[game] loaded run frame', dir, i, p); },
+          () => { verboseLog('[game] loaded run frame', dir, i, p); },
           (err) => { console.warn('[game] failed to load run frame', dir, i, p, err); runFrames[dir][i] = null; }
         );
       }
@@ -267,14 +292,14 @@ function preload() {
     walkSheets[dir] = null;
     if (wp) {
       try {
-        trackLoadImage('walk_sheet_dir:' + wp, wp, (img) => { walkSheets[dir] = img; console.log('[game] loaded walk sheet', dir, wp, img.width, 'x', img.height); }, (err) => { console.warn('[game] failed to load walk sheet', dir, wp, err); walkSheets[dir] = null; });
+        trackLoadImage('walk_sheet_dir:' + wp, wp, (img) => { walkSheets[dir] = img; verboseLog('[game] loaded walk sheet', dir, wp, img.width, 'x', img.height); }, (err) => { console.warn('[game] failed to load walk sheet', dir, wp, err); walkSheets[dir] = null; });
       } catch (e) { walkSheets[dir] = null; }
     }
     const rp = RUN_SHEET_PATHS[dir];
     runSheets[dir] = null;
     if (rp) {
       try {
-        trackLoadImage('run_sheet_dir:' + rp, rp, (img) => { runSheets[dir] = img; console.log('[game] loaded run sheet', dir, rp, img.width, 'x', img.height); }, (err) => { console.warn('[game] failed to load run sheet', dir, rp, err); runSheets[dir] = null; });
+        trackLoadImage('run_sheet_dir:' + rp, rp, (img) => { runSheets[dir] = img; verboseLog('[game] loaded run sheet', dir, rp, img.width, 'x', img.height); }, (err) => { console.warn('[game] failed to load run sheet', dir, rp, err); runSheets[dir] = null; });
       } catch (e) { runSheets[dir] = null; }
     }
   });
@@ -284,7 +309,7 @@ function preload() {
     jumpSheets[dir] = null;
     if (jp) {
       try {
-        trackLoadImage('jump_sheet_dir:' + jp, jp, (img) => { jumpSheets[dir] = img; console.log('[game] loaded jump sheet', dir, jp, img.width, 'x', img.height); }, (err) => { console.warn('[game] failed to load jump sheet', dir, jp, err); jumpSheets[dir] = null; });
+        trackLoadImage('jump_sheet_dir:' + jp, jp, (img) => { jumpSheets[dir] = img; verboseLog('[game] loaded jump sheet', dir, jp, img.width, 'x', img.height); }, (err) => { console.warn('[game] failed to load jump sheet', dir, jp, err); jumpSheets[dir] = null; });
       } catch (e) { jumpSheets[dir] = null; }
     }
   });
@@ -293,7 +318,7 @@ function preload() {
 }
 
 function setup() {
-  console.log("!!! NEW VERSION LOADED !!! - FIXED_VIRTUAL_HEIGHT = " + FIXED_VIRTUAL_HEIGHT);
+  verboseLog("!!! NEW VERSION LOADED !!! - FIXED_VIRTUAL_HEIGHT = " + FIXED_VIRTUAL_HEIGHT);
   
   W = windowWidth;
   H = windowHeight;
@@ -302,9 +327,21 @@ function setup() {
   // This makes the game crisp immediately.
   let canvasStyle = document.createElement('style');
   canvasStyle.innerHTML = `
-    canvas { 
-      image-rendering: pixelated !important; 
-      image-rendering: crisp-edges !important; 
+    canvas {
+      image-rendering: crisp-edges !important;
+      -ms-interpolation-mode: nearest-neighbor !important;
+    }
+    @supports (image-rendering: -moz-crisp-edges) {
+      canvas { image-rendering: -moz-crisp-edges !important; }
+    }
+    @supports (image-rendering: -o-pixelated) {
+      canvas { image-rendering: -o-pixelated !important; }
+    }
+    @supports (image-rendering: -webkit-pixelated) {
+      canvas { image-rendering: -webkit-pixelated !important; }
+    }
+    @supports (image-rendering: pixelated) {
+      canvas { image-rendering: pixelated !important; }
     }
     #gd-loading-content {
       transform-origin: center center;
@@ -325,8 +362,12 @@ function setup() {
   
   // 4. Backup Sharpness
   try {
-    if (cnv && cnv.elt) cnv.elt.style.imageRendering = "pixelated"; 
-    if (drawingContext) drawingContext.imageSmoothingEnabled = false;
+    enforceCanvasSharpness(drawingContext);
+    if (cnv && cnv.elt) {
+      const cnvCtx = typeof cnv.elt.getContext === 'function' ? cnv.elt.getContext('2d') : null;
+      enforceCanvasSharpness(cnvCtx);
+      cnv.elt.style.imageRendering = "pixelated"; 
+    }
     noSmooth(); 
   } catch (e) {}
 
@@ -363,7 +404,7 @@ function setup() {
 
   AssetTracker.waitReady(3500).then((ready) => {
     if (ready) {
-      console.log('[game] assets loaded. Pre-warming clouds...');
+      verboseLog('[game] assets loaded. Pre-warming clouds...');
       
       // FORCE CLOUDS EVERYWHERE
       // We use the virtual world width so clouds don't bunch on the left.
@@ -441,19 +482,18 @@ function _confirmResize() {
   
   // 3. RE-APPLY CLARITY (Important!)
   try {
-    if (drawingContext) {
-      drawingContext.imageSmoothingEnabled = false;
-    }
-    let cnv = select('canvas');
-    if (cnv) {
-        cnv.elt.style.imageRendering = "pixelated";
+    enforceCanvasSharpness(drawingContext);
+    const cnv = select('canvas');
+    if (cnv && cnv.elt) {
+      const cnvCtx = typeof cnv.elt.getContext === 'function' ? cnv.elt.getContext('2d') : null;
+      enforceCanvasSharpness(cnvCtx);
+      cnv.elt.style.imageRendering = "pixelated";
     }
   } catch (e) {}
 
-  if (typeof mapStates === 'undefined' || !mapStates || mapStates.length === 0) {
-      console.log('[game] windowResized: Map not ready yet.');
+    if (typeof mapStates === 'undefined' || !mapStates || mapStates.length === 0) {
       return;
-  }
+    }
 
   const mapW = (logicalW || 0) * cellSize;
   const mapH = (logicalH || 0) * cellSize;
@@ -461,11 +501,9 @@ function _confirmResize() {
   const needsRegen = mapW < virtualW || mapH < virtualH;
 
   if (!needsRegen) {
-    console.log('[game] windowResized: preserving existing map');
     try { createMapImage(); } catch (e) { console.warn('createMapImage failed', e); }
     redraw();
   } else {
-    console.log('[game] windowResized: map too small, regenerating');
     try { showToast('Viewport expanded — regenerating map', 'info', 2000); } catch (e) {}
     generateMap();
   }
@@ -573,7 +611,7 @@ function keyPressed() {
 
   if (key === 'p' || key === 'P') {
     try {
-      console.log('[game] key P pressed — generating new map (previous autosave will be archived)');
+      verboseLog('[game] key P pressed — generating new map (previous autosave will be archived)');
       nextGenerateIsManual = true;
       generateMap();
     } catch (e) {
@@ -585,7 +623,7 @@ function keyPressed() {
   
   if (key === 'o' || key === 'O') {
     try {
-      console.log('[game] debug key O pressed — forcing inGameMenuVisible = true');
+      verboseLog('[game] debug key O pressed — forcing inGameMenuVisible = true');
       inGameMenuVisible = true;
     } catch (e) { console.warn('[game] debug O failed', e); }
     return;
@@ -638,7 +676,7 @@ function generateMap() {
 }
 
 function generateMap_Part1() {
-  console.log('[game] Generating Part 1 (Base)...');
+  verboseLog('[game] Generating Part 1 (Base)...');
   
   if (!W || !H) return;
   logicalW = Math.ceil((virtualW || W) / cellSize);
@@ -656,7 +694,7 @@ function generateMap_Part1() {
 }
 
 function generateMap_Part2() {
-  console.log('[game] Generating Part 2 (Roughness)...');
+  verboseLog('[game] Generating Part 2 (Roughness)...');
   
   const { clearArea } = genTempData;
   
@@ -1136,7 +1174,7 @@ function saveMap(name) {
     if (localStorageAvailable) {
       try {
         localStorage.setItem(key, JSON.stringify(payload));
-        console.log('[game] map saved to localStorage as', key);
+        verboseLog('[game] map saved to localStorage as', key);
       } catch (err) {
         console.warn('[game] failed to save to localStorage', err);
         localStorageAvailable = false;
@@ -1168,7 +1206,7 @@ function downloadMapJSON(obj, filename) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    console.log('[game] map download started', a.download);
+    verboseLog('[game] map download started', a.download);
   } catch (err) {
     console.error('[game] downloadMapJSON error', err);
   }
@@ -1186,7 +1224,7 @@ function autosaveMap() {
       try {
         if (typeof localStorage === 'undefined') throw new Error('localStorage undefined');
         localStorage.setItem(key, JSON.stringify(payload));
-        console.log('[game] map autosaved to localStorage as', key);
+        verboseLog('[game] map autosaved to localStorage as', key);
         try { showToast('Map autosaved', 'info', 2200); } catch (e) {}
     
       } catch (err) {
@@ -1211,15 +1249,30 @@ function autosaveMap() {
   }
 }
 
+function shouldAttemptMapFetch() {
+  if (typeof window === 'undefined' || !window.location) return false;
+  if (ALLOW_ACTIVE_MAP_FETCH) return true;
+  if (window.location.protocol === 'file:') return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('activeMapFetch') === '1') return true;
+  } catch (e) {}
+  return false;
+}
+
 function tryFetchActiveMap() {
   try {
     if (typeof fetch === 'undefined') return Promise.resolve(false);
+
+    if (!shouldAttemptMapFetch()) {
+      return Promise.resolve(false);
+    }
 
     // FIX: Use relative path if we are on the server port (3000) to avoid CORS/origin mismatches.
     // Otherwise, default to standard localhost address.
     let url = 'http://localhost:3000/maps/active_map.json';
     if (typeof window !== 'undefined' && window.location && window.location.port === '3000') {
-        url = '/maps/active_map.json';
+      url = '/maps/active_map.json';
     }
 
     return fetch(url, { cache: 'no-cache' })
@@ -1233,7 +1286,7 @@ function tryFetchActiveMap() {
               // applyLoadedMap updates the global persistentGameId
               const success = applyLoadedMap(obj); 
               if (success) {
-                  console.log('[game] tryFetchActiveMap: Successfully applied map from server.');
+                  verboseLog('[game] tryFetchActiveMap: Successfully applied map from server.');
                   return true;
               }
           } catch (e) { console.warn('[game] applyLoadedMap failed', e); }
@@ -1293,7 +1346,7 @@ function applyLoadedMap(obj) {
 
 function loadMapFromStorage() {
   if (isNewGame) {
-    console.log('[game] new game detected, ignoring stored maps and generating a new one.');
+    verboseLog('[game] new game detected, ignoring stored maps and generating a new one.');
     return false;
   }
   try {
@@ -1321,7 +1374,7 @@ function loadMapFromStorage() {
     }
     
     if (!raw) {
-      console.log('[game] no saved map found in storage for this session');
+      verboseLog('[game] no saved map found in storage for this session');
       return false;
     }
     let obj = null;
@@ -1336,9 +1389,6 @@ function loadMapFromStorage() {
     }
     logicalW = Number(obj.logicalW) || Math.ceil((virtualW || W) / cellSize);
     logicalH = Number(obj.logicalH) || Math.ceil((virtualH || H) / cellSize);
-    console.log(`[game] loaded map from storage. logicalW=${logicalW}, logicalH=${logicalH}, mapStates.length=${obj.mapStates.length}`);
-    const nonZero = obj.mapStates.filter(x => x !== 0).length;
-    console.log(`[game] mapStates has ${nonZero} non-zero tiles out of ${obj.mapStates.length}`);
     if (obj.cellSize && Number(obj.cellSize) > 0) {
       try { cellSize = Number(obj.cellSize); } catch (e) { }
     }
@@ -1364,7 +1414,6 @@ function loadMapFromStorage() {
     createMapImage();
     redraw();
     try { showToast('Loaded saved map', 'info', 2200); } catch (e) {}
-    console.log('[game] loadMapFromStorage: loaded map (logicalW,logicalH)=', logicalW, logicalH);
     try { mapLoadComplete = true; } catch (e) {}
     try { showLoadingOverlay = false; } catch (e) {}
     return true;
@@ -1410,8 +1459,10 @@ function createMapImage() {
   }
   const w = logicalW * cellSize;
   const h = logicalH * cellSize;
-  console.log(`[createMapImage] creating graphics ${w}x${h} (logical: ${logicalW}x${logicalH})`);
   
+  if (mapImage && typeof mapImage.remove === 'function') {
+    try { mapImage.remove(); } catch (e) {}
+  }
   mapImage = createGraphics(w, h);
   
   // 1. Memory Optimization (Keep this at 1 for large maps)
@@ -1419,17 +1470,13 @@ function createMapImage() {
   
   // 2. FORCE CLARITY on the map buffer
   try {
-    // This is the specific property that makes the map crisp
-    if (mapImage.drawingContext) {
-        mapImage.drawingContext.imageSmoothingEnabled = false;
-    }
-    // Try standard way too, just in case
+    // Force every map buffer to stay pixelated
+    enforceCanvasSharpness(mapImage.drawingContext);
     mapImage.noSmooth(); 
   } catch(e) {}
 
   const useSprites = showTextures && spritesheet && spritesheet.width > 1;
   // ... (keep the rest of the existing function logic exactly as is below) ...
-  console.log(`[createMapImage] useSprites=${useSprites}, spritesheet.width=${spritesheet ? spritesheet.width : 'null'}`);
   if (showTextures && !useSprites) {
     console.warn('[createMapImage] textures requested but spritesheet not available - drawing raw map');
     try { showToast('Textures not available yet — showing raw map', 'warn', 3000); } catch (e) {}
@@ -1596,7 +1643,7 @@ function createMapImage() {
       edgeLayer.fill(0);
     }
 
-    console.log('[game] overlays total=', overlays.length, 'sample=', overlays.slice(0,6).map(o=>({px:o.px,py:o.py,destW:o.destW,destH:o.destH,imgType:o.imgType})));
+    verboseLog('[game] overlays total=', overlays.length, 'sample=', overlays.slice(0,6).map(o=>({px:o.px,py:o.py,destW:o.destW,destH:o.destH,imgType:o.imgType})));
     for (const o of overlays) {
       if (!o || o.tileState !== TILE_TYPES.FOREST) continue;
       const drawX = o.px + Math.floor((cellSize - o.destW) / 2);
@@ -1666,11 +1713,11 @@ function createMapImage() {
   try {
     if (!useSprites && edgeLayer && logicalW && logicalH) {
       if (!EDGE_LAYER_ENABLED) {
-        console.log('[game] edgeLayer painting skipped because EDGE_LAYER_ENABLED=false');
+        verboseLog('[game] edgeLayer painting skipped because EDGE_LAYER_ENABLED=false');
       } else {
         let cnt = 0;
         for (let i = 0; i < edgeLayer.length; i++) cnt += edgeLayer[i] ? 1 : 0;
-        console.log('[game] painting edgeLayer into raw mapImage - barrier tiles=', cnt, 'logical=', logicalW, 'x', logicalH, 'useSprites=', useSprites);
+        verboseLog('[game] painting edgeLayer into raw mapImage - barrier tiles=', cnt, 'logical=', logicalW, 'x', logicalH, 'useSprites=', useSprites);
         mapImage.noStroke();
         const c = EDGE_LAYER_COLOR || [34, 120, 34, 200];
         mapImage.fill(c[0], c[1], c[2], c[3] || 200);
@@ -1728,7 +1775,7 @@ function ensureEdgeLayerConnectivity() {
       edgeLayer[idx] = 0;
       opened++;
       adjustments++;
-      if (EDGE_LAYER_DEBUG) console.log('[game] connectivity fix: clearing barrier at', x, y);
+      if (EDGE_LAYER_DEBUG) verboseLog('[game] connectivity fix: clearing barrier at', x, y);
     }
     if (!opened) break;
     reachableWithBarrier = floodReachable({ respectEdgeLayer: true });
@@ -1741,7 +1788,7 @@ function ensureEdgeLayerConnectivity() {
     }
   }
   if (adjustments > 0) {
-    console.log('[game] ensureEdgeLayerConnectivity removed', adjustments, 'barrier tiles to keep paths accessible');
+    verboseLog('[game] ensureEdgeLayerConnectivity removed', adjustments, 'barrier tiles to keep paths accessible');
   }
 }
 
@@ -1876,7 +1923,7 @@ function handleItemInteraction(targetX, targetY) {
   const tileState = mapStates[tileIdx];
   if (!ITEM_DATA.hasOwnProperty(tileState)) return;
   const item = ITEM_DATA[tileState];
-  console.log(`Player interacted with ${item.label}`);
+  verboseLog(`Player interacted with ${item.label}`);
   switch (tileState) {
     case TILE_TYPES.CHEST:
       break;
@@ -2343,7 +2390,6 @@ let inGameMenuOverlay = null;
 let _lastEscToggleAt = 0;
 
 // Capture initial zoom baselines so we can detect relative browser zoom changes.
-const BASE_VV_SCALE = (typeof window !== 'undefined' && window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1;
 const BASE_DPR = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
 let __zoomProbeEl = null;
 
@@ -2368,19 +2414,46 @@ function measureZoomViaInch() {
   } catch (e) { return null; }
 }
 
+let lastLoggedZoom = null;
+const ZOOM_DIAGNOSTIC_ENABLED = true;
+function estimateBrowserZoom() {
+  if (typeof window === 'undefined') return 1;
+  const candidates = [];
+  if (window.outerWidth && window.innerWidth) {
+    const layoutRatio = window.outerWidth / window.innerWidth;
+    if (isFinite(layoutRatio) && layoutRatio > 0) {
+      candidates.push(layoutRatio);
+    }
+  }
+  const vv = window.visualViewport;
+  if (vv && vv.scale) candidates.push(vv.scale);
+  const probeZoom = measureZoomViaInch();
+  if (probeZoom) candidates.push(probeZoom);
+  if (window.devicePixelRatio) {
+    const dprZoom = (window.devicePixelRatio) / (BASE_DPR || 1);
+    candidates.push(dprZoom);
+  }
+  if (window.outerWidth && window.innerWidth) {
+    candidates.push(window.outerWidth / window.innerWidth);
+  }
+  const zoom = candidates.find(v => v && isFinite(v) && v > 0.05 && v < 20) || 1;
+  const clamped = Math.max(0.1, Math.min(10, zoom));
+  if (ZOOM_DIAGNOSTIC_ENABLED) {
+    if (!lastLoggedZoom || Math.abs(clamped - lastLoggedZoom) > 0.01) {
+      console.log('[zoom] estimated browser zoom =', clamped, '(candidates', candidates, ')');
+      lastLoggedZoom = clamped;
+    }
+  }
+  return clamped;
+}
+
 // Keep a DOM node visually constant when browser zoom changes
 function makeElementZoomInvariant(el, origin = 'center center') {
   if (!el) return () => {};
   let zoomLoopId = null;
   const update = () => {
     if (!el || !el.parentNode) return;
-    let zoom = 1;
-    if (window.visualViewport) {
-      zoom = window.visualViewport.scale || 1;
-    } else {
-      zoom = (window.outerWidth / window.innerWidth) || 1;
-    }
-    zoom = Math.max(0.1, Math.min(10, zoom));
+    const zoom = estimateBrowserZoom();
     const inv = 1 / zoom;
     el.style.transform = `scale(${inv})`;
     el.style.transformOrigin = origin;
@@ -2424,43 +2497,15 @@ function createZoomStablePanel(w, h, id) {
   panel.style('transform', 'none');
   
   let zoomLoopId = null;
+  const stopPanelZoom = makeElementZoomInvariant(panel.elt, 'center center');
   const updateZoom = () => {
-    if (!document.getElementById(id)) return; 
-    
+    if (!document.getElementById(id)) return;
+
     const vv = window.visualViewport;
-    let zoomCandidates = [];
-    let ox = 0;
-    let oy = 0;
+    const ox = vv ? (vv.offsetLeft || 0) : 0;
+    const oy = vv ? (vv.offsetTop || 0) : 0;
 
-    if (vv) {
-      zoomCandidates.push(vv.scale);
-      ox = vv.offsetLeft || 0;
-      oy = vv.offsetTop || 0;
-    }
-
-    const probeZoom = measureZoomViaInch();
-    if (probeZoom) zoomCandidates.push(probeZoom);
-
-    const dprZoom = (window.devicePixelRatio || 1) / (BASE_DPR || 1);
-    zoomCandidates.push(dprZoom);
-
-    if (window.outerWidth && window.innerWidth) {
-      zoomCandidates.push(window.outerWidth / window.innerWidth);
-    }
-
-    // Pick the first sane zoom candidate
-    let zoom = zoomCandidates.find(v => v && isFinite(v) && v > 0.05 && v < 20) || 1;
-
-    zoom = Math.max(0.1, Math.min(10, zoom));
-    const inv = 1 / zoom;
-
-    // Use CSS zoom (Chrome/Edge) as a primary neutralizer; keep transform for offsets only.
-    if (container.elt && container.elt.style) {
-      container.elt.style.zoom = inv;
-    }
-
-    // Translate for visual viewport offsets; scale left at 1 to avoid double-scaling when zoom is applied via CSS zoom.
-    container.style('transform', `translate(${ox}px, ${oy}px) scale(1)`);
+    container.style('transform', `translate(${ox}px, ${oy}px)`);
     
     zoomLoopId = requestAnimationFrame(updateZoom);
   };
@@ -2471,6 +2516,7 @@ function createZoomStablePanel(w, h, id) {
     panel, 
     close: () => {
       if (zoomLoopId) cancelAnimationFrame(zoomLoopId);
+      stopPanelZoom();
       container.remove();
     }
   };
@@ -2484,7 +2530,7 @@ function openInGameMenu() {
   
   inGameMenuVisible = true;
   
-  const { container, panel, close } = createZoomStablePanel(500, 400, 'gd-ingame-menu');
+  const { container, panel, close } = createZoomStablePanel(420, 320, 'gd-ingame-menu');
   inGameMenuOverlay = { close, container };
 
   let title = createDiv('PAUSED');
@@ -2498,20 +2544,10 @@ function openInGameMenu() {
   const createMenuBtn = (label, onClick) => {
     let btn = createButton(label);
     btn.parent(panel);
-    btn.style('width', '320px');
-    btn.style('height', '60px');
     btn.style('margin-bottom', '20px');
-    btn.style('font-size', '28px');
-    btn.style('font-family', 'inherit');
-    btn.style('background-color', '#444');
-    btn.style('color', 'white');
-    btn.style('border', 'none');
-    btn.style('cursor', 'pointer');
-    
-    btn.elt.onmouseover = () => btn.style('background-color', '#666');
-    btn.elt.onmouseout = () => btn.style('background-color', '#444');
-    
+    applyMenuButtonUI(btn, 260, 48);
     btn.mousePressed(onClick);
+    return btn;
   };
 
   createMenuBtn('RESUME', () => {
@@ -2673,6 +2709,42 @@ function styleButton(btn) {
   btn.style("font-family", "MyFont, sans-serif");
 }
 
+function applyMenuButtonUI(btn, w = 260, h = 48) {
+  if (!btn || !btn.elt) return;
+  btn.style('width', `${w}px`);
+  btn.style('height', `${h}px`);
+  btn.style('font-size', '28px');
+  btn.style('font-family', 'inherit');
+  btn.style('border', '3px solid rgba(0,0,0,0.3)');
+  btn.style('color', '#fff');
+  btn.style('text-shadow', '0 0 12px rgba(0,0,0,0.9)');
+  btn.style('background-image', `url('${MENU_BUTTON_TEXTURE_PATH}')`);
+  btn.style('background-size', 'cover');
+  btn.style('background-position', 'center');
+  btn.style('background-repeat', 'no-repeat');
+  btn.style('cursor', 'pointer');
+  btn.style('padding', '0');
+  btn.style('display', 'flex');
+  btn.style('align-items', 'center');
+  btn.style('justify-content', 'center');
+  btn.style('box-shadow', '0 8px 20px rgba(0,0,0,0.6)');
+  const applyHover = (ev, hover) => {
+    btn.style('filter', hover ? 'brightness(1.15)' : 'none');
+  };
+  btn.elt.onmouseover = () => applyHover(null, true);
+  btn.elt.onmouseout = () => applyHover(null, false);
+}
+
+function decorateSettingsPanel(panel) {
+  if (!panel || !panel.style) return;
+  panel.style('background-color', 'rgba(8, 8, 12, 0.9)');
+  panel.style('background-image', `url('${SETTINGS_PANEL_TEXTURE_PATH}')`);
+  panel.style('background-size', 'cover');
+  panel.style('background-position', 'center');
+  panel.style('border', '4px solid rgba(255,255,255,0.3)');
+  panel.style('box-shadow', '0 0 50px rgba(0,0,0,0.95)');
+}
+
 function playClickSFX() {
     
 }
@@ -2754,11 +2826,14 @@ function updateLoadingOverlayDom() {
       // NEW: Force the Loading Screen to Zoom Out
       const content = document.getElementById('gd-loading-content');
       if (content) {
-          // Force calculate scale: Screen Height / 3000
-          // e.g., 900 / 3000 = 0.3 (Very small, fits perfectly)
+          // Force a gentle scale so the loading box stays centered but never disappears
           let s = 1;
-          if (typeof window !== 'undefined') s = window.innerHeight / 3000;
-          content.style.transform = `scale(${s})`;
+          if (typeof window !== 'undefined') s = window.innerHeight / 4000;
+          s = Math.max(0.18, Math.min(0.55, s));
+          if (Math.abs((lastLoadingScale ?? 0) - s) > 0.0001) {
+            content.style.transform = `scale(${s})`;
+            lastLoadingScale = s;
+          }
       }
     } else {
       el.style.display = 'none';
@@ -3762,16 +3837,16 @@ let EDGE_LAYER_COLOR = [76, 175, 80, 200];
 
 function setEdgeLayerColor(r, g, b, a = 200) { 
   EDGE_LAYER_COLOR = [Number(r)||0, Number(g)||0, Number(b)||0, Number(a)||0]; 
-  console.log('[game] EDGE_LAYER_COLOR=', EDGE_LAYER_COLOR); 
+  verboseLog('[game] EDGE_LAYER_COLOR=', EDGE_LAYER_COLOR); 
 }
 
 function setEdgeLayerEnabled(v) { 
   EDGE_LAYER_ENABLED = !!v; 
-  console.log('[game] EDGE_LAYER_ENABLED=', EDGE_LAYER_ENABLED); 
+  verboseLog('[game] EDGE_LAYER_ENABLED=', EDGE_LAYER_ENABLED); 
 }
 
 function setEdgeLayerDebug(v) { 
-  EDGE_LAYER_DEBUG = !!v; console.log('[game] EDGE_LAYER_DEBUG=', EDGE_LAYER_DEBUG); 
+  EDGE_LAYER_DEBUG = !!v; verboseLog('[game] EDGE_LAYER_DEBUG=', EDGE_LAYER_DEBUG); 
 }
 
 try { window.setEdgeLayerEnabled = setEdgeLayerEnabled; window.setEdgeLayerDebug = setEdgeLayerDebug; } catch (e) {}
@@ -3816,7 +3891,7 @@ function removeCustomAssetsRuntime() {
     try { TILE_IMAGES[TILE_TYPES.GRASS] = null; } catch (e) {}
     try { TILE_IMAGES[TILE_TYPES.FOREST] = null; } catch (e) {}
     CUSTOM_ASSETS_OFF = true;
-    console.log('[game] custom assets removed (runtime)');
+    verboseLog('[game] custom assets removed (runtime)');
   } catch (e) { console.warn('[game] removeCustomAssetsRuntime failed', e); }
 }
 
@@ -3836,7 +3911,7 @@ function restoreCustomAssetsRuntime() {
     try { TILE_IMAGES[TILE_TYPES.GRASS] = __ASSET_BACKUP.grass_alias || TILE_IMAGES[TILE_TYPES.GRASS]; } catch (e) {}
     try { TILE_IMAGES[TILE_TYPES.FOREST] = __ASSET_BACKUP.forest_alias || TILE_IMAGES[TILE_TYPES.FOREST]; } catch (e) {}
     CUSTOM_ASSETS_OFF = false;
-    console.log('[game] custom assets restored (runtime)');
+    verboseLog('[game] custom assets restored (runtime)');
   } catch (e) { console.warn('[game] restoreCustomAssetsRuntime failed', e); }
 }
 
@@ -3937,7 +4012,7 @@ function setDifficulty(value, { regenerate = true, reason = 'unknown' } = {}) {
   if (!normalized) return false;
   if (normalized === currentDifficulty) return false;
   currentDifficulty = normalized;
-  console.log(`[game] difficulty set to ${normalized} (${reason})`);
+  verboseLog(`[game] difficulty set to ${normalized} (${reason})`);
   if (regenerate && typeof generateMap === 'function' && W && H) {
     generateMap();
   }
@@ -3958,6 +4033,7 @@ const HILL_DIRECTIONS = ['north', 'northeast', 'east', 'southeast', 'south', 'so
 const HILL_ASSETS = {};
 
 function draw() {
+  try { enforceCanvasSharpness(drawingContext); } catch (e) {}
   
   // --- Generation Phases ---
   if (genPhase > 0) {
@@ -3990,7 +4066,7 @@ function draw() {
 
   // --- Main Draw Loop ---
   if (typeof window !== 'undefined' && window && window.__gameDebugShown !== true) { 
-    console.log('[game] draw() running'); window.__gameDebugShown = true; 
+    verboseLog('[game] draw() running'); window.__gameDebugShown = true; 
   }
   
   try { ensureLoadingOverlayDom(); updateLoadingOverlayDom(); } catch (e) {}
@@ -4104,7 +4180,7 @@ window.addEventListener('message', (ev) => {
             gameMusic.stop();
             gameMusicStarted = false;
             pendingGameMusicStart = false;
-            console.log('[game] stopped gameMusic on request');
+            verboseLog('[game] stopped gameMusic on request');
           }
         } catch (stopErr) {
           console.warn('[game] failed to stop gameMusic', stopErr);
@@ -4131,7 +4207,7 @@ window.addEventListener('message', (ev) => {
           }
           if (gameMusic && typeof gameMusic.setVolume === 'function') {
             gameMusic.setVolume(musicVol * masterVol);
-            console.log('[game] applied updated audio settings to gameMusic');
+            verboseLog('[game] applied updated audio settings to gameMusic');
           }
         } catch (settingsErr) {
           console.warn('[game] failed to apply updated audio settings', settingsErr);
@@ -4177,7 +4253,8 @@ function openInGameSettings(currentVals) {
   }
 
   // Use the helper
-  const { container, panel, close } = createZoomStablePanel(480, 640, 'gd-settings-overlay');
+  const { container, panel, close } = createZoomStablePanel(420, 540, 'gd-settings-overlay');
+  decorateSettingsPanel(panel);
   
   // Store container so we can check if it exists (for pausing)
   settingsOverlayDiv = container;
@@ -4225,15 +4302,18 @@ function openInGameSettings(currentVals) {
   createSliderRow('Master', masterVol, (v) => {
     masterVol = v;
     if (gameMusic) gameMusic.setVolume(musicVol * masterVol);
+    saveLocalSettings();
   });
 
   createSliderRow('Music', musicVol, (v) => {
     musicVol = v;
     if (gameMusic) gameMusic.setVolume(musicVol * masterVol);
+    saveLocalSettings();
   });
 
   createSliderRow('SFX', sfxVol, (v) => {
     sfxVol = v;
+    saveLocalSettings();
   });
 
   let diffRow = createDiv('');
@@ -4266,21 +4346,14 @@ function openInGameSettings(currentVals) {
     let d = diffSel.value();
     try { setDifficulty(d, { regenerate: false, reason: 'user-settings' }); } 
     catch(e) { currentDifficulty = d; }
+    difficultySetting = d;
+    saveLocalSettings();
   });
 
   let closeBtn = createButton('CLOSE');
   closeBtn.parent(panel);
-  closeBtn.style('margin-top', '50px');
-  closeBtn.style('font-size', '36px');
-  closeBtn.style('padding', '15px 50px');
-  closeBtn.style('background-color', '#444');
-  closeBtn.style('color', 'white');
-  closeBtn.style('border', '3px solid #888');
-  closeBtn.style('cursor', 'pointer');
-  closeBtn.style('font-family', 'inherit');
-  
-  closeBtn.elt.onmouseover = () => closeBtn.style('background-color', '#666');
-  closeBtn.elt.onmouseout = () => closeBtn.style('background-color', '#444');
+  closeBtn.style('margin-top', '38px');
+  applyMenuButtonUI(closeBtn, 220, 46);
 
   closeBtn.mousePressed(() => {
     if (container.closeZoomPanel) container.closeZoomPanel();
@@ -4299,7 +4372,7 @@ function openInGameSettings(currentVals) {
 
 function attemptStartGameMusic(reason = 'unknown') {
   if (!pendingGameMusicStart || gameMusicStarted || !gameMusic) return;
-  console.log(`[game] attemptStartGameMusic reason=${reason}`);
+  verboseLog(`[game] attemptStartGameMusic reason=${reason}`);
   const startPlayback = () => {
     if (gameMusicStarted || !gameMusic) return;
     try { gameMusic.setVolume(musicVol * masterVol); } catch (volumeErr) {}
@@ -4314,7 +4387,7 @@ function attemptStartGameMusic(reason = 'unknown') {
       }
       gameMusicStarted = true;
       pendingGameMusicStart = false;
-      console.log('[game] gameMusic playback started');
+      verboseLog('[game] gameMusic playback started');
     } catch (startErr) {
       console.warn('[game] startPlayback failed', startErr);
     }
@@ -4327,7 +4400,7 @@ function attemptStartGameMusic(reason = 'unknown') {
       const resumeResult = ctx.resume?.();
       if (resumeResult && typeof resumeResult.then === 'function') {
         resumeResult.then(() => {
-          console.log('[game] AudioContext.resume resolved');
+          verboseLog('[game] AudioContext.resume resolved');
           startPlayback();
         }).catch((err) => {
           console.warn('[game] AudioContext.resume rejected', err);
@@ -4345,7 +4418,7 @@ function attemptStartGameMusic(reason = 'unknown') {
       const maybePromise = userStartAudio();
       if (maybePromise && typeof maybePromise.then === 'function') {
         maybePromise.then(() => {
-          console.log('[game] userStartAudio resolved');
+          verboseLog('[game] userStartAudio resolved');
           startPlayback();
         }).catch((err) => {
           console.warn('[game] userStartAudio rejected', err);
@@ -4598,25 +4671,25 @@ function unlockAudioAndStart(cb) {
     if (typeof userStartAudio === 'function') {
       userStartAudio().then(() => {
         audioUnlocked = true;
-        console.log('[unlockAudioAndStart] userStartAudio resolved — starting menu music');
+        verboseLog('[unlockAudioAndStart] userStartAudio resolved — starting menu music');
         startMenuMusicIfNeeded();
         cb && cb();
       }).catch(() => {
         try {
           getAudioContext().resume().then(() => {
             audioUnlocked = true;
-            console.log('[unlockAudioAndStart] AudioContext.resume succeeded — starting menu music');
+            verboseLog('[unlockAudioAndStart] AudioContext.resume succeeded — starting menu music');
             startMenuMusicIfNeeded();
             cb && cb();
           }).catch(() => {
             audioUnlocked = true;
-            console.log('[unlockAudioAndStart] resume rejected but marking audio unlocked');
+            verboseLog('[unlockAudioAndStart] resume rejected but marking audio unlocked');
             startMenuMusicIfNeeded();
             cb && cb();
           });
         } catch (e) {
           audioUnlocked = true;
-          console.log('[unlockAudioAndStart] fallback unlock — starting menu music');
+          verboseLog('[unlockAudioAndStart] fallback unlock — starting menu music');
           startMenuMusicIfNeeded();
           cb && cb();
         }
@@ -4624,7 +4697,7 @@ function unlockAudioAndStart(cb) {
     } else {
       try { getAudioContext().resume(); } catch (e) {}
       audioUnlocked = true;
-      console.log('[unlockAudioAndStart] no userStartAudio — audioUnlocked set');
+      verboseLog('[unlockAudioAndStart] no userStartAudio — audioUnlocked set');
       startMenuMusicIfNeeded();
       cb && cb();
     }
@@ -4642,14 +4715,14 @@ function startMenuMusicIfNeeded() {
     if (typeof bgMusic.isPlaying === 'function') {
       if (!bgMusic.isPlaying()) {
         bgMusic.loop();
-        console.log('[startMenuMusicIfNeeded] bgMusic.loop() called');
+        verboseLog('[startMenuMusicIfNeeded] bgMusic.loop() called');
       }
     } else if (typeof bgMusic.loop === 'function') {
       bgMusic.loop();
-      console.log('[startMenuMusicIfNeeded] bgMusic.loop() fallback called');
+      verboseLog('[startMenuMusicIfNeeded] bgMusic.loop() fallback called');
     } else if (typeof bgMusic.play === 'function') {
       bgMusic.play();
-      console.log('[startMenuMusicIfNeeded] bgMusic.play() fallback called');
+      verboseLog('[startMenuMusicIfNeeded] bgMusic.play() fallback called');
     }
   } catch (err) {
     console.warn('[startMenuMusicIfNeeded] playback error', err);
@@ -4684,7 +4757,12 @@ function styleSmallButton(btn) {
 
 function ensureLoopFallbackBuffer() {
   if (!loopFallbackBuffer || loopFallbackBuffer.width !== width || loopFallbackBuffer.height !== height) {
+    if (loopFallbackBuffer && typeof loopFallbackBuffer.remove === 'function') {
+      try { loopFallbackBuffer.remove(); } catch (e) {}
+    }
     loopFallbackBuffer = createGraphics(width, height);
+    enforceCanvasSharpness(loopFallbackBuffer.drawingContext);
+    loopFallbackBuffer.noSmooth();
   }
 }
 
@@ -4695,7 +4773,7 @@ window.addEventListener('keydown', (ev) => {
     try { tryMoveDirection(k); } catch (e) {  }
   }
   if (k === 'P') {
-    console.log('[game] P pressed - Starting Phase 1');
+    verboseLog('[game] P pressed - Starting Phase 1');
     genPhase = 1; 
     return;
 }
@@ -4723,7 +4801,7 @@ function persistActiveMapToServer(reason = 'unspecified') {
       body: JSON.stringify(payload)
     }).then(resp => resp.json().catch(() => ({}))).then((data) => {
       if (data && data.ok) {
-        console.log(`[game] workspace active_map.json saved (${reason})`);
+        verboseLog(`[game] workspace active_map.json saved (${reason})`);
       } else {
         console.warn('[game] workspace save-map response not ok', data);
       }
@@ -4981,7 +5059,7 @@ function spawnCloud(forceX) {
   const yPos = minY + Math.random() * (maxY - minY);
   
   // DEBUG: Check console to prove it's working
-  // console.log(`Spawning cloud at Y: ${Math.floor(yPos)}`);
+  // verboseLog(`Spawning cloud at Y: ${Math.floor(yPos)}`);
 
   const baseSpeed = 0.3 + Math.random() * 1;
   const scale = 2.0 + Math.random() * 4.0;
@@ -5013,7 +5091,7 @@ function saveLocalSettingsDebounced() {
     try {
       const settings = { masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting };
       localStorage.setItem("menuSettings", JSON.stringify(settings));
-      console.log('[game] Settings saved (debounced)');
+      verboseLog('[game] Settings saved (debounced)');
     } catch(e) {}
   }, 500);
 }
@@ -5079,7 +5157,7 @@ function buildAccessibilitySettings(ctx) {
       btn.style('font-size', '14px'); 
       btn.style('padding', '0');
       
-      btn.mousePressed(() => { console.log("Text size:", size); });
+      btn.mousePressed(() => { verboseLog("Text size:", size); });
   });
 }
 
@@ -5221,20 +5299,20 @@ function ensureLoadingOverlayDom() {
           color: #ffcc00;
         }
         .gd-loading-message {
-          font-size: 48px; 
+          font-size: 20px;
           text-transform: uppercase;
-          margin-bottom: 25px;
-          text-shadow: 4px 4px 0px #333;
-          letter-spacing: 2px;
+          margin-bottom: 8px;
+          text-shadow: 1px 1px 0px #111;
+          letter-spacing: 1px;
         }
         .gd-progress-container {
-          width: 500px;
-          max-width: 85%;
-          height: 30px;
-          border: 4px solid #ffcc00;
+          width: 220px;
+          max-width: 60%;
+          height: 16px;
+          border: 1px solid #ffcc00;
           background-color: #111;
-          padding: 3px;
-          margin-bottom: 10px;
+          padding: 1px;
+          margin-bottom: 4px;
         }
         .gd-progress-fill {
           height: 100%;
@@ -5243,7 +5321,7 @@ function ensureLoadingOverlayDom() {
           transition: width 0.1s linear;
         }
         .gd-progress-text {
-          font-size: 24px;
+          font-size: 14px;
           color: #888;
         }
       `;
