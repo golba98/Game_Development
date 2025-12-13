@@ -1,6 +1,24 @@
 ﻿let virtualW, virtualH;
 let pendingGameActivated = false;
 
+if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
+  // Force the willReadFrequently hint on every 2D context, keeping repeated getImageData fast.
+  const canvasProto = HTMLCanvasElement.prototype;
+  if (!canvasProto.__gdWillReadFrequentlyPatched) {
+    const originalGetContext = canvasProto.getContext;
+    const patchedGetContext = function(type, options) {
+      if (type === '2d') {
+        const optionSource = options && typeof options === 'object' ? options : {};
+        const patchedOptions = Object.assign({}, optionSource, { willReadFrequently: true });
+        return originalGetContext.call(this, type, patchedOptions);
+      }
+      return originalGetContext.call(this, type, options);
+    };
+    canvasProto.getContext = patchedGetContext;
+    canvasProto.__gdWillReadFrequentlyPatched = true;
+  }
+}
+
 let mapLoadComplete = false;
 
 let cloudImages = [];
@@ -8,6 +26,7 @@ let clouds = [];
 const MAX_CLOUDS = 100;
 const CLOUD_SPAWN_INTERVAL = 8000; 
 let lastCloudSpawn = 0;
+const CLOUD_IMAGE_COUNT = 4;
 
 let showLoadingOverlay = true;
 let overlayMessage = 'Loading map...';
@@ -320,7 +339,7 @@ function preload() {
   try { trackLoadImage('run_sheet_combined:' + RUN_SHEET_COMBINED, RUN_SHEET_COMBINED, (img) => { verboseLog('[game] loaded run combined sheet', RUN_SHEET_COMBINED, img.width, 'x', img.height); spritesheetRun = img; }, (err) => { spritesheetRun = null; }); } catch (e) {}
   
   
-  for (let i = 1; i <= 5; i++) {
+  for (let i = 1; i <= CLOUD_IMAGE_COUNT; i++) {
     try {
       trackLoadImage(`cloud_${i}`, `assets/5-Objects/cloud_${i}.png`, 
         (img) => { cloudImages[i - 1] = img; verboseLog(`[game] loaded cloud_${i}`); },
@@ -471,6 +490,7 @@ function preload() {
   });
 
   try { trackLoadSound('gameMusic:assets/8-Music/game_music.wav', 'assets/8-Music/game_music.wav', (snd) => { gameMusic = snd; }, (err) => { gameMusic = null; }); } catch (e) { try { gameMusic = loadSound('assets/8-Music/game_music.wav'); } catch (ee) { gameMusic = null; } }
+  try { trackLoadSound('clickSFX:assets/9-Sounds/Button_Press.mp3', 'assets/9-Sounds/Button_Press.mp3', (snd) => { clickSFX = snd; }, (err) => { clickSFX = null; }); } catch (e) { try { clickSFX = loadSound('assets/9-Sounds/Button_Press.mp3'); } catch (ee) { clickSFX = null; } }
 }
 
 function setup() {
@@ -479,8 +499,8 @@ function setup() {
   W = windowWidth;
   H = windowHeight;
 
-  
-  
+  // 1. FORCE SHARPNESS (CSS Method)
+  // This makes the game crisp immediately.
   let canvasStyle = document.createElement('style');
   canvasStyle.innerHTML = `
     canvas {
@@ -506,21 +526,22 @@ function setup() {
   `;
   document.head.appendChild(canvasStyle);
 
-  
+  // 2. High Resolution
   pixelDensity(window.devicePixelRatio || 1);
 
-  
+  // 3. Calculate Scale
   gameScale = H / FIXED_VIRTUAL_HEIGHT;
   virtualW = W / gameScale;
   virtualH = H / gameScale;
 
   let cnv = createCanvas(W, H);
+  ensureTextSizeOverride();
   
-  
+  // 4. Backup Sharpness
   try {
     enforceCanvasSharpness(drawingContext);
     if (cnv && cnv.elt) {
-      const cnvCtx = typeof cnv.elt.getContext === 'function' ? cnv.elt.getContext('2d') : null;
+      const cnvCtx = typeof cnv.elt.getContext === 'function' ? cnv.elt.getContext('2d', { willReadFrequently: true }) : null;
       enforceCanvasSharpness(cnvCtx);
       cnv.elt.style.imageRendering = "pixelated"; 
     }
@@ -530,6 +551,7 @@ function setup() {
   try { injectCustomStyles(); } catch (e) {}
   
   loadLocalSettings();
+  applyCurrentTextSize();
   const urlParams = new URLSearchParams(window.location.search);
   const urlMasterVol = parseFloat(urlParams.get('masterVol'));
   const urlMusicVol = parseFloat(urlParams.get('musicVol'));
@@ -548,6 +570,25 @@ function setup() {
   } else {
     riverClearMode = RIVER_CLEAR_MODES.AUTO;
   }
+
+  // Global UI SFX handler: play click SFX for any DOM button press
+  try {
+    document.addEventListener('pointerdown', (ev) => {
+      try {
+        const el = ev.target;
+        if (!el) return;
+        const isButton = (el.tagName === 'BUTTON') || (el.closest && el.closest('button')) || (el.getAttribute && el.getAttribute('role') === 'button');
+        if (!isButton) return;
+        try {
+          unlockAudioAndStart(() => {
+            try { playClickSFX(); } catch (e) {}
+          });
+        } catch (e) {
+          try { playClickSFX(); } catch (ee) {}
+        }
+      } catch (e) {}
+    }, { capture: true });
+  } catch (e) {}
   
   let loadedFromStorage = false;
   let loadedFromServer = false;
@@ -566,8 +607,8 @@ function setup() {
     if (ready) {
       verboseLog('[game] assets loaded. Pre-warming clouds...');
       
-      
-      
+      // FORCE CLOUDS EVERYWHERE
+      // We use the virtual world width so clouds don't bunch on the left.
       const wWidth = width / (height / 3000); 
       for(let i = 0; i < 25; i++) {
           spawnCloud(Math.random() * wWidth); 
@@ -630,22 +671,22 @@ function _confirmResize() {
   W = windowWidth;
   H = windowHeight;
 
-  
+  // 1. Maintain Quality
   pixelDensity(window.devicePixelRatio || 1);
   
-  
+  // 2. Recalculate Scale
   gameScale = H / FIXED_VIRTUAL_HEIGHT;
   virtualW = W / gameScale;
   virtualH = H / gameScale;
 
   resizeCanvas(W, H);
   
-  
+  // 3. RE-APPLY CLARITY (Important!)
   try {
     enforceCanvasSharpness(drawingContext);
     const cnv = select('canvas');
     if (cnv && cnv.elt) {
-      const cnvCtx = typeof cnv.elt.getContext === 'function' ? cnv.elt.getContext('2d') : null;
+      const cnvCtx = typeof cnv.elt.getContext === 'function' ? cnv.elt.getContext('2d', { willReadFrequently: true }) : null;
       enforceCanvasSharpness(cnvCtx);
       cnv.elt.style.imageRendering = "pixelated";
     }
@@ -678,20 +719,22 @@ function createFullWindowCanvas() {
 
 function mousePressed() {
   try {
-    
+    // FIX: Un-scale mouse coordinates to match the virtual world
     const mx = mouseX / gameScale;
     const my = mouseY / gameScale;
 
-    
+    // Canvas menu click handling removed (now using DOM menu)
   } catch (e) {}
 }
 
 function togglePauseMenuFromEscape() {
   const now = Date.now();
-  if (now - _lastEscToggleAt < 50) return; 
+  if (now - _lastEscToggleAt < 50) return; // debounce to prevent double-fire from multiple handlers
   _lastEscToggleAt = now;
 
   try {
+    try { if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize(); } catch(e) {}
+    try { if (typeof persistSavedSettings === 'function') persistSavedSettings(true); } catch(e) {}
     if (settingsOverlayDiv) {
       if (settingsOverlayDiv.closeZoomPanel) settingsOverlayDiv.closeZoomPanel();
       else settingsOverlayDiv.remove();
@@ -881,15 +924,12 @@ function generateMap_Part2() {
 
   treeObjects = [];
   if (TREE_OVERLAY_IMG) {
-    const highTreeZoneX = logicalW * 0.7;
-    const highTreeZoneY = logicalH * 0.3;
     for (let y = 0; y < logicalH; y++) {
       for (let x = 0; x < logicalW; x++) {
         const idx = y * logicalW + x;
         if (mapStates[idx] !== TILE_TYPES.FOREST) continue;
         if (x === spawn.spawnX && y === spawn.spawnY) continue;
-        const zoneDensityScale = (x > highTreeZoneX && y < highTreeZoneY) ? 0.25 : 1;
-        if (Math.random() < TREE_SPAWN_CHANCE * zoneDensityScale) treeObjects.push({ x, y });
+        if (Math.random() < TREE_SPAWN_CHANCE) treeObjects.push({ x, y });
       }
     }
     createMapImage();
@@ -906,7 +946,7 @@ function generateMap_Part2() {
 function computeClearArea() {
     const centerX = logicalW / 2;
     const centerY = logicalH / 2;
-    const clearAreaRatio = 0.95+ Math.random() * 0.0;
+    const clearAreaRatio = 0.75 + Math.random() * 0.15;
     const baseClearWidth = logicalW * clearAreaRatio;
     const baseClearHeight = logicalH * clearAreaRatio;
     return {
@@ -1432,8 +1472,8 @@ function tryFetchActiveMap() {
       return Promise.resolve(false);
     }
 
-    
-    
+    // FIX: Use relative path if we are on the server port (3000) to avoid CORS/origin mismatches.
+    // Otherwise, default to standard localhost address.
     let url = 'http://localhost:3000/maps/active_map.json';
     if (typeof window !== 'undefined' && window.location && window.location.port === '3000') {
       url = '/maps/active_map.json';
@@ -1447,7 +1487,7 @@ function tryFetchActiveMap() {
         }
         return resp.json().then(obj => {
           try { 
-              
+              // applyLoadedMap updates the global persistentGameId
               const success = applyLoadedMap(obj); 
               if (success) {
                   verboseLog('[game] tryFetchActiveMap: Successfully applied map from server.');
@@ -1457,7 +1497,7 @@ function tryFetchActiveMap() {
           return false;
         }).catch(err => { console.warn('[game] failed to parse active_map.json', err); return false; });
       }).catch(err => { 
-          
+          // This usually happens if the server isn't running or port is blocked
           console.warn('[game] tryFetchActiveMap: Fetch failed', err); 
           return false; 
       });
@@ -1632,12 +1672,12 @@ function createMapImage() {
   }
   mapImage = createGraphics(w, h);
   
-  
+  // 1. Memory Optimization (Keep this at 1 for large maps)
   mapImage.pixelDensity(1); 
   
-  
+  // 2. FORCE CLARITY on the map buffer
   try {
-    
+    // Force every map buffer to stay pixelated
     enforceCanvasSharpness(mapImage.drawingContext);
     mapImage.noSmooth(); 
   } catch(e) {}
@@ -1648,7 +1688,7 @@ function createMapImage() {
     }
 
   const useSprites = showTextures && spritesheet && spritesheet.width > 1;
-  
+  // ... (keep the rest of the existing function logic exactly as is below) ...
   if (showTextures && !useSprites) {
     console.warn('[createMapImage] textures requested but spritesheet not available - drawing raw map');
     try { showToast('Textures not available yet — showing raw map', 'warn', 3000); } catch (e) {}
@@ -1857,7 +1897,7 @@ function createMapImage() {
               shouldMark = true;
             }
             if (!shouldMark) continue;
-            
+            // logic to mark edge layer (if needed) ...
           } catch (e) {}
         }
       }
@@ -2658,7 +2698,7 @@ function measureZoomViaInch() {
     }
     const rect = __zoomProbeEl.getBoundingClientRect();
     if (!rect || !rect.width) return null;
-    
+    // CSS inch is 96px at 100% zoom; measured px / 96 gives zoom factor.
     return rect.width / 96;
   } catch (e) { return null; }
 }
@@ -2776,6 +2816,10 @@ function openInGameMenu() {
     inGameMenuOverlay.close();
     inGameMenuOverlay = null;
   }
+  try {
+    loadLocalSettings();
+  } catch (e) {}
+  try { applyCurrentTextSize(); } catch (e) {}
   
   inGameMenuVisible = true;
   
@@ -2824,6 +2868,7 @@ function closeInGameMenu() {
     inGameMenuOverlay = null;
   }
   inGameMenuVisible = false;
+  try { if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize(); } catch(e) {}
 }
 
 function drawInGameMenu() { return; }
@@ -2832,11 +2877,11 @@ function drawInGameMenu_OLD() {
   try {
     push();
     
-    
+    // Virtual Dimensions
     const vW = virtualW || (width / gameScale);
     const vH = virtualH || (height / gameScale);
 
-    
+    // Mouse Logic
     let currentHoveredId = null;
     const mx = mouseX / gameScale;
     const my = mouseY / gameScale;
@@ -2852,19 +2897,19 @@ function drawInGameMenu_OLD() {
     }
     inGameMenuHovered = currentHoveredId;
 
-    
+    // Background Dimmer
     noStroke();
     fill(0, 0, 0, 200);
     rect(0, 0, vW, vH); 
 
-    
+    // --- NEW SMALLER DIMENSIONS ---
     const panelW = 500; 
     const panelH = 400;
     
     const px = Math.floor((vW - panelW) / 2);
     const py = Math.floor((vH - panelH) / 2);
 
-    
+    // Panel Body
     push();
     stroke(0); strokeWeight(6); fill(40, 40, 44, 255); 
     rect(px, py, panelW, panelH, 12);
@@ -2883,7 +2928,7 @@ function drawInGameMenu_OLD() {
       }
     } catch (e) {}
 
-    
+    // Button Layout
     const btnLabels = [ { id: 'continue', label: 'Continue' }, { id: 'settings', label: 'Settings' }, { id: 'exit', label: 'Exit' } ];
     const btnW = 320; 
     const btnH = 60;  
@@ -2917,7 +2962,7 @@ function drawInGameMenu_OLD() {
         push();
         textFont(uiFont || 'Arial');
         textAlign(CENTER, CENTER);
-        textSize(28); 
+        gTextSize(28); 
         noStroke();
         fill(0, 140);
         text(b.label, drawX + drawW / 2 + 2, drawY + drawH / 2 + 3);
@@ -3032,6 +3077,8 @@ function closeInGameSettings() {
   }
 
   clearSubSettings();
+  try { if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize(); } catch(e) {}
+  try { if (typeof persistSavedSettings === 'function') persistSavedSettings(true); } catch(e) {}
 }
 
 ['pointerdown', 'keydown'].forEach((evt) => {
@@ -3082,6 +3129,126 @@ function showSubSettings(label) {
   applyCurrentTextSize();
 }
 
+// Helper to compute scale based on `textSizeSetting` and provide a scaled p5 textSize wrapper
+function getTextScale() {
+  try {
+    const defaultVal = 75;
+    const raw = (typeof textSizeSetting === 'number') ? textSizeSetting : (parseInt(textSizeSetting, 10) || defaultVal);
+    return (raw && isFinite(raw)) ? (raw / defaultVal) : 1;
+  } catch (e) { return 1; }
+}
+
+function gTextSize(px) {
+  ensureTextSizeOverride();
+  try {
+    if (typeof textSize === 'function') textSize(px);
+  } catch (e) {
+    try {
+      const scale = getTextScale();
+      const finalPx = Math.max(8, Math.round((Number(px) || 14) * scale));
+      if (typeof _rawTextSizeFn === 'function') _rawTextSizeFn(finalPx);
+    } catch (err) {}
+  }
+}
+
+let _rawTextSizeFn = null;
+let _textSizeBaseValue = 14;
+let _textSizeOverrideInstalled = false;
+
+function ensureTextSizeOverride() {
+  if (_textSizeOverrideInstalled) return;
+  if (typeof textSize !== 'function') return;
+  _rawTextSizeFn = textSize.bind(window || globalThis);
+  const scaledTextSize = (value) => {
+    _textSizeBaseValue = (typeof value === 'number') ? value : _textSizeBaseValue || 14;
+    const computed = Math.max(8, Math.round(_textSizeBaseValue * getTextScale()));
+    try { _rawTextSizeFn(computed); } catch (e) {}
+  };
+  scaledTextSize.__raw = _rawTextSizeFn;
+  scaledTextSize.__getBase = () => _textSizeBaseValue;
+  scaledTextSize.__setBase = (val) => { _textSizeBaseValue = val; };
+  try { textSize = scaledTextSize; } catch (e) {}
+  _textSizeOverrideInstalled = true;
+}
+
+function applyCurrentTextSize() {
+  ensureTextSizeOverride();
+  try { if (typeof textSize === 'function') textSize(_textSizeBaseValue || 14); } catch(e) {}
+  try {
+    const defaultVal = 75;
+    const raw = (typeof textSizeSetting === 'number') ? textSizeSetting : (parseInt(textSizeSetting, 10) || defaultVal);
+    const scale = (raw && isFinite(raw)) ? (raw / defaultVal) : 1;
+
+    const base = Math.max(10, Math.round(14 * scale));
+    const small = Math.max(8, Math.round(12 * scale));
+    const label = Math.max(12, Math.round(18 * scale));
+    const heading = Math.max(14, Math.round(24 * scale));
+
+    try { if (typeof textSize === 'function') textSize(base); } catch(e) {}
+
+    // Update known labeled elements
+    try {
+      const labels = document.querySelectorAll('.setting-label');
+      labels.forEach(l => { try { l.style.fontSize = label + 'px'; } catch(e){} });
+    } catch(e) {}
+
+    // Update text-size buttons
+    try {
+      const buttons = document.querySelectorAll('button[data-text-size-val]');
+      buttons.forEach(b => { try { b.style.fontSize = Math.max(12, Math.round(14 * scale)) + 'px'; } catch(e){} });
+    } catch(e) {}
+
+    // Update controls inside settings menu if present
+    try {
+      const rootEl = (typeof settingsMenuContent !== 'undefined' && settingsMenuContent && settingsMenuContent.elt) ? settingsMenuContent.elt : document.getElementById('menu-settings-root');
+      const root = (rootEl && rootEl.querySelector) ? rootEl : document.body;
+      const selLabels = root.querySelectorAll('.setting-label, .setting-row, .setting-title');
+      selLabels.forEach(el => { try { el.style.fontSize = label + 'px'; } catch(e){} });
+
+      const btns = root.querySelectorAll('button, a');
+      btns.forEach(el => { try { el.style.fontSize = Math.max(12, Math.round(14 * scale)) + 'px'; } catch(e){} });
+
+      const selects = root.querySelectorAll('select');
+      selects.forEach(el => { try { el.style.fontSize = base + 'px'; } catch(e){} });
+
+      const inputs = root.querySelectorAll('input');
+      inputs.forEach(el => { try { el.style.fontSize = base + 'px'; } catch(e){} });
+    } catch(e) {}
+
+    // Also update any p5-created submenu elements tracked in `activeSettingElements`
+    try {
+      if (Array.isArray(activeSettingElements)) {
+        activeSettingElements.forEach(item => {
+          try {
+            const node = item && (item.elt || item);
+            if (!node || !node.style) return;
+            const tag = (node.tagName || '').toLowerCase();
+            const controlSize = (tag === 'input' || tag === 'select' || tag === 'button' || tag === 'a') ? Math.max(12, Math.round(14 * scale)) : label;
+            try { node.style.fontSize = controlSize + 'px'; } catch(e){}
+            try {
+              const children = node.querySelectorAll && node.querySelectorAll('*');
+              if (children && children.length) {
+                children.forEach(c => { try { c.style.fontSize = controlSize + 'px'; } catch(e){} });
+              }
+            } catch(e){}
+          } catch(e){}
+        });
+      }
+    } catch(e) {}
+
+    try { if (typeof updateTextSizeButtonStyles === 'function') updateTextSizeButtonStyles(); } catch(e) {}
+  } catch(e) {}
+}
+
+// Also update all controls inside the settings menu/root so labels and controls match
+try {
+  if (typeof window !== 'undefined') {
+    window.applyCurrentTextSize = applyCurrentTextSize;
+  }
+} catch(e) {}
+
+
+
 function updateLoadingOverlayDom() {
   try {
     const el = document.getElementById('gd-loading-overlay');
@@ -3093,10 +3260,10 @@ function updateLoadingOverlayDom() {
       el.style.display = 'flex';
       el.style.opacity = '1';
       
-      
+      // NEW: Force the Loading Screen to Zoom Out
       const content = document.getElementById('gd-loading-content');
       if (content) {
-          
+          // Force a gentle scale so the loading box stays centered but never disappears
           let s = 1;
           if (typeof window !== 'undefined') s = window.innerHeight / 4000;
           s = Math.max(0.18, Math.min(0.55, s));
@@ -3899,7 +4066,7 @@ let SETTINGS_OVERLAY = null;
 let ESC_MENU_BACKGROUND = null;
 
 const WALK_SHEET_COMBINED = 'assets/2-Characters/2-Walking/16x16 Walk-Sheet.png';
-const RUN_SHEET_COMBINED = 'assets/2-Characters/3-Running/16x16 Run-Sheet.png';
+const RUN_SHEET_COMBINED = WALK_SHEET_COMBINED;
 
 let playerAnimFrame = 0;
 let playerAnimTimer = 0;
@@ -4136,7 +4303,7 @@ const TREE_OVERLAY_PATH = 'assets/1-Background/2-Game/1-Forest/tree_1.png';
 let TREE_OVERLAY_IMG = null;
 let treeObjects = []; 
 
-const TREE_SPAWN_CHANCE = 0.00005; // less dense trees per request
+const TREE_SPAWN_CHANCE = 0.00005; 
 
 let edgeLayer = null;
 let EDGE_LAYER_ENABLED = false; 
@@ -4343,7 +4510,7 @@ const HILL_ASSETS = {};
 function draw() {
   try { enforceCanvasSharpness(drawingContext); } catch (e) {}
   
-  
+  // --- Generation Phases ---
   if (genPhase > 0) {
     if (genPhase === 1) {
       showLoadingOverlay = true;
@@ -4374,20 +4541,20 @@ function draw() {
     }
   }
 
-  
+  // --- Main Draw Loop ---
   if (typeof window !== 'undefined' && window && window.__gameDebugShown !== true) { 
     verboseLog('[game] draw() running'); window.__gameDebugShown = true; 
   }
   
   try { ensureLoadingOverlayDom(); updateLoadingOverlayDom(); } catch (e) {}
 
-  
+  // !!! START GLOBAL SCALING !!!
   push();
 
-  
+  // 1. Apply the shrink factor
   if (gameScale !== 1) scale(gameScale);
 
-  
+  // 2. Center the game if screen is ultra-wide
   const mapW = (logicalW || 0) * cellSize;
   if (mapW > 0 && mapW < virtualW) {
       translate((virtualW - mapW) / 2, 0);
@@ -4404,14 +4571,14 @@ function draw() {
   }
   
   if (playerPosition) {
-    
+    // Pause movement when any overlay is visible (settings or pause menu)
     if (!settingsOverlayDiv && !inGameMenuVisible) {
       handleMovement();
       updateMovementInterpolation();
     }
   }
 
-  
+  // 3. Draw Game World Objects
   try {
     const drawables = [];
     if (Array.isArray(mapOverlays)) {
@@ -4456,19 +4623,19 @@ function draw() {
     }
   } catch (e) {}
 
-  
+  // 4. Draw HUD (Scaled automatically now)
   drawDifficultyBadge();
   drawSprintMeter();
   drawClouds();
 
-  
+  // 5. Draw Menu (Scaled automatically now)
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
   } catch (e) {}
   
   if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
 
-  
+  // 6. Draw Debug
   if (EDGE_LAYER_DEBUG && edgeLayer && logicalW && logicalH) {
     noStroke(); fill(255, 0, 0, 100);
     for (let y = 0; y < logicalH; y++) {
@@ -4478,7 +4645,7 @@ function draw() {
     }
   }
 
-  pop(); 
+  pop(); // !!! END GLOBAL SCALING !!!
 }
 
 
@@ -4639,6 +4806,10 @@ function openInGameSettings(currentVals) {
       setDifficulty(currentVals.difficulty, { regenerate: false, reason: 'sync' });
     }
   }
+  try {
+    loadLocalSettings();
+  } catch (e) {}
+  try { applyCurrentTextSize(); } catch (e) {}
 
   const { container, panel, close } = createZoomStablePanel(720, 540, 'gd-settings-overlay');
   decorateSettingsPanel(panel);
@@ -4878,18 +5049,18 @@ function drawDifficultyBadge() {
   const paddingX = 18;
   const paddingY = 10;
   
-  
+  // FIX: Use virtualW instead of width
   const vW = virtualW || (width / gameScale); 
   
   push();
-  textSize(24); 
+  gTextSize(24); // Make text larger for 4K view
   if (uiFont) textFont(uiFont);
   
   const tWidth = textWidth(label);
   const badgeW = tWidth + paddingX * 2;
   const badgeH = 32 + paddingY * 2;
   
-  const x = vW - badgeW - margin; 
+  const x = vW - badgeW - margin; // Align to virtual right edge
   const y = margin;
 
   fill(0, 0, 0, 150);
@@ -4906,20 +5077,20 @@ function drawSprintMeter() {
   const now = millis();
   const margin = 20;
   
-  
+  // Use virtual dimensions context
   const vW = virtualW || (width / gameScale);
   
-  
+  // Safely check variables
   if (typeof lastRunTime === 'undefined') lastRunTime = 0;
   if (typeof sprintEnergy === 'undefined') sprintEnergy = 100;
 
-  
+  // Only draw if player recently ran or is not full stamina
   if (now - lastRunTime > 2000 && sprintEnergy >= SPRINT_MAX) return;
 
   const barW = 200; 
   const barH = 24;
   
-  
+  // Position: Top-Left (below difficulty badge area if needed)
   const x = margin;
   const y = margin + 60; 
 
@@ -4927,22 +5098,22 @@ function drawSprintMeter() {
 
   push();
   
-  
+  // Background
   noStroke();
   fill(0, 0, 0, 150);
   rect(x, y, barW, barH, 6);
 
-  
+  // Fill Bar
   if (pct > 0) {
-    if (sprintEnergy < SPRINT_COST_PER_FRAME * 10) fill(255, 50, 50); 
-    else fill(255, 215, 0); 
+    if (sprintEnergy < SPRINT_COST_PER_FRAME * 10) fill(255, 50, 50); // Red if low
+    else fill(255, 215, 0); // Gold normally
     
     rect(x + 2, y + 2, (barW - 4) * pct, barH - 4, 4);
   }
   
-  
+  // Text Label
   fill(255);
-  textSize(16);
+  gTextSize(16);
   textAlign(LEFT, BOTTOM);
   text("STAMINA", x, y - 5);
   
@@ -5449,22 +5620,22 @@ function spawnCloud(forceX) {
   
   const cloudImg = validImages[Math.floor(Math.random() * validImages.length)];
   
-  
+  // FIX: Hardcode Map Height (3000px)
   const worldHeight = 3000; 
   
-  
-  
+  // Spawn from 0 (Very Top) to 3000 (Very Bottom)
+  // This guarantees coverage everywhere.
   const minY = 0; 
   const maxY = worldHeight; 
   const yPos = minY + Math.random() * (maxY - minY);
   
-  
-  
+  // DEBUG: Check console to prove it's working
+  // verboseLog(`Spawning cloud at Y: ${Math.floor(yPos)}`);
 
   const baseSpeed = 0.3 + Math.random() * 1;
   const scale = 2.0 + Math.random() * 4.0;
   
-  
+  // Calculate width based on 3000px height ratio
   const currentScale = height / 3000; 
   const startX = (typeof forceX === 'number') ? forceX : -cloudImg.width * scale;
 
@@ -5531,18 +5702,34 @@ function buildAccessibilitySettings(ctx) {
   btnGroup.style('gap', '5px');
   btnGroup.style('flex', '1');
 
-  const sizes = ["Small", "Default", "Big"];
-  sizes.forEach(size => {
-      const btn = createButton(size);
+  const presetSource = (typeof window !== 'undefined' && Array.isArray(window.MENU_TEXT_SIZE_PRESETS)) ? window.MENU_TEXT_SIZE_PRESETS : null;
+  const presets = presetSource || [ { label: 'Small', value: 60 }, { label: 'Default', value: 75 }, { label: 'Big', value: 90 } ];
+
+  presets.forEach(p => {
+      const label = p && p.label ? String(p.label) : String(p);
+      const val = p && typeof p.value === 'number' ? Number(p.value) : (label === 'Default' ? 75 : (label === 'Small' ? 60 : 90));
+      const btn = createButton(label);
       btn.parent(btnGroup);
+      btn.attribute('data-text-size-val', String(val));
       btn.style('flex', '1');
       btn.style('height', '30px');
-      
-      stylePixelButton(btn); 
-      btn.style('font-size', '14px'); 
+      stylePixelButton(btn);
+      btn.style('font-size', '14px');
       btn.style('padding', '0');
-      
-      btn.mousePressed(() => { verboseLog("Text size:", size); });
+      btn.mousePressed(() => {
+        try { textSizeSetting = Number(val); } catch(e) { textSizeSetting = val; }
+        try { applyCurrentTextSize(); } catch(e) {}
+        try { updateTextSizeButtonStyles(); } catch(e) {}
+        try {
+          if (typeof persistSavedSettings === 'function') {
+            persistSavedSettings(true);
+          } else if (typeof saveLocalSettings === 'function') {
+            saveLocalSettings();
+          } else {
+            try { localStorage.setItem('menuSettings', JSON.stringify({ masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting })); } catch(e){}
+          }
+        } catch(e) {}
+      });
   });
 }
 
@@ -5619,7 +5806,19 @@ function createSettingsContext({ container }) {
       }
       recordElement(slider);
       
-      slider.input(() => callback(slider.value()));
+      slider.input(() => {
+        try {
+          callback(slider.value());
+        } catch(e) { try { callback(slider.value()); } catch(e){} }
+        try {
+          if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
+            const keyName = String(name || '').toLowerCase();
+            if (/sensitivity/.test(keyName)) {
+              try { window.showError1(name); } catch(e){}
+            }
+          }
+        } catch(e) {}
+      });
       
       return ctx;
     },
@@ -5665,6 +5864,14 @@ function createSettingsContext({ container }) {
         if (typeof options.onChange === 'function') {
           options.onChange(checked);
         }
+        try {
+        if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
+          const keyName = String(name || '').toLowerCase();
+          if (/show\s*tutorials?/.test(keyName) || /enable\s*hud/.test(keyName) || /enabled\s*hub/.test(keyName) || /invert\s*y/.test(keyName) || /invert\s*y\s*axis/.test(keyName)) {
+            try { window.showError1(name); } catch(e){}
+          }
+        }
+        } catch(e) {}
       };
       toggle.mousePressed(toggleHandler);
 
@@ -5692,7 +5899,19 @@ function createSettingsContext({ container }) {
       opts.forEach(opt => sel.option(opt));
       
       if (options.value) sel.value(options.value);
-      if (options.onChange) sel.changed(() => options.onChange(sel.value()));
+      sel.changed(() => {
+        try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e) { try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e){} }
+        try {
+          if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
+            const keyName = String(name || '').toLowerCase();
+            if (/color\s*mode/.test(keyName) || /difficulty/.test(keyName)) {
+              try { window.showError1(name); } catch(e){}
+            } else if (/language/.test(keyName)) {
+              try { window.showError1(name + ' — ONLY English is supported now'); } catch(e){}
+            }
+          }
+        } catch(e) {}
+      });
       recordElement(sel);
 
       return ctx;
@@ -5842,7 +6061,6 @@ function updateClouds() {
 function drawClouds() {
   push();
   
-  
   clouds.sort((a, b) => a.scale - b.scale);
   
   for (const cloud of clouds) {
@@ -5860,4 +6078,71 @@ function drawClouds() {
   noTint();
   pop();
 }
+
+// --- Toggle handlers for "Show Tutorials" and "Enabled HUB"
+(function(){
+  function ensureError1El(){
+    let el = document.getElementById('error1');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'error1';
+      Object.assign(el.style, {
+        position: 'fixed',
+        right: '12px',
+        bottom: '12px',
+        background: 'rgba(220,20,60,0.95)',
+        color: '#fff',
+        padding: '10px 14px',
+        borderRadius: '6px',
+        zIndex: 9999,
+        fontFamily: 'sans-serif',
+        fontSize: '14px',
+        display: 'none',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.4)'
+      });
+      if (document.body) {
+        document.body.appendChild(el);
+      } else {
+        document.addEventListener('DOMContentLoaded', function(){ try { document.body.appendChild(el); } catch(e){} });
+      }
+    }
+    return el;
+  }
+  function showError1(name){
+    const el = ensureError1El();
+    let msg = 'Error 1: Has no functionality yet will be added later';
+    try {
+      if (name) {
+        const short = String(name).trim();
+        if (short) msg += ' (' + short + ')';
+      }
+    } catch(e){}
+    el.textContent = msg;
+    el.style.display = 'block';
+    try { clearTimeout(el.__hideTimeout); } catch(e){}
+    el.__hideTimeout = setTimeout(()=>{ try { el.style.display = 'none'; } catch(e){} }, 5000);
+    if (typeof console !== 'undefined' && console.warn) console.warn(msg);
+  }
+
+  const combinedSelector = '#showTutorials, input[name="showTutorials"], .show-tutorials, #ShowTutorials, #enabledHub, input[name="enabledHub"], .enabled-hub, #EnabledHub, #enabledHUB';
+
+  function delegatedHandler(e){
+    try {
+      const t = e.target;
+      if (!t) return;
+      if (typeof t.matches === 'function' && t.matches(combinedSelector)) {
+        showError1();
+        return;
+      }
+      const found = t.closest && typeof t.closest === 'function' && t.closest(combinedSelector);
+      if (found) showError1();
+    } catch(e) {}
+  }
+
+  document.addEventListener('change', delegatedHandler, true);
+  document.addEventListener('input', delegatedHandler, true);
+
+  // expose for manual testing from console
+  try { window.showError1 = showError1; } catch(e) {}
+})();
 

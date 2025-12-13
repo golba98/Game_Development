@@ -18,6 +18,16 @@ const DEFAULT_SETTINGS = Object.freeze({
   difficulty: 'normal'
 });
 
+// Shared presets for text-size buttons used by both the menu and in-game settings.
+// Each entry has a `label` and a numeric `value` that controls `textSizeSetting`.
+if (typeof window !== 'undefined') {
+  window.MENU_TEXT_SIZE_PRESETS = [
+    { label: 'Small', value: 60 },
+    { label: 'Default', value: 75 },
+    { label: 'Big', value: 90 }
+  ];
+}
+
 const DIFFICULTY_LABELS = Object.freeze({
   easy: 'Easy',
   normal: 'Normal',
