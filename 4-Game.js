@@ -479,8 +479,8 @@ function setup() {
   W = windowWidth;
   H = windowHeight;
 
-  // 1. FORCE SHARPNESS (CSS Method)
-  // This makes the game crisp immediately.
+  
+  
   let canvasStyle = document.createElement('style');
   canvasStyle.innerHTML = `
     canvas {
@@ -506,17 +506,17 @@ function setup() {
   `;
   document.head.appendChild(canvasStyle);
 
-  // 2. High Resolution
+  
   pixelDensity(window.devicePixelRatio || 1);
 
-  // 3. Calculate Scale
+  
   gameScale = H / FIXED_VIRTUAL_HEIGHT;
   virtualW = W / gameScale;
   virtualH = H / gameScale;
 
   let cnv = createCanvas(W, H);
   
-  // 4. Backup Sharpness
+  
   try {
     enforceCanvasSharpness(drawingContext);
     if (cnv && cnv.elt) {
@@ -566,8 +566,8 @@ function setup() {
     if (ready) {
       verboseLog('[game] assets loaded. Pre-warming clouds...');
       
-      // FORCE CLOUDS EVERYWHERE
-      // We use the virtual world width so clouds don't bunch on the left.
+      
+      
       const wWidth = width / (height / 3000); 
       for(let i = 0; i < 25; i++) {
           spawnCloud(Math.random() * wWidth); 
@@ -630,17 +630,17 @@ function _confirmResize() {
   W = windowWidth;
   H = windowHeight;
 
-  // 1. Maintain Quality
+  
   pixelDensity(window.devicePixelRatio || 1);
   
-  // 2. Recalculate Scale
+  
   gameScale = H / FIXED_VIRTUAL_HEIGHT;
   virtualW = W / gameScale;
   virtualH = H / gameScale;
 
   resizeCanvas(W, H);
   
-  // 3. RE-APPLY CLARITY (Important!)
+  
   try {
     enforceCanvasSharpness(drawingContext);
     const cnv = select('canvas');
@@ -678,17 +678,17 @@ function createFullWindowCanvas() {
 
 function mousePressed() {
   try {
-    // FIX: Un-scale mouse coordinates to match the virtual world
+    
     const mx = mouseX / gameScale;
     const my = mouseY / gameScale;
 
-    // Canvas menu click handling removed (now using DOM menu)
+    
   } catch (e) {}
 }
 
 function togglePauseMenuFromEscape() {
   const now = Date.now();
-  if (now - _lastEscToggleAt < 50) return; // debounce to prevent double-fire from multiple handlers
+  if (now - _lastEscToggleAt < 50) return; 
   _lastEscToggleAt = now;
 
   try {
@@ -881,12 +881,15 @@ function generateMap_Part2() {
 
   treeObjects = [];
   if (TREE_OVERLAY_IMG) {
+    const highTreeZoneX = logicalW * 0.7;
+    const highTreeZoneY = logicalH * 0.3;
     for (let y = 0; y < logicalH; y++) {
       for (let x = 0; x < logicalW; x++) {
         const idx = y * logicalW + x;
         if (mapStates[idx] !== TILE_TYPES.FOREST) continue;
         if (x === spawn.spawnX && y === spawn.spawnY) continue;
-        if (Math.random() < TREE_SPAWN_CHANCE) treeObjects.push({ x, y });
+        const zoneDensityScale = (x > highTreeZoneX && y < highTreeZoneY) ? 0.25 : 1;
+        if (Math.random() < TREE_SPAWN_CHANCE * zoneDensityScale) treeObjects.push({ x, y });
       }
     }
     createMapImage();
@@ -903,7 +906,7 @@ function generateMap_Part2() {
 function computeClearArea() {
     const centerX = logicalW / 2;
     const centerY = logicalH / 2;
-    const clearAreaRatio = 0.75 + Math.random() * 0.15;
+    const clearAreaRatio = 0.95+ Math.random() * 0.0;
     const baseClearWidth = logicalW * clearAreaRatio;
     const baseClearHeight = logicalH * clearAreaRatio;
     return {
@@ -1429,8 +1432,8 @@ function tryFetchActiveMap() {
       return Promise.resolve(false);
     }
 
-    // FIX: Use relative path if we are on the server port (3000) to avoid CORS/origin mismatches.
-    // Otherwise, default to standard localhost address.
+    
+    
     let url = 'http://localhost:3000/maps/active_map.json';
     if (typeof window !== 'undefined' && window.location && window.location.port === '3000') {
       url = '/maps/active_map.json';
@@ -1444,7 +1447,7 @@ function tryFetchActiveMap() {
         }
         return resp.json().then(obj => {
           try { 
-              // applyLoadedMap updates the global persistentGameId
+              
               const success = applyLoadedMap(obj); 
               if (success) {
                   verboseLog('[game] tryFetchActiveMap: Successfully applied map from server.');
@@ -1454,7 +1457,7 @@ function tryFetchActiveMap() {
           return false;
         }).catch(err => { console.warn('[game] failed to parse active_map.json', err); return false; });
       }).catch(err => { 
-          // This usually happens if the server isn't running or port is blocked
+          
           console.warn('[game] tryFetchActiveMap: Fetch failed', err); 
           return false; 
       });
@@ -1629,12 +1632,12 @@ function createMapImage() {
   }
   mapImage = createGraphics(w, h);
   
-  // 1. Memory Optimization (Keep this at 1 for large maps)
+  
   mapImage.pixelDensity(1); 
   
-  // 2. FORCE CLARITY on the map buffer
+  
   try {
-    // Force every map buffer to stay pixelated
+    
     enforceCanvasSharpness(mapImage.drawingContext);
     mapImage.noSmooth(); 
   } catch(e) {}
@@ -1645,7 +1648,7 @@ function createMapImage() {
     }
 
   const useSprites = showTextures && spritesheet && spritesheet.width > 1;
-  // ... (keep the rest of the existing function logic exactly as is below) ...
+  
   if (showTextures && !useSprites) {
     console.warn('[createMapImage] textures requested but spritesheet not available - drawing raw map');
     try { showToast('Textures not available yet — showing raw map', 'warn', 3000); } catch (e) {}
@@ -1854,7 +1857,7 @@ function createMapImage() {
               shouldMark = true;
             }
             if (!shouldMark) continue;
-            // logic to mark edge layer (if needed) ...
+            
           } catch (e) {}
         }
       }
@@ -2655,7 +2658,7 @@ function measureZoomViaInch() {
     }
     const rect = __zoomProbeEl.getBoundingClientRect();
     if (!rect || !rect.width) return null;
-    // CSS inch is 96px at 100% zoom; measured px / 96 gives zoom factor.
+    
     return rect.width / 96;
   } catch (e) { return null; }
 }
@@ -2829,11 +2832,11 @@ function drawInGameMenu_OLD() {
   try {
     push();
     
-    // Virtual Dimensions
+    
     const vW = virtualW || (width / gameScale);
     const vH = virtualH || (height / gameScale);
 
-    // Mouse Logic
+    
     let currentHoveredId = null;
     const mx = mouseX / gameScale;
     const my = mouseY / gameScale;
@@ -2849,19 +2852,19 @@ function drawInGameMenu_OLD() {
     }
     inGameMenuHovered = currentHoveredId;
 
-    // Background Dimmer
+    
     noStroke();
     fill(0, 0, 0, 200);
     rect(0, 0, vW, vH); 
 
-    // --- NEW SMALLER DIMENSIONS ---
+    
     const panelW = 500; 
     const panelH = 400;
     
     const px = Math.floor((vW - panelW) / 2);
     const py = Math.floor((vH - panelH) / 2);
 
-    // Panel Body
+    
     push();
     stroke(0); strokeWeight(6); fill(40, 40, 44, 255); 
     rect(px, py, panelW, panelH, 12);
@@ -2880,7 +2883,7 @@ function drawInGameMenu_OLD() {
       }
     } catch (e) {}
 
-    // Button Layout
+    
     const btnLabels = [ { id: 'continue', label: 'Continue' }, { id: 'settings', label: 'Settings' }, { id: 'exit', label: 'Exit' } ];
     const btnW = 320; 
     const btnH = 60;  
@@ -3090,10 +3093,10 @@ function updateLoadingOverlayDom() {
       el.style.display = 'flex';
       el.style.opacity = '1';
       
-      // NEW: Force the Loading Screen to Zoom Out
+      
       const content = document.getElementById('gd-loading-content');
       if (content) {
-          // Force a gentle scale so the loading box stays centered but never disappears
+          
           let s = 1;
           if (typeof window !== 'undefined') s = window.innerHeight / 4000;
           s = Math.max(0.18, Math.min(0.55, s));
@@ -4340,7 +4343,7 @@ const HILL_ASSETS = {};
 function draw() {
   try { enforceCanvasSharpness(drawingContext); } catch (e) {}
   
-  // --- Generation Phases ---
+  
   if (genPhase > 0) {
     if (genPhase === 1) {
       showLoadingOverlay = true;
@@ -4371,20 +4374,20 @@ function draw() {
     }
   }
 
-  // --- Main Draw Loop ---
+  
   if (typeof window !== 'undefined' && window && window.__gameDebugShown !== true) { 
     verboseLog('[game] draw() running'); window.__gameDebugShown = true; 
   }
   
   try { ensureLoadingOverlayDom(); updateLoadingOverlayDom(); } catch (e) {}
 
-  // !!! START GLOBAL SCALING !!!
+  
   push();
 
-  // 1. Apply the shrink factor
+  
   if (gameScale !== 1) scale(gameScale);
 
-  // 2. Center the game if screen is ultra-wide
+  
   const mapW = (logicalW || 0) * cellSize;
   if (mapW > 0 && mapW < virtualW) {
       translate((virtualW - mapW) / 2, 0);
@@ -4401,14 +4404,14 @@ function draw() {
   }
   
   if (playerPosition) {
-    // Pause movement when any overlay is visible (settings or pause menu)
+    
     if (!settingsOverlayDiv && !inGameMenuVisible) {
       handleMovement();
       updateMovementInterpolation();
     }
   }
 
-  // 3. Draw Game World Objects
+  
   try {
     const drawables = [];
     if (Array.isArray(mapOverlays)) {
@@ -4453,19 +4456,19 @@ function draw() {
     }
   } catch (e) {}
 
-  // 4. Draw HUD (Scaled automatically now)
+  
   drawDifficultyBadge();
   drawSprintMeter();
   drawClouds();
 
-  // 5. Draw Menu (Scaled automatically now)
+  
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
   } catch (e) {}
   
   if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
 
-  // 6. Draw Debug
+  
   if (EDGE_LAYER_DEBUG && edgeLayer && logicalW && logicalH) {
     noStroke(); fill(255, 0, 0, 100);
     for (let y = 0; y < logicalH; y++) {
@@ -4475,7 +4478,7 @@ function draw() {
     }
   }
 
-  pop(); // !!! END GLOBAL SCALING !!!
+  pop(); 
 }
 
 
@@ -4875,18 +4878,18 @@ function drawDifficultyBadge() {
   const paddingX = 18;
   const paddingY = 10;
   
-  // FIX: Use virtualW instead of width
+  
   const vW = virtualW || (width / gameScale); 
   
   push();
-  textSize(24); // Make text larger for 4K view
+  textSize(24); 
   if (uiFont) textFont(uiFont);
   
   const tWidth = textWidth(label);
   const badgeW = tWidth + paddingX * 2;
   const badgeH = 32 + paddingY * 2;
   
-  const x = vW - badgeW - margin; // Align to virtual right edge
+  const x = vW - badgeW - margin; 
   const y = margin;
 
   fill(0, 0, 0, 150);
@@ -4903,20 +4906,20 @@ function drawSprintMeter() {
   const now = millis();
   const margin = 20;
   
-  // Use virtual dimensions context
+  
   const vW = virtualW || (width / gameScale);
   
-  // Safely check variables
+  
   if (typeof lastRunTime === 'undefined') lastRunTime = 0;
   if (typeof sprintEnergy === 'undefined') sprintEnergy = 100;
 
-  // Only draw if player recently ran or is not full stamina
+  
   if (now - lastRunTime > 2000 && sprintEnergy >= SPRINT_MAX) return;
 
   const barW = 200; 
   const barH = 24;
   
-  // Position: Top-Left (below difficulty badge area if needed)
+  
   const x = margin;
   const y = margin + 60; 
 
@@ -4924,20 +4927,20 @@ function drawSprintMeter() {
 
   push();
   
-  // Background
+  
   noStroke();
   fill(0, 0, 0, 150);
   rect(x, y, barW, barH, 6);
 
-  // Fill Bar
+  
   if (pct > 0) {
-    if (sprintEnergy < SPRINT_COST_PER_FRAME * 10) fill(255, 50, 50); // Red if low
-    else fill(255, 215, 0); // Gold normally
+    if (sprintEnergy < SPRINT_COST_PER_FRAME * 10) fill(255, 50, 50); 
+    else fill(255, 215, 0); 
     
     rect(x + 2, y + 2, (barW - 4) * pct, barH - 4, 4);
   }
   
-  // Text Label
+  
   fill(255);
   textSize(16);
   textAlign(LEFT, BOTTOM);
@@ -5446,22 +5449,22 @@ function spawnCloud(forceX) {
   
   const cloudImg = validImages[Math.floor(Math.random() * validImages.length)];
   
-  // FIX: Hardcode Map Height (3000px)
+  
   const worldHeight = 3000; 
   
-  // Spawn from 0 (Very Top) to 3000 (Very Bottom)
-  // This guarantees coverage everywhere.
+  
+  
   const minY = 0; 
   const maxY = worldHeight; 
   const yPos = minY + Math.random() * (maxY - minY);
   
-  // DEBUG: Check console to prove it's working
-  // verboseLog(`Spawning cloud at Y: ${Math.floor(yPos)}`);
+  
+  
 
   const baseSpeed = 0.3 + Math.random() * 1;
   const scale = 2.0 + Math.random() * 4.0;
   
-  // Calculate width based on 3000px height ratio
+  
   const currentScale = height / 3000; 
   const startX = (typeof forceX === 'number') ? forceX : -cloudImg.width * scale;
 
