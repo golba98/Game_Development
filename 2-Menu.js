@@ -9,6 +9,7 @@ const BACK_BUTTON_VERTICAL_OFFSET = 120;
 
 
 
+// === Utilities / Constants ===
 const DEFAULT_SETTINGS = Object.freeze({
   masterVol: 0.8,
   musicVol: 0.6,
@@ -23,6 +24,7 @@ const DIFFICULTY_LABELS = Object.freeze({
   hard: 'Hard'
 });
 
+// === Utilities / Misc ===
 function normalizeDifficultyChoice(value) {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toLowerCase();
@@ -57,6 +59,7 @@ let bgPlayMusic = null;
 let clickSFX = null;
 let menuMusicStopped = false;
 
+// === Zoom / DOM Stability / Scaling ===
 let _lastMenuZoomLog = null;
 function installMenuZoomLogger() {
   const logZoom = () => {
@@ -84,6 +87,7 @@ function installMenuZoomLogger() {
 
 
 
+// === Audio & Music ===
 function stopMenuMusicImmediate() {
   try {
     if (!bgMusic) { menuMusicStopped = true; return; }
@@ -150,11 +154,13 @@ let __menuZoomProbeEl = null;
 const zoomNeutralElements = new Set();
 const zoomAwareSliders = new Map();
 
+// === DOM Helpers ===
 function getMenuDomParent() {
   return menuDomParent || document.body;
 }
 
 let _lastMenuRootOffset = { x: null, y: null };
+// === Zoom Helpers ===
 function watchZoomNeutralElement(el) {
   if (!el) return;
   const node = el.elt || el;
@@ -184,6 +190,7 @@ function unregisterZoomAwareSlider(el) {
   if (!node) return;
   zoomAwareSliders.delete(node);
 }
+// === Zoom / Measurement ===
 function getCurrentMenuZoom() {
   const vv = window.visualViewport;
   const viewportScale = vv && vv.scale;
@@ -192,6 +199,7 @@ function getCurrentMenuZoom() {
   }
   return estimateMenuBrowserZoom();
 }
+// === DOM Stability Routines ===
 function keepMenuRootStable(el) {
   if (!el) return () => {};
   let loopId = null;
@@ -244,6 +252,7 @@ function keepMenuScaleStable(el) {
   return () => { if (loopId) cancelAnimationFrame(loopId); };
 }
 
+// === Zoom Measurement ===
 function measureMenuZoomViaInch() {
   try {
     if (typeof document === 'undefined') return null;
@@ -294,6 +303,7 @@ function estimateMenuBrowserZoom() {
   return clamped;
 }
 
+// === Settings DOM / Root ===
 function ensureSettingsMenuRoot() {
   if (settingsMenuRoot && settingsMenuContent) {
     menuDomParent = settingsMenuContent;
@@ -362,6 +372,7 @@ function releaseSettingsMenuRoot() {
   settingsMenuContent = null;
 }
 
+// === Lifecycle / Setup / Rendering ===
 function preload() {
   rectSkin = loadImage("assets/1-Background/1-Menu/Settings_Background.png");
   myFont   = loadFont("assets/3-GUI/font.ttf");
@@ -422,6 +433,7 @@ function setup() {
   try { getAudioContext && getAudioContext().suspend && getAudioContext().suspend(); } catch (e) {}
 }
 
+  // === Iframe / Message handling ===
   window.removeGameOverlay = function () {
     requestStopGameMusicAndCloseOverlay();
   };
@@ -468,6 +480,7 @@ function setup() {
 }, false);
 
   
+  // === Iframe / Overlay Controls ===
   function requestStopGameMusicAndCloseOverlay() {
     const iframe = document.getElementById('game-iframe');
     const ov = document.getElementById('game-overlay');
@@ -525,6 +538,7 @@ let mainButtonWidth = 0;
 let mainButtonHeight = 0;
 let mainButtonGap = 0;
 
+// === Layout / Menu Creation ===
 function calculateLayout() {
   mainButtonWidth = 0.25 * width;
   mainButtonHeight = 0.12 * height;
@@ -667,6 +681,7 @@ function createMainMenu() {
   applyCurrentTextSize();
 }
 
+// === Visual Helpers ===
 function fadeTo(callback) {
   let fadeOut = true;
   const step = () => {
@@ -682,6 +697,7 @@ function fadeTo(callback) {
   step();
 }
 
+// === Settings UI / Builders ===
 function showSettingsMenu() {
   clearSubSettings();
   ensureSettingsMenuRoot();
@@ -802,6 +818,7 @@ function showSubSettings(label) {
   applyCurrentTextSize();
 }
 
+// === UI Element Factories ===
 function makeBtn(label, x, y, w, h, cb) {
   const b = createButton(label);
   b.parent(getMenuDomParent());
@@ -847,6 +864,7 @@ function createSettingLabel(txt, x, y, maxWidth = 200, parentEl = null) {
 
 
 
+// === Settings Context / Row Builders ===
 function createSettingsContext(layout) {
   const domParent = settingsMenuContent || getMenuDomParent();
   return {
@@ -942,6 +960,7 @@ function createSettingsContext(layout) {
 
 
 
+// === Settings Builders Mapping ===
 const CATEGORY_BUILDERS = {
   Audio: buildAudioSettings,
   Gameplay: buildGameplaySettings,
@@ -1051,6 +1070,7 @@ function buildLanguageSettings(ctx) {
   ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
 }
 
+// === Settings Helpers ===
 function updateTextSizeButtonStyles() {
   const buttons = selectAll('button[data-text-size-val]');
   buttons.forEach(btn => {
@@ -1081,6 +1101,7 @@ function syncSlidersToSettings() {
   });
 }
 
+// === Settings Cleanup ===
 function clearSubSettings() {
   activeSettingElements.forEach(e => {
     unwatchZoomNeutralElement(e);
@@ -1092,6 +1113,7 @@ function clearSubSettings() {
   activeSettingElements = [];
 }
 
+// === Menu Visibility ===
 function hideMainMenu() {
   [playButtonBackground, btnPlay, settingsButtonBackground, btnSettings, exitButtonBackground, btnExit]
     .forEach(e => e && e.hide());
@@ -1106,6 +1128,7 @@ function showMainMenu() {
     .forEach(e => e && e.show());
 }
 
+// === Settings Teardown ===
 function hideSettingsMenu() {
   clearSubSettings();
   [...categoryBackgrounds, ...categoryButtons, saveBackground, btnSave, backMenuBackground, btnBackMenu]
@@ -1115,6 +1138,7 @@ function hideSettingsMenu() {
   releaseSettingsMenuRoot();
 }
 
+// === Audio Controls ===
 function applyVolumes() {
   if (bgMusic?.isPlaying()) bgMusic.setVolume(musicVol * masterVol);
 }
@@ -1126,6 +1150,7 @@ function playClickSFX() {
   }
 }
 
+// === Audio Unlock / Start ===
 function unlockAudioAndStart(cb) {
   if (audioUnlocked) {
     cb && cb();
@@ -1168,6 +1193,7 @@ function unlockAudioAndStart(cb) {
   } catch (e) { audioUnlocked = true; cb && cb(); }
 }
 
+// === Music Control ===
 function startMenuMusicIfNeeded() {
   if (!bgMusic) {
     console.warn('[startMenuMusicIfNeeded] bgMusic not loaded yet');
@@ -1193,6 +1219,7 @@ function startMenuMusicIfNeeded() {
   }
 }
 
+// === Styling / Helpers ===
 function styleButton(btn) {
   btn.style("background", "transparent");
   btn.style("border", "none");
@@ -1219,6 +1246,7 @@ function styleSmallButton(btn) {
   }
 }
 
+// === Video / Background ===
 function ensureLoopFallbackBuffer() {
   if (!loopFallbackBuffer || loopFallbackBuffer.width !== width || loopFallbackBuffer.height !== height) {
     loopFallbackBuffer = createGraphics(width, height);
@@ -1267,6 +1295,7 @@ function updateBackgroundVideo() {
   }
 }
 
+// === Persistence / Settings Storage ===
 function saveSettings() {
   playClickSFX();
   saveAllSettings();
@@ -1332,6 +1361,7 @@ function clearSavedSettings() {
   console.log("🗑️ Cleared saved settings.");
 }
 
+// === Draw / Render Loop ===
 function draw() {
   if (inGame) return;
 
@@ -1376,6 +1406,7 @@ function draw() {
   }
 }
 
+// === Window / Resize Handling ===
 function windowResized() {
   try { clearTimeout(_menuResizeTimer); } catch (e) {}
   _menuLastSize = { w: window.innerWidth, h: window.innerHeight };
@@ -1420,6 +1451,7 @@ function windowResized() {
   }, 200);
 }
 
+// === Text / Accessibility ===
 function adjustTextSize(sizeValue) {
   if (typeof sizeValue !== 'number' || !isFinite(sizeValue)) {
     sizeValue = DEFAULT_SETTINGS.textSize;
@@ -1456,6 +1488,7 @@ function saveAccessibilitySettings() {
   applyCurrentTextSize();
 }
 
+// === Custom Styles Injection ===
 function injectCustomStyles() {
   const existingStyle = document.getElementById('custom-menu-styles');
   if (existingStyle) existingStyle.remove();

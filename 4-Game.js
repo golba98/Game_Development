@@ -46,6 +46,120 @@ function verboseLog(...args) {
   }
 }
 
+
+// === Grouped function accessors (non-destructive) ===
+// Provides grouped access to core game functions without moving their implementations.
+// Use `GameGroups.Core.draw()` or `GameGroups.Map.generateMap()` etc.
+const GameGroups = {
+  Core: {
+    draw: (...a) => typeof draw === 'function' ? draw(...a) : undefined,
+    createMapImage: (...a) => typeof createMapImage === 'function' ? createMapImage(...a) : undefined,
+    createFullWindowCanvas: (...a) => typeof createFullWindowCanvas === 'function' ? createFullWindowCanvas(...a) : undefined,
+    enforceCanvasSharpness: (...a) => typeof enforceCanvasSharpness === 'function' ? enforceCanvasSharpness(...a) : undefined,
+    injectCustomStyles: (...a) => typeof injectCustomStyles === 'function' ? injectCustomStyles(...a) : undefined,
+    updateBackgroundVideo: (...a) => typeof updateBackgroundVideo === 'function' ? updateBackgroundVideo(...a) : undefined,
+    ensureLoopFallbackBuffer: (...a) => typeof ensureLoopFallbackBuffer === 'function' ? ensureLoopFallbackBuffer(...a) : undefined,
+    captureLoopFallbackFrame: (...a) => typeof captureLoopFallbackFrame === 'function' ? captureLoopFallbackFrame(...a) : undefined
+  },
+  Map: {
+    generateMap: (...a) => typeof generateMap === 'function' ? generateMap(...a) : undefined,
+    generateMap_Part1: (...a) => typeof generateMap_Part1 === 'function' ? generateMap_Part1(...a) : undefined,
+    generateMap_Part2: (...a) => typeof generateMap_Part2 === 'function' ? generateMap_Part2(...a) : undefined,
+    computeClearArea: (...a) => typeof computeClearArea === 'function' ? computeClearArea(...a) : undefined,
+    applyNoiseTerrain: (...a) => typeof applyNoiseTerrain === 'function' ? applyNoiseTerrain(...a) : undefined,
+    postProcessRiversAndClearArea: (...a) => typeof postProcessRiversAndClearArea === 'function' ? postProcessRiversAndClearArea(...a) : undefined,
+    generateHills: (...a) => typeof generateHills === 'function' ? generateHills(...a) : undefined,
+    getHillTileType: (...a) => typeof getHillTileType === 'function' ? getHillTileType(...a) : undefined,
+    pruneUnreachable: (...a) => typeof pruneUnreachable === 'function' ? pruneUnreachable(...a) : undefined
+  },
+  Rivers: {
+    carveRivers: (...a) => typeof carveRivers === 'function' ? carveRivers(...a) : undefined,
+    carveRiversMaybeThrough: (...a) => typeof carveRiversMaybeThrough === 'function' ? carveRiversMaybeThrough(...a) : undefined,
+    carveBranchFromRiver: (...a) => typeof carveBranchFromRiver === 'function' ? carveBranchFromRiver(...a) : undefined,
+    layBridgeTile: (...a) => typeof layBridgeTile === 'function' ? layBridgeTile(...a) : undefined,
+    smoothRiverTiles: (...a) => typeof smoothRiverTiles === 'function' ? smoothRiverTiles(...a) : undefined,
+    roundRiverTips: (...a) => typeof roundRiverTips === 'function' ? roundRiverTips(...a) : undefined,
+    ensureInteractiveClearArea: (...a) => typeof ensureInteractiveClearArea === 'function' ? ensureInteractiveClearArea(...a) : undefined,
+    ensureEdgeLayerConnectivity: (...a) => typeof ensureEdgeLayerConnectivity === 'function' ? ensureEdgeLayerConnectivity(...a) : undefined
+  },
+  Movement: {
+    handleMovement: (...a) => typeof handleMovement === 'function' ? handleMovement(...a) : undefined,
+    tryMoveDirection: (...a) => typeof tryMoveDirection === 'function' ? tryMoveDirection(...a) : undefined,
+    handleItemInteraction: (...a) => typeof handleItemInteraction === 'function' ? handleItemInteraction(...a) : undefined,
+    canMoveTo: (...a) => typeof canMoveTo === 'function' ? canMoveTo(...a) : undefined,
+    isSolid: (...a) => typeof isSolid === 'function' ? isSolid(...a) : undefined,
+    startMoveVisual: (...a) => typeof startMoveVisual === 'function' ? startMoveVisual(...a) : undefined,
+    updateMovementInterpolation: (...a) => typeof updateMovementInterpolation === 'function' ? updateMovementInterpolation(...a) : undefined,
+    updateSprintState: (...a) => typeof updateSprintState === 'function' ? updateSprintState(...a) : undefined,
+    getActiveMoveDurationMs: (...a) => typeof getActiveMoveDurationMs === 'function' ? getActiveMoveDurationMs(...a) : undefined,
+    getActiveMoveCooldownMs: (...a) => typeof getActiveMoveCooldownMs === 'function' ? getActiveMoveCooldownMs(...a) : undefined,
+    getCellSizeSpeedScale: (...a) => typeof getCellSizeSpeedScale === 'function' ? getCellSizeSpeedScale(...a) : undefined,
+    drawPlayer: (...a) => typeof drawPlayer === 'function' ? drawPlayer(...a) : undefined,
+    deltaToDirection: (...a) => typeof deltaToDirection === 'function' ? deltaToDirection(...a) : undefined,
+    directionToDelta: (...a) => typeof directionToDelta === 'function' ? directionToDelta(...a) : undefined,
+    findFloodStart: (...a) => typeof findFloodStart === 'function' ? findFloodStart(...a) : undefined,
+    neighbors: (...a) => typeof neighbors === 'function' ? neighbors(...a) : undefined,
+    getTileState: (...a) => typeof getTileState === 'function' ? getTileState(...a) : undefined
+  },
+  IO: {
+    buildActiveMapPayload: (...a) => typeof buildActiveMapPayload === 'function' ? buildActiveMapPayload(...a) : undefined,
+    saveMap: (...a) => typeof saveMap === 'function' ? saveMap(...a) : undefined,
+    downloadMapJSON: (...a) => typeof downloadMapJSON === 'function' ? downloadMapJSON(...a) : undefined,
+    autosaveMap: (...a) => typeof autosaveMap === 'function' ? autosaveMap(...a) : undefined,
+    persistActiveMapToServer: (...a) => typeof persistActiveMapToServer === 'function' ? persistActiveMapToServer(...a) : undefined,
+    tryFetchActiveMap: (...a) => typeof tryFetchActiveMap === 'function' ? tryFetchActiveMap(...a) : undefined,
+    applyLoadedMap: (...a) => typeof applyLoadedMap === 'function' ? applyLoadedMap(...a) : undefined,
+    loadMapFromStorage: (...a) => typeof loadMapFromStorage === 'function' ? loadMapFromStorage(...a) : undefined,
+    showFilePickerToLoadActiveMap: (...a) => typeof showFilePickerToLoadActiveMap === 'function' ? showFilePickerToLoadActiveMap(...a) : undefined,
+    persistSavedSettings: (...a) => typeof persistSavedSettings === 'function' ? persistSavedSettings(...a) : undefined,
+    saveLocalSettings: (...a) => typeof saveLocalSettings === 'function' ? saveLocalSettings(...a) : undefined,
+    saveLocalSettingsDebounced: (...a) => typeof saveLocalSettingsDebounced === 'function' ? saveLocalSettingsDebounced(...a) : undefined,
+    loadLocalSettings: (...a) => typeof loadLocalSettings === 'function' ? loadLocalSettings(...a) : undefined
+  },
+  Assets: {
+    trackLoadImage: (...a) => typeof trackLoadImage === 'function' ? trackLoadImage(...a) : undefined,
+    trackLoadSound: (...a) => typeof trackLoadSound === 'function' ? trackLoadSound(...a) : undefined,
+    AssetTracker: () => AssetTracker,
+    cleanImageBrown: (...a) => typeof cleanImageBrown === 'function' ? cleanImageBrown(...a) : undefined,
+    backupCustomAssets: (...a) => typeof backupCustomAssets === 'function' ? backupCustomAssets(...a) : undefined,
+    removeCustomAssetsRuntime: (...a) => typeof removeCustomAssetsRuntime === 'function' ? removeCustomAssetsRuntime(...a) : undefined,
+    restoreCustomAssetsRuntime: (...a) => typeof restoreCustomAssetsRuntime === 'function' ? restoreCustomAssetsRuntime(...a) : undefined,
+    toggleCustomAssetsRuntime: (...a) => typeof toggleCustomAssetsRuntime === 'function' ? toggleCustomAssetsRuntime(...a) : undefined
+  },
+  Audio: {
+    applyVolumes: (...a) => typeof applyVolumes === 'function' ? applyVolumes(...a) : undefined,
+    attemptStartGameMusic: (...a) => typeof attemptStartGameMusic === 'function' ? attemptStartGameMusic(...a) : undefined,
+    unlockAudioAndStart: (...a) => typeof unlockAudioAndStart === 'function' ? unlockAudioAndStart(...a) : undefined,
+    startMenuMusicIfNeeded: (...a) => typeof startMenuMusicIfNeeded === 'function' ? startMenuMusicIfNeeded(...a) : undefined,
+    playClickSFX: (...a) => typeof playClickSFX === 'function' ? playClickSFX(...a) : undefined,
+    normalizeDifficultyValue: (...a) => typeof normalizeDifficultyValue === 'function' ? normalizeDifficultyValue(...a) : undefined,
+    setDifficulty: (...a) => typeof setDifficulty === 'function' ? setDifficulty(...a) : undefined,
+    getDifficultyDisplayLabel: (...a) => typeof getDifficultyDisplayLabel === 'function' ? getDifficultyDisplayLabel(...a) : undefined
+  },
+  Clouds: {
+    spawnCloud: (...a) => typeof spawnCloud === 'function' ? spawnCloud(...a) : undefined,
+    updateClouds: (...a) => typeof updateClouds === 'function' ? updateClouds(...a) : undefined,
+    drawClouds: (...a) => typeof drawClouds === 'function' ? drawClouds(...a) : undefined,
+    RandomEnvironment: (...a) => typeof RandomEnvironment === 'function' ? RandomEnvironment(...a) : undefined,
+    applyEnvironmentDefaults: (...a) => typeof applyEnvironmentDefaults === 'function' ? applyEnvironmentDefaults(...a) : undefined
+  },
+  Utils: {
+    showToast: (...a) => typeof showToast === 'function' ? showToast(...a) : undefined,
+    updateLoadingOverlayDom: (...a) => typeof updateLoadingOverlayDom === 'function' ? updateLoadingOverlayDom(...a) : undefined,
+    ensureLoadingOverlayDom: (...a) => typeof ensureLoadingOverlayDom === 'function' ? ensureLoadingOverlayDom(...a) : undefined,
+    getColorForState: (...a) => typeof getColorForState === 'function' ? getColorForState(...a) : undefined,
+    floodReachable: (...a) => typeof floodReachable === 'function' ? floodReachable(...a) : undefined
+  },
+  Input: {
+    mousePressed: (...a) => typeof mousePressed === 'function' ? mousePressed(...a) : undefined,
+    keyPressed: (...a) => typeof keyPressed === 'function' ? keyPressed(...a) : undefined,
+    windowResized: (...a) => typeof windowResized === 'function' ? windowResized(...a) : undefined,
+    _confirmResize: (...a) => typeof _confirmResize === 'function' ? _confirmResize(...a) : undefined,
+    togglePauseMenuFromEscape: (...a) => typeof togglePauseMenuFromEscape === 'function' ? togglePauseMenuFromEscape(...a) : undefined,
+    attemptStartGameMusic: (...a) => typeof attemptStartGameMusic === 'function' ? attemptStartGameMusic(...a) : undefined
+  }
+};
+
 function enforceCanvasSharpness(ctx) {
   if (!ctx || typeof ctx !== 'object') return;
   const smoothingProps = ['imageSmoothingEnabled', 'mozImageSmoothingEnabled', 'webkitImageSmoothingEnabled', 'msImageSmoothingEnabled', 'oImageSmoothingEnabled'];
@@ -5207,7 +5321,7 @@ function buildControlsSettings(ctx) {
 function buildAccessibilitySettings(ctx) {
   ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
   
-  // Custom row for Text Size
+  
   const row = createDiv('');
   row.parent(ctx.container);
   row.style('display', 'flex');
@@ -5293,10 +5407,10 @@ function createSettingsContext({ container }) {
   };
 
   const ctx = {
-    // Mock layout for compatibility if needed, though we should refactor consumers
+    
     layout: { labelX: 0, controlX: 0, labelWidth: 0, controlWidth: 0, spacingY: 0 },
     
-    container: container, // Expose container
+    container: container, 
 
     pushElement(el) {
       recordElement(el);
@@ -5415,7 +5529,7 @@ function ensureLoadingOverlayDom() {
 
     let el = document.getElementById('gd-loading-overlay');
     
-    // CRITICAL: If the wrapper is missing (old version), remove it so we can rebuild it
+  
     if (el && !document.getElementById('gd-loading-content')) {
         el.remove();
         el = null;
@@ -5423,7 +5537,7 @@ function ensureLoadingOverlayDom() {
 
     if (el) return el;
 
-    // --- Inject Styles ---
+  
     const fontPath = 'assets/3-GUI/font.ttf'; 
     const styleId = 'gd-loading-style';
     if (!document.getElementById(styleId)) {
@@ -5466,7 +5580,7 @@ function ensureLoadingOverlayDom() {
       document.head.appendChild(style);
     }
 
-    // --- Create Elements ---
+ 
     el = document.createElement('div');
     el.id = 'gd-loading-overlay';
     Object.assign(el.style, {
@@ -5475,7 +5589,7 @@ function ensureLoadingOverlayDom() {
       zIndex: '2147483647', userSelect: 'none', opacity: '1' 
     });
 
-    // NEW WRAPPER: This is what we scale down
+   
     const content = document.createElement('div');
     content.id = 'gd-loading-content';
     Object.assign(content.style, {
@@ -5508,7 +5622,7 @@ function ensureLoadingOverlayDom() {
     el.appendChild(content);
     document.body.appendChild(el);
 
-    // Keep loading UI stable across browser zoom
+   
     makeElementZoomInvariant(content, 'top center');
 
     return el;
@@ -5523,7 +5637,7 @@ function updateClouds() {
     lastCloudSpawn = now;
   }
   
-  // Use the game scale so the virtual width matches world units
+  
   const virtualWidth = (gameScale && gameScale !== 0) ? width / gameScale : width;
 
   for (let i = clouds.length - 1; i >= 0; i--) {
@@ -5533,7 +5647,7 @@ function updateClouds() {
     cloud.driftPhase += 0.01;
     cloud.y = cloud.baseY + Math.sin(cloud.driftPhase) * 20 * cloud.verticalDrift;
     
-    // Remove only after the full cloud image has exited the right edge
+   
     const cloudWidth = cloud.img.width * cloud.scale;
     if (cloud.x > virtualWidth + cloudWidth) {
       clouds.splice(i, 1);
