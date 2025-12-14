@@ -559,7 +559,7 @@ function createMainMenu() {
   const cx = width / 2;
   const startY = height / 2 - (mainButtonHeight * 1.5 + mainButtonGap);
 
-  playButtonBackground = createBgImg("assets/3-GUI/Button BG.png", cx - mainButtonWidth / 2, startY, mainButtonWidth, mainButtonHeight);
+  playButtonBackground = createBgImg("assets/3-GUI/Button_BG.png", cx - mainButtonWidth / 2, startY, mainButtonWidth, mainButtonHeight);
 
   btnPlay = makeBtn("▶ Play", cx - mainButtonWidth / 2, startY, mainButtonWidth, mainButtonHeight, () => {
     console.log("Play pressed — opening game overlay iframe with settings");
@@ -663,7 +663,7 @@ function createMainMenu() {
   });
 
   const settingsY = startY + mainButtonHeight + mainButtonGap;
-  settingsButtonBackground = createBgImg("assets/3-GUI/Button BG.png", cx - mainButtonWidth / 2, settingsY, mainButtonWidth, mainButtonHeight);
+  settingsButtonBackground = createBgImg("assets/3-GUI/Button_BG.png", cx - mainButtonWidth / 2, settingsY, mainButtonWidth, mainButtonHeight);
   btnSettings = makeBtn("⚙ Settings", cx - mainButtonWidth / 2, settingsY, mainButtonWidth, mainButtonHeight, () => {
     unlockAudioAndStart(() => {
       playClickSFX();
@@ -676,7 +676,7 @@ function createMainMenu() {
   });
 
   const exitY = settingsY + mainButtonHeight + mainButtonGap;
-  exitButtonBackground = createBgImg("assets/3-GUI/Button BG.png", cx - mainButtonWidth / 2, exitY, mainButtonWidth, mainButtonHeight);
+  exitButtonBackground = createBgImg("assets/3-GUI/Button_BG.png", cx - mainButtonWidth / 2, exitY, mainButtonWidth, mainButtonHeight);
   btnExit = makeBtn("✖ Exit", cx - mainButtonWidth / 2, exitY, mainButtonWidth, mainButtonHeight, () => {
     unlockAudioAndStart(() => {
       playClickSFX();
@@ -731,7 +731,7 @@ function showSettingsMenu() {
 
   SETTINGS_CATEGORIES.forEach((label, index) => {
     const yPos = yStart + index * categorySpacing;
-    const bg = createBgImg("assets/3-GUI/Button BG.png", leftPanelX, yPos, categoryButtonWidth, categoryButtonHeight);
+    const bg = createBgImg("assets/3-GUI/Button_BG.png", leftPanelX, yPos, categoryButtonWidth, categoryButtonHeight);
     categoryBackgrounds.push(bg);
     const btn = makeBtn(label, leftPanelX, yPos, categoryButtonWidth, categoryButtonHeight, () => {
       playClickSFX();
@@ -752,10 +752,10 @@ function showSettingsMenu() {
   const saveX = leftThird - bottomButtonW / 2;
   const backX = rightThird - bottomButtonW / 2;
 
-  saveBackground = createBgImg("assets/3-GUI/Button BG.png", saveX, baseBottom, bottomButtonW, secondaryButtonHeight);
+  saveBackground = createBgImg("assets/3-GUI/Button_BG.png", saveX, baseBottom, bottomButtonW, secondaryButtonHeight);
   btnSave = makeSmallBtn("💾 Save", saveX, baseBottom, bottomButtonW, secondaryButtonHeight, saveSettings);
 
-  backMenuBackground = createBgImg("assets/3-GUI/Button BG.png", backX, baseBottom, bottomButtonW, secondaryButtonHeight);
+  backMenuBackground = createBgImg("assets/3-GUI/Button_BG.png", backX, baseBottom, bottomButtonW, secondaryButtonHeight);
   btnBackMenu = makeSmallBtn("↩ Back to Menu", backX, baseBottom, bottomButtonW, secondaryButtonHeight, () => {
       playClickSFX();
       showingSettings = false;
@@ -817,7 +817,7 @@ function showSubSettings(label) {
 
   const backY = cy + panelH / 2 - panelH * 0.12;
   const backWidth = panelW * 0.3;
-  const backBG = createBgImg("assets/3-GUI/Button BG.png", cx - backWidth / 2, backY, backWidth, panelH * 0.08, '3');
+  const backBG = createBgImg("assets/3-GUI/Button_BG.png", cx - backWidth / 2, backY, backWidth, panelH * 0.08, '3');
   const backBtn = makeSmallBtn("← Back", cx - backWidth / 2, backY, backWidth, panelH * 0.08, () => {
     playClickSFX();
     clearSubSettings();

@@ -1,104 +1,119 @@
-# FOREST RPG - PROTOTYPE
+PROJECT: TOP-DOWN PROCEDURAL RPG ENGINE
+=======================================
+Version: 1.0.0
+Author:  Jordan Vorster
+Engine:  Custom JavaScript / p5.js
 
-**Version:** 0.5.0 (Alpha)
-**Engine:** p5.js (JavaScript)
-**Render Mode:** Pixelated / Crisp-Edges (High-DPI Support)
 
----
+OVERVIEW
+--------
+This project is a robust 2D game engine built from scratch using JavaScript and 
+the p5.js library. It features a sophisticated procedural generation system that 
+creates unique, organic worlds containing forests, rivers, hills, and varied 
+terrain types every time you play.
 
-## 1. OVERVIEW
-This is a web-based, top-down 2D RPG engine prototype built with p5.js. It features a robust procedural generation system that creates unique worlds containing rivers, hills, forests, and dynamic weather effects (clouds).
+Unlike standard static games, this engine uses a Client-Server architecture 
+(via Node.js) to allow for persistent world data, enabling players to generate, 
+edit, save, and load their unique map seeds.
 
-Unlike previous versions, this build includes persistent settings, map saving/loading capabilities, a functional stamina system, and jump mechanics.
 
----
+INSTALLATION & SETUP
+--------------------
+To fully utilize the Save/Load features, this game requires a local Node.js server.
 
-## 2. KEY FEATURES
+1. PREREQUISITES:
+   - Install Node.js from https://nodejs.org/
 
-### 🌍 Procedural Generation
-* **Dynamic Terrain:** Generates forests, grass, and elevation (hills/cliffs) using Perlin noise.
-* **River Carving:** sophisticated river generation logic that flows from edges or lakes, complete with bridge placement logic.
-* **Biomes:** Includes logic for different environment types (Forest, Grasslands, etc.).
+2. SETUP:
+   - Open your command prompt or terminal.
+   - Navigate to the project root folder.
+   - (Optional) If you have a package.json, run: npm install
 
-### 🎮 Gameplay Mechanics
-* **Movement:** 8-directional movement with collision detection.
-* **Physics:** Jumping mechanics to clear small obstacles.
-* **Stamina System:** Sprinting consumes stamina, which regenerates over time.
-* **Interaction:** Basic interaction logic for items (Chests, Health Packs) exists in the engine.
+3. LAUNCHING THE SERVER:
+   - Run the command: node scripts/map_server.js
+   - You should see: "Map & static server listening on http://localhost:3000"
 
-### ⚙️ Engine & Systems
-* **Save/Load System:** * **Autosave:** Maps are automatically saved to your browser's LocalStorage.
-    * **Manual Save:** Press 'P' to regenerate and save map states.
-    * **JSON Export:** Maps can be downloaded as JSON files.
-* **Persistent Settings:** Audio volumes (Master/Music/SFX), text size, and difficulty settings are saved between sessions.
-* **Visuals:** * Dynamic cloud system with parallax scrolling.
-    * "Crisp" pixel-art rendering ensuring sharp visuals on 4K/Retina displays.
-    * Edge-layer debugging.
+4. PLAYING:
+   - Open your web browser to: http://localhost:3000
+   - The game will load and automatically fetch the active map.
 
----
+METHOD 2: QUICK PLAY (VS Code Live Server)
+------------------------------------------
+*Good for quick testing. Map saving will be restricted to temporary storage.*
 
-## 3. HOW TO RUN
+1. Open the project folder in Visual Studio Code.
+2. Install the "Live Server" extension (by Ritwick Dey).
+3. Right-click on the file "3-Game_Index.html" in the file explorer.
+4. Select "Open with Live Server".
+5. The game will launch in your default browser.
 
-**⚠️ IMPORTANT:** Due to browser security restrictions regarding local file access (CORS), you **cannot** simply double-click the `.html` files. You must run a local web server.
+CONTROLS
+--------
+Gameplay:
+  [W, A, S, D]   : Move Character
+  [Shift]        : Sprint (Consumes Stamina)
+  [Esc]          : Pause Menu / Back
 
-### Option A: VS Code (Recommended)
-1.  Install the "Live Server" extension in VS Code.
-2.  Right-click `1-Menu_Index.html`.
-3.  Select **"Open with Live Server"**.
+System / Debug:
+  [P]            : Procedural Regeneration (Generate a fresh new world instantly)
+  [T]            : Toggle Assets (Switch between sprite textures and raw colors)
+  [Space]        : Jump (Experimental physics)
+  [F]            : Fullscreen NOTE: Currently has a problem 
 
-### Option B: Python
-1.  Open a terminal/command prompt in the game folder.
-2.  Run one of the following commands:
-    * `python -m http.server` (Python 3)
-    * `python -m SimpleHTTPServer` (Python 2)
-3.  Open your browser to: `http://localhost:8000/1-Menu_Index.html`
 
-### Option C: Node.js (If configured)
-1.  If you have a `package.json` with a start script, run `npm start`.
+ENGINE FEATURES
+---------------
 
----
+1. PROCEDURAL GENERATION ALGORITHMS
+   - **Perlin Noise Terrain**: Uses noise maps to generate organic forest distribution.
+   - **River Carving**: A custom pathfinding algorithm ("Drunken Walk" with bias) 
+     carves rivers from map edges, ensuring they meander naturally.
+   - **Cellular Automata Hills**: Hill generation uses a smoothing algorithm to 
+     create natural-looking cliff shapes.
+   - **Connectivity Checks**: A flood-fill algorithm ensures the map is playable 
+     and that spawn points are not trapped by water or cliffs.
 
-## 4. CONTROLS
+2. RENDERING SYSTEM
+   - **Pixel-Perfect Scaling**: Custom canvas handling ensures crisp pixel art 
+     visuals at any window resolution (4K compatible).
+   - **Parallax Layers**: Background clouds and foreground elements move at 
+     different speeds to create depth.
+   - **Dynamic Lighting/Weather**: (In progress) Support for cloud shadows.
 
-### Movement
-| Key | Action |
-| :--- | :--- |
-| **W / A / S / D** | Move Character |
-| **SHIFT** (Hold) | Sprint (Consumes Stamina) |
-| **SPACEBAR** | Jump (Clear small obstacles/water) |
+3. SAVE/LOAD SYSTEM
+   - **JSON Map Payloads**: Maps are serialized into JSON files containing 
+     terrain data, object locations, and metadata.
+   - **Server Persistence**: The `map_server.js` script handles read/write 
+     operations to the `/maps/` directory, allowing your world to persist 
+     between browser refreshes.
 
-### System
-| Key | Action |
-| :--- | :--- |
-| **ESC** | Pause Game / Open Settings |
-| **P** | Force Regenerate World & Manual Save |
-| **F** | Toggle Fullscreen |
-| **T** | Toggle Assets (Debug Texture Mode) |
+4. USER INTERFACE (UI)
+   - **Zoom-Stable UI**: Menus and HUD elements automatically adjust scale based 
+     on browser zoom levels to remain usable.
+   - **Toast Notifications**: Non-intrusive popups for game events (e.g., "Map Saved").
+   - **Settings Menu**: Fully functional audio mixers, difficulty settings, and 
+     accessibility options (text size).
 
----
+5. AUDIO ENGINE
+   - **Dynamic Mixing**: Master, Music, and SFX volume channels.
+   - **Context Recovery**: Automatically handles browser autoplay policies to 
+     ensure audio resumes correctly after user interaction.
 
-## 5. SETTINGS & CUSTOMIZATION
 
-The game now features a fully functional settings menu accessible via the Main Menu or by pressing **ESC** in-game.
+DIRECTORY STRUCTURE
+-------------------
+/assets        -> Game sprites, music, and sound effects.
+/maps          -> JSON files for saved worlds (generated by the server).
+/scripts       -> Node.js utilities (Map Server, cleanup tools).
+4-Game.js      -> Core game logic, rendering, and physics loop.
+3-Game_Index.html -> Main entry point for the game client.
+2-Menu.js      -> Core menu logic and intro UI.
+1-Menu_Index.html -> Main entry point for the menu client
 
-* **Audio:** Separate sliders for Master, Music, and SFX volume.
-* **Gameplay:** Difficulty toggles (affects mob spawn rates in code logic).
-* **Accessibility:** Text size scaling and Color Blindness simulation modes.
 
----
-
-## 6. FILE STRUCTURE
-
-* `1-Menu_Index.html`: The entry point. Handles the main menu UI and video background.
-* `2-Menu.js`: Logic for the main menu, settings persistence, and audio unlocking.
-* `3-Game_Index.html`: The container for the actual game engine (loaded via iframe).
-* `4-Game.js`: The core game engine. Contains the loop, rendering, physics, and map generation algorithms.
-* `assets/`: Contains all sprites, spritesheets, audio, and font files.
-
----
-
-## 7. KNOWN ISSUES & LIMITATIONS
-
-* **Combat:** While mob spawn logic exists, actual combat mechanics (attacking/taking damage) are not fully implemented in the UI.
-* **Loading Times:** Initial map generation involves complex erosion simulations and may take a moment on slower devices.
-* **Browser Zoom:** The engine attempts to compensate for browser zoom levels, but playing at 100% zoom is recommended for pixel-perfect accuracy.
+TROUBLESHOOTING
+---------------
+- "Map not saving": Ensure `node scripts/map_server.js` is running.
+- "Audio not playing": Click anywhere on the screen to initialize the AudioContext.
+- "Blurry graphics": Ensure your browser zoom is set to 100%, though the engine
+  attempts to auto-correct this.

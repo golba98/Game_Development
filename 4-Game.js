@@ -48,7 +48,7 @@ let difficultySetting = 'normal';
 let settingsOverlayDiv = null; 
 let settingsOverlayPanel = null;
 
-const MENU_BUTTON_TEXTURE_PATH = 'assets/3-GUI/Button BG.png';
+const MENU_BUTTON_TEXTURE_PATH = 'assets/3-GUI/Button_BG.png';
 const SETTINGS_PANEL_TEXTURE_PATH = 'assets/1-Background/1-Menu/Settings_Background.png';
 const MENU_GOLD_COLOR = '#b8860b';
 const MENU_GOLD_BORDER = 'rgba(184,134,11,0.65)';
@@ -281,7 +281,7 @@ function preload() {
 
   
   try {
-    trackLoadImage('button_bg', 'assets/3-GUI/Button BG.png', (img) => { BUTTON_BG = img; verboseLog('[game] loaded BUTTON_BG', img && img.width, 'x', img && img.height); }, (err) => { console.warn('[game] failed to load BUTTON_BG', err); BUTTON_BG = null; });
+    trackLoadImage('button_bg', 'assets/3-GUI/Button_BG.png', (img) => { BUTTON_BG = img; verboseLog('[game] loaded BUTTON_BG', img && img.width, 'x', img && img.height); }, (err) => { console.warn('[game] failed to load BUTTON_BG', err); BUTTON_BG = null; });
   } catch (e) {}
 
   try {
@@ -507,6 +507,19 @@ function setup() {
       image-rendering: crisp-edges !important;
       -ms-interpolation-mode: nearest-neighbor !important;
     }
+    body, html {
+      margin: 0;
+      padding: 0;
+      background-color: #0a1f04;
+      background-image:
+        linear-gradient(rgba(0, 0, 0, 0.8), rgba(12, 36, 10, 0.3)),
+        linear-gradient(0deg, rgba(0, 0, 0, 0.7) 0%, transparent 20%, transparent 80%, rgba(0, 0, 0, 0.7) 100%),
+        url('assets/1-Background/2-Game/1-Forest/tile_1.png');
+      background-size: 220px 220px, cover, 420px 420px;
+      background-repeat: repeat, no-repeat, repeat;
+      background-attachment: fixed;
+      background-blend-mode: multiply, normal;
+    }
     @supports (image-rendering: -moz-crisp-edges) {
       canvas { image-rendering: -moz-crisp-edges !important; }
     }
@@ -675,7 +688,16 @@ function _confirmResize() {
   pixelDensity(window.devicePixelRatio || 1);
   
   // 2. Recalculate Scale
-  gameScale = H / FIXED_VIRTUAL_HEIGHT;
+  const mapW = (logicalW || 0) * cellSize;
+  const mapH = (logicalH || 0) * cellSize;
+  if (mapW <= 0 || mapH <= 0) {
+    resizeCanvas(W, H);
+    return;
+  }
+
+  const heightScale = H / mapH;
+  const widthScale = W / mapW;
+  gameScale = Math.max(0.001, Math.max(heightScale, widthScale));
   virtualW = W / gameScale;
   virtualH = H / gameScale;
 
@@ -692,22 +714,12 @@ function _confirmResize() {
     }
   } catch (e) {}
 
-    if (typeof mapStates === 'undefined' || !mapStates || mapStates.length === 0) {
-      return;
-    }
-
-  const mapW = (logicalW || 0) * cellSize;
-  const mapH = (logicalH || 0) * cellSize;
-  
-  const needsRegen = mapW < virtualW || mapH < virtualH;
-
-  if (!needsRegen) {
-    try { createMapImage(); } catch (e) { console.warn('createMapImage failed', e); }
-    redraw();
-  } else {
-    try { showToast('Viewport expanded — regenerating map', 'info', 2000); } catch (e) {}
-    generateMap();
+  if (typeof mapStates === 'undefined' || !mapStates || mapStates.length === 0) {
+    return;
   }
+
+  try { createMapImage(); } catch (e) { console.warn('createMapImage failed', e); }
+  redraw();
 }
 
 function createFullWindowCanvas() {
@@ -3118,7 +3130,7 @@ function showSubSettings(label) {
 
   const backY = cy + panelH / 2 - panelH * 0.12;
   const backWidth = panelW * 0.3;
-  const backBG = createBgImg("assets/3-GUI/Button BG.png", cx - backWidth / 2, backY - BACK_BUTTON_VERTICAL_OFFSET, backWidth, panelH * 0.08, '3');
+  const backBG = createBgImg("assets/3-GUI/Button_BG.png", cx - backWidth / 2, backY - BACK_BUTTON_VERTICAL_OFFSET, backWidth, panelH * 0.08, '3');
   const backBtn = makeSmallBtn("← Back", cx - backWidth / 2, backY - BACK_BUTTON_VERTICAL_OFFSET, backWidth, panelH * 0.08, () => {
     playClickSFX();
     clearSubSettings();

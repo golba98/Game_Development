@@ -22,7 +22,8 @@
       width: 100% !important;
       height: 100% !important;
       display: block;
-      object-fit: cover;
+      object-fit: contain;
+      background: #000;
     }
     
     ::-webkit-scrollbar { display: none; }
@@ -54,7 +55,7 @@
         
         canvas.style.width = '100%';
         canvas.style.height = '100%';
-        canvas.style.objectFit = 'cover';
+        canvas.style.objectFit = 'contain';
         canvas.style.display = 'block';
         root.setAttribute('aria-busy', 'false');
         try { canvas.focus(); } catch (e) {}
