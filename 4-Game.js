@@ -461,7 +461,16 @@ function preload() {
     W:  'assets/2-Characters/2-Walking/walk_sheet_west.png',
     NW: 'assets/2-Characters/2-Walking/walk_sheet_northwest.png'
   };
-  const RUN_SHEET_PATHS = { N: null, NE: null, E: null, SE: null, S: null, SW: null, W: null, NW: null };
+  const RUN_SHEET_PATHS = {
+    N:  'assets/2-Characters/3-Running/run_sheet_north.png',
+    NE: 'assets/2-Characters/3-Running/run_sheet_north_east.png',
+    E:  'assets/2-Characters/3-Running/run_sheet_east.png',
+    SE: 'assets/2-Characters/3-Running/run_sheet_south_east.png',
+    S:  'assets/2-Characters/3-Running/run_sheets_south.png',
+    SW: 'assets/2-Characters/3-Running/run_sheet_south_west.png',
+    W:  'assets/2-Characters/3-Running/run_sheet_west.png',
+    NW: 'assets/2-Characters/3-Running/run_sheet_north_west.png'
+  };
   IDLE_DIRS.forEach(dir => {
     const wp = WALK_SHEET_PATHS[dir];
     walkSheets[dir] = null;
@@ -2353,14 +2362,36 @@ function updateMovementInterpolation() {
 function updateSprintState() {
   const now = millis();
   const shiftHeld = keyIsDown(16);
+
+  // Initialize last update
+  if (typeof sprintLastUpdate !== 'number' || sprintLastUpdate <= 0) sprintLastUpdate = now;
+  const dt = Math.max(0, now - sprintLastUpdate);
+  sprintLastUpdate = now;
+
   if (sprintActive) {
-    if (!shiftHeld || now >= sprintEndMillis) {
+    // Consume sprint resource while active
+    sprintRemainingMs = Math.max(0, sprintRemainingMs - dt);
+    if (!shiftHeld || sprintRemainingMs <= 0) {
       sprintActive = false;
       sprintCooldownUntil = now + SPRINT_COOLDOWN_MS;
     }
-  } else if (shiftHeld && now >= sprintCooldownUntil) {
-    sprintActive = true;
-    sprintEndMillis = now + SPRINT_MAX_DURATION_MS;
+  } else {
+    // Refill sprint resource over time when not sprinting
+    if (sprintRemainingMs < SPRINT_MAX_DURATION_MS) {
+      sprintRemainingMs = Math.min(SPRINT_MAX_DURATION_MS, sprintRemainingMs + dt);
+    }
+
+    // If fully refilled, clear cooldown so sprint becomes available immediately
+    if (sprintRemainingMs >= SPRINT_MAX_DURATION_MS) {
+      sprintRemainingMs = SPRINT_MAX_DURATION_MS;
+      sprintCooldownUntil = 0;
+    }
+
+    // Start sprint if shift held, cooldown passed, and we have some resource
+    if (shiftHeld && now >= sprintCooldownUntil && sprintRemainingMs > 0) {
+      sprintActive = true;
+      sprintLastUpdate = now;
+    }
   }
 }
 
@@ -2438,16 +2469,18 @@ function drawPlayer() {
   } else {
     dir = lastDirection || 'S';
   }
-  const cols = IDLE_SHEET_COLS;
+  const movingForAnimation = isMoving || inputWalking;
+  const action = movingForAnimation ? (sprintActive ? 'run' : 'walk') : 'idle';
+  let cols = IDLE_SHEET_COLS;
+  if (action === 'walk') cols = WALK_SHEET_COLS;
+  else if (action === 'run') cols = RUN_SHEET_COLS;
   playerAnimTimer += (typeof deltaTime === 'number' ? deltaTime : 16.67);
   if (playerAnimTimer >= playerAnimSpeed) {
     playerAnimTimer -= playerAnimSpeed;
     playerAnimFrame = (playerAnimFrame + 1) % cols;
   }
   const colIndex = Math.floor(playerAnimFrame) % cols;
-  const movingForAnimation = isMoving || inputWalking;
   if (movingForAnimation) {
-    const action = sprintActive ? 'run' : 'walk';
     if (action === 'walk') {
       const frameImgWalk = (walkFrames[dir] && walkFrames[dir][colIndex]) ? walkFrames[dir][colIndex] : null;
       if (frameImgWalk) {
@@ -3989,6 +4022,12 @@ const IDLE_SHEET_PATH = 'assets/2-Characters/1-Idle/idle_sheet.png';
 const IDLE_SHEET_COLS = 4;
 const IDLE_SHEET_ROWS = 6;
 
+// Per-action combined sheet column counts
+const WALK_SHEET_COLS = 4;
+const RUN_SHEET_COLS = 6; // running has 6 frames per direction
+const WALK_SHEET_ROWS = IDLE_SHEET_ROWS;
+const RUN_SHEET_ROWS = IDLE_SHEET_ROWS;
+
 let spritesheetWalk = null;
 let spritesheetRun = null;
 
@@ -4216,6 +4255,8 @@ let lastMoveTime = 0;
 let sprintActive = false;
 let sprintEndMillis = 0;
 let sprintCooldownUntil = 0;
+let sprintRemainingMs = SPRINT_MAX_DURATION_MS;
+let sprintLastUpdate = 0;
 
 let mapImage;
 let mapOverlays = [];
@@ -5086,49 +5127,60 @@ function drawDifficultyBadge() {
 }
 
 function drawSprintMeter() {
+  // Bottom-right vertical sprint bar that refills from where it stopped
   const now = millis();
   const margin = 20;
-  
-  // Use virtual dimensions context
   const vW = virtualW || (width / gameScale);
-  
-  // Safely check variables
-  if (typeof lastRunTime === 'undefined') lastRunTime = 0;
-  if (typeof sprintEnergy === 'undefined') sprintEnergy = 100;
+  const vH = virtualH || (height / gameScale);
 
-  // Only draw if player recently ran or is not full stamina
-  if (now - lastRunTime > 2000 && sprintEnergy >= SPRINT_MAX) return;
+  // Slightly narrower visual bar per request
+  const barW = Math.max(24, Math.floor(vW * 0.04));
+  const barH = Math.max(140, Math.min(360, Math.floor(vH * 0.28)));
+  const x = vW - margin - barW;
+  const y = vH - margin - barH;
 
-  const barW = 200; 
-  const barH = 24;
-  
-  // Position: Top-Left (below difficulty badge area if needed)
-  const x = margin;
-  const y = margin + 60; 
-
-  const pct = Math.max(0, Math.min(1, sprintEnergy / SPRINT_MAX));
+  // Compute percentage from sprintRemainingMs
+  const pct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
 
   push();
-  
-  // Background
   noStroke();
-  fill(0, 0, 0, 150);
+
+  // Background container (larger padding)
+  fill(0, 0, 0, 180);
+  rect(x - 6, y - 6, barW + 12, barH + 12, 8);
+
+  // Empty area
+  fill(50, 50, 50, 220);
   rect(x, y, barW, barH, 6);
 
-  // Fill Bar
+  // Filled portion (draw from bottom up so refill appears where it stopped)
   if (pct > 0) {
-    if (sprintEnergy < SPRINT_COST_PER_FRAME * 10) fill(255, 50, 50); // Red if low
-    else fill(255, 215, 0); // Gold normally
-    
-    rect(x + 2, y + 2, (barW - 4) * pct, barH - 4, 4);
+    if (pct < 0.2) fill(220, 60, 60); // low -> red
+    else fill(255, 215, 0); // normal -> gold
+    const fillH = Math.round(barH * pct);
+    rect(x, y + (barH - fillH), barW, fillH, 6);
   }
-  
-  // Text Label
-  fill(255);
+
+  // Cooldown overlay if sprint not available due to cooldown
+  if (typeof sprintCooldownUntil === 'number' && now < sprintCooldownUntil) {
+    const cdPct = Math.max(0, Math.min(1, (sprintCooldownUntil - now) / SPRINT_COOLDOWN_MS));
+    // draw an overlay showing cooldown progress (fades from top)
+    fill(0, 0, 0, 140);
+    const overlayH = Math.round(barH * cdPct);
+    rect(x, y, barW, overlayH);
+  }
+
+  // Border
+  stroke(0,0,0,220); strokeWeight(2);
+  noFill();
+  rect(x, y, barW, barH, 6);
+
+  // Larger label
+  noStroke(); fill(255);
   gTextSize(16);
-  textAlign(LEFT, BOTTOM);
-  text("STAMINA", x, y - 5);
-  
+  textAlign(CENTER, BOTTOM);
+  text('SPRINT', x + barW / 2, y - 10);
+
   pop();
 }
 

@@ -21,6 +21,8 @@ INSTALLATION & SETUP
 --------------------
 To fully utilize the Save/Load features, this game requires a local Node.js server.
 
+METHOD 1: LOCAL NODE SERVER (Not Recommended)
+-----------------------------------------
 1. PREREQUISITES:
    - Install Node.js from https://nodejs.org/
 
@@ -46,6 +48,36 @@ METHOD 2: QUICK PLAY (VS Code Live Server)
 3. Right-click on the file "3-Game_Index.html" in the file explorer.
 4. Select "Open with Live Server".
 5. The game will launch in your default browser.
+
+METHOD 3: DOCKER CONTAINER (Recommended)
+------------------------------------------
+*Ensures a consistent environment isolated from your local machine settings.*
+
+1. PREREQUISITES:
+   - Install Docker Desktop from https://www.docker.com/products/docker-desktop/
+   - Note need an account thus sign in accordingly 
+   - Here after it will download a windows version of Linux and would need to restart your computer 
+   - NOTE keep the app open to do the following:
+
+2. BUILD THE IMAGE:
+   - Open your terminal in the project root folder (where 'Dockerfile.txt' is located).
+   - Or open termincal and run the command 
+    cd "path_where_the_Dockerfile.txt_is" - Note add your path
+   - Run the command: 
+     docker build -f Dockerfile.txt -t forest-rpg .
+
+3. RUN THE CONTAINER:
+   - Run the command:
+     docker run -p 3000:3000 forest-rpg
+   - This maps port 3000 inside the container to port 3000 on your machine.
+
+4. PLAYING:
+   - Open your web browser to: http://localhost:3000/1-Menu_Index.html
+
+5. STOP 
+   - Once you're done playing run the following command to stop the server:
+   docker stop $(docker ps -q)
+
 
 CONTROLS
 --------
