@@ -1,8 +1,7 @@
-﻿let virtualW, virtualH;
+let virtualW, virtualH;
 let pendingGameActivated = false;
 
 if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
-  // Force the willReadFrequently hint on every 2D context, keeping repeated getImageData fast.
   const canvasProto = HTMLCanvasElement.prototype;
   if (!canvasProto.__gdWillReadFrequentlyPatched) {
     const originalGetContext = canvasProto.getContext;
@@ -23,9 +22,12 @@ let mapLoadComplete = false;
 
 let cloudImages = [];
 let clouds = [];
+
 const MAX_CLOUDS = 100;
 const CLOUD_SPAWN_INTERVAL = 8000; 
+
 let lastCloudSpawn = 0;
+
 const CLOUD_IMAGE_COUNT = 4;
 
 let showLoadingOverlay = true;
@@ -70,9 +72,6 @@ function verboseLog(...args) {
 }
 
 
-// === Grouped function accessors (non-destructive) ===
-// Provides grouped access to core game functions without moving their implementations.
-// Use `GameGroups.Core.draw()` or `GameGroups.Map.generateMap()` etc.
 const GameGroups = {
   Core: {
     draw: (...a) => typeof draw === 'function' ? draw(...a) : undefined,
@@ -224,14 +223,23 @@ const TEXTSIZE_BUTTON_Y_OFFSET = 10;
 const BACK_BUTTON_VERTICAL_OFFSET = 120;
 
 let genPhase = 0;      
-let genTimer = 0;      
+let genTimer = 0;    
+// preload() -
+// setup() -
+// draw() -
+// windowResized() -
+// _confirmResize() -
+// createFullWindowCanvas() -
+// mousePressed() -
+// keyPressed() -
+ 
 let genTempData = {};  
 
-// --- ZOOM SETTINGS ---
+
 const FIXED_VIRTUAL_HEIGHT = 3000; 
 let gameScale = 1;
 
-// --- SPRINT VARIABLES (Prevents Crash) ---
+
 let sprintEnergy = 100;
 const SPRINT_MAX = 100;
 const SPRINT_COST_PER_FRAME = 0.5; 
@@ -508,8 +516,6 @@ function setup() {
   W = windowWidth;
   H = windowHeight;
 
-  // 1. FORCE SHARPNESS (CSS Method)
-  // This makes the game crisp immediately.
   let canvasStyle = document.createElement('style');
   canvasStyle.innerHTML = `
     canvas {
@@ -548,10 +554,10 @@ function setup() {
   `;
   document.head.appendChild(canvasStyle);
 
-  // 2. High Resolution
+ 
   pixelDensity(window.devicePixelRatio || 1);
 
-  // 3. Calculate Scale
+
   gameScale = H / FIXED_VIRTUAL_HEIGHT;
   virtualW = W / gameScale;
   virtualH = H / gameScale;
@@ -559,7 +565,6 @@ function setup() {
   let cnv = createCanvas(W, H);
   ensureTextSizeOverride();
   
-  // 4. Backup Sharpness
   try {
     enforceCanvasSharpness(drawingContext);
     if (cnv && cnv.elt) {
@@ -593,7 +598,7 @@ function setup() {
     riverClearMode = RIVER_CLEAR_MODES.AUTO;
   }
 
-  // Global UI SFX handler: play click SFX for any DOM button press
+
   try {
     document.addEventListener('pointerdown', (ev) => {
       try {
@@ -629,8 +634,7 @@ function setup() {
     if (ready) {
       verboseLog('[game] assets loaded. Pre-warming clouds...');
       
-      // FORCE CLOUDS EVERYWHERE
-      // We use the virtual world width so clouds don't bunch on the left.
+     
       const wWidth = width / (height / 3000); 
       for(let i = 0; i < 25; i++) {
           spawnCloud(Math.random() * wWidth); 
@@ -693,10 +697,10 @@ function _confirmResize() {
   W = windowWidth;
   H = windowHeight;
 
-  // 1. Maintain Quality
+
   pixelDensity(window.devicePixelRatio || 1);
   
-  // 2. Recalculate Scale
+
   const mapW = (logicalW || 0) * cellSize;
   const mapH = (logicalH || 0) * cellSize;
   if (mapW <= 0 || mapH <= 0) {
@@ -712,7 +716,7 @@ function _confirmResize() {
 
   resizeCanvas(W, H);
   
-  // 3. RE-APPLY CLARITY (Important!)
+
   try {
     enforceCanvasSharpness(drawingContext);
     const cnv = select('canvas');
@@ -740,17 +744,17 @@ function createFullWindowCanvas() {
 
 function mousePressed() {
   try {
-    // FIX: Un-scale mouse coordinates to match the virtual world
+    
     const mx = mouseX / gameScale;
     const my = mouseY / gameScale;
 
-    // Canvas menu click handling removed (now using DOM menu)
+    
   } catch (e) {}
 }
 
 function togglePauseMenuFromEscape() {
   const now = Date.now();
-  if (now - _lastEscToggleAt < 50) return; // debounce to prevent double-fire from multiple handlers
+  if (now - _lastEscToggleAt < 50) return; 
   _lastEscToggleAt = now;
 
   try {
@@ -854,7 +858,7 @@ function keyPressed() {
   }
 }
 
-// Global escape listener to handle cases where p5 keyPressed is not firing (e.g., focus on overlay div)
+
 try {
   window.addEventListener('keydown', (ev) => {
     if (ev && ev.key === 'Escape') {
@@ -867,34 +871,7 @@ try {
 }
 
 
-// --- MAP GENERATION & MANAGEMENT ---
-// generateMap() -
-// generateMap_Part1() -
-// generateMap_Part2() -
-// computeClearArea() -
-// applyNoiseTerrain(centerX, centerY, baseClearWidth, baseClearHeight) - 
-// postProcessRiversAndClearArea(clearStartX, clearEndX, clearStartY, clearEndY) -
-// pruneUnreachable(startX, startY) -
-// generateHills(map, w, h) -
-// getHillTileType(grid, x, y, w) - 
-// carveRivers(map, w, h, opts) -
-// carveRiversMaybeThrough(map, w, h, opts) /
-// carveBranchFromRiver(map, w, h, opts) /
-// ensureInteractiveClearArea(map, w, h, opts) /
-// smoothRiverTiles(map, w, h, opts) /
-// roundRiverTips(map, w, h, opts) /
-// layBridgeTile(map, w, h, x, y, RIVER_TILE, BRIDGE_TILE) -
-// buildActiveMapPayload() -
-// persistActiveMapToServer(reason) /
-// saveMap(name) -
-// downloadMapJSON(obj, filename) -
-// autosaveMap() -
-// tryFetchActiveMap() -
-// applyLoadedMap(obj) -
-// loadMapFromStorage() -
-// showFilePickerToLoadActiveMap() -
-// createMapImage() -
-// ensureEdgeLayerConnectivity()
+
 function generateMap() {
     genPhase = 1; 
 }
@@ -1493,8 +1470,7 @@ function tryFetchActiveMap() {
       return Promise.resolve(false);
     }
 
-    // FIX: Use relative path if we are on the server port (3000) to avoid CORS/origin mismatches.
-    // Otherwise, default to standard localhost address.
+    
     let url = 'http://localhost:3000/maps/active_map.json';
     if (typeof window !== 'undefined' && window.location && window.location.port === '3000') {
       url = '/maps/active_map.json';
@@ -1508,7 +1484,7 @@ function tryFetchActiveMap() {
         }
         return resp.json().then(obj => {
           try { 
-              // applyLoadedMap updates the global persistentGameId
+             
               const success = applyLoadedMap(obj); 
               if (success) {
                   verboseLog('[game] tryFetchActiveMap: Successfully applied map from server.');
@@ -1518,7 +1494,7 @@ function tryFetchActiveMap() {
           return false;
         }).catch(err => { console.warn('[game] failed to parse active_map.json', err); return false; });
       }).catch(err => { 
-          // This usually happens if the server isn't running or port is blocked
+   
           console.warn('[game] tryFetchActiveMap: Fetch failed', err); 
           return false; 
       });
@@ -1693,12 +1669,12 @@ function createMapImage() {
   }
   mapImage = createGraphics(w, h);
   
-  // 1. Memory Optimization (Keep this at 1 for large maps)
+ 
   mapImage.pixelDensity(1); 
   
-  // 2. FORCE CLARITY on the map buffer
+
   try {
-    // Force every map buffer to stay pixelated
+ 
     enforceCanvasSharpness(mapImage.drawingContext);
     mapImage.noSmooth(); 
   } catch(e) {}
@@ -1709,7 +1685,7 @@ function createMapImage() {
     }
 
   const useSprites = showTextures && spritesheet && spritesheet.width > 1;
-  // ... (keep the rest of the existing function logic exactly as is below) ...
+ 
   if (showTextures && !useSprites) {
     console.warn('[createMapImage] textures requested but spritesheet not available - drawing raw map');
     try { showToast('Textures not available yet — showing raw map', 'warn', 3000); } catch (e) {}
@@ -1918,7 +1894,7 @@ function createMapImage() {
               shouldMark = true;
             }
             if (!shouldMark) continue;
-            // logic to mark edge layer (if needed) ...
+        
           } catch (e) {}
         }
       }
@@ -2363,31 +2339,30 @@ function updateSprintState() {
   const now = millis();
   const shiftHeld = keyIsDown(16);
 
-  // Initialize last update
   if (typeof sprintLastUpdate !== 'number' || sprintLastUpdate <= 0) sprintLastUpdate = now;
   const dt = Math.max(0, now - sprintLastUpdate);
   sprintLastUpdate = now;
 
   if (sprintActive) {
-    // Consume sprint resource while active
+  
     sprintRemainingMs = Math.max(0, sprintRemainingMs - dt);
     if (!shiftHeld || sprintRemainingMs <= 0) {
       sprintActive = false;
       sprintCooldownUntil = now + SPRINT_COOLDOWN_MS;
     }
   } else {
-    // Refill sprint resource over time when not sprinting
+
     if (sprintRemainingMs < SPRINT_MAX_DURATION_MS) {
       sprintRemainingMs = Math.min(SPRINT_MAX_DURATION_MS, sprintRemainingMs + dt);
     }
 
-    // If fully refilled, clear cooldown so sprint becomes available immediately
+
     if (sprintRemainingMs >= SPRINT_MAX_DURATION_MS) {
       sprintRemainingMs = SPRINT_MAX_DURATION_MS;
       sprintCooldownUntil = 0;
     }
 
-    // Start sprint if shift held, cooldown passed, and we have some resource
+
     if (shiftHeld && now >= sprintCooldownUntil && sprintRemainingMs > 0) {
       sprintActive = true;
       sprintLastUpdate = now;
@@ -2723,7 +2698,7 @@ function neighbors(x, y) {
 let inGameMenuOverlay = null;
 let _lastEscToggleAt = 0;
 
-// Capture initial zoom baselines so we can detect relative browser zoom changes.
+
 const BASE_DPR = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
 let __zoomProbeEl = null;
 
@@ -2743,7 +2718,7 @@ function measureZoomViaInch() {
     }
     const rect = __zoomProbeEl.getBoundingClientRect();
     if (!rect || !rect.width) return null;
-    // CSS inch is 96px at 100% zoom; measured px / 96 gives zoom factor.
+  
     return rect.width / 96;
   } catch (e) { return null; }
 }
@@ -2781,7 +2756,7 @@ function estimateBrowserZoom() {
   return clamped;
 }
 
-// Keep a DOM node visually constant when browser zoom changes
+
 function makeElementZoomInvariant(el, origin = 'center center') {
   if (!el) return () => {};
   let zoomLoopId = null;
@@ -2922,11 +2897,11 @@ function drawInGameMenu_OLD() {
   try {
     push();
     
-    // Virtual Dimensions
+  
     const vW = virtualW || (width / gameScale);
     const vH = virtualH || (height / gameScale);
 
-    // Mouse Logic
+    
     let currentHoveredId = null;
     const mx = mouseX / gameScale;
     const my = mouseY / gameScale;
@@ -2942,19 +2917,19 @@ function drawInGameMenu_OLD() {
     }
     inGameMenuHovered = currentHoveredId;
 
-    // Background Dimmer
+
     noStroke();
     fill(0, 0, 0, 200);
     rect(0, 0, vW, vH); 
 
-    // --- NEW SMALLER DIMENSIONS ---
+
     const panelW = 500; 
     const panelH = 400;
     
     const px = Math.floor((vW - panelW) / 2);
     const py = Math.floor((vH - panelH) / 2);
 
-    // Panel Body
+
     push();
     stroke(0); strokeWeight(6); fill(40, 40, 44, 255); 
     rect(px, py, panelW, panelH, 12);
@@ -2973,7 +2948,7 @@ function drawInGameMenu_OLD() {
       }
     } catch (e) {}
 
-    // Button Layout
+
     const btnLabels = [ { id: 'continue', label: 'Continue' }, { id: 'settings', label: 'Settings' }, { id: 'exit', label: 'Exit' } ];
     const btnW = 320; 
     const btnH = 60;  
@@ -3174,7 +3149,7 @@ function showSubSettings(label) {
   applyCurrentTextSize();
 }
 
-// Helper to compute scale based on `textSizeSetting` and provide a scaled p5 textSize wrapper
+
 function getTextScale() {
   try {
     const defaultVal = 75;
@@ -3231,19 +3206,19 @@ function applyCurrentTextSize() {
 
     try { if (typeof textSize === 'function') textSize(base); } catch(e) {}
 
-    // Update known labeled elements
+   
     try {
       const labels = document.querySelectorAll('.setting-label');
       labels.forEach(l => { try { l.style.fontSize = label + 'px'; } catch(e){} });
     } catch(e) {}
 
-    // Update text-size buttons
+   
     try {
       const buttons = document.querySelectorAll('button[data-text-size-val]');
       buttons.forEach(b => { try { b.style.fontSize = Math.max(12, Math.round(14 * scale)) + 'px'; } catch(e){} });
     } catch(e) {}
 
-    // Update controls inside settings menu if present
+  
     try {
       const rootEl = (typeof settingsMenuContent !== 'undefined' && settingsMenuContent && settingsMenuContent.elt) ? settingsMenuContent.elt : document.getElementById('menu-settings-root');
       const root = (rootEl && rootEl.querySelector) ? rootEl : document.body;
@@ -3260,7 +3235,7 @@ function applyCurrentTextSize() {
       inputs.forEach(el => { try { el.style.fontSize = base + 'px'; } catch(e){} });
     } catch(e) {}
 
-    // Also update any p5-created submenu elements tracked in `activeSettingElements`
+    
     try {
       if (Array.isArray(activeSettingElements)) {
         activeSettingElements.forEach(item => {
@@ -3285,7 +3260,7 @@ function applyCurrentTextSize() {
   } catch(e) {}
 }
 
-// Also update all controls inside the settings menu/root so labels and controls match
+
 try {
   if (typeof window !== 'undefined') {
     window.applyCurrentTextSize = applyCurrentTextSize;
@@ -3305,10 +3280,10 @@ function updateLoadingOverlayDom() {
       el.style.display = 'flex';
       el.style.opacity = '1';
       
-      // NEW: Force the Loading Screen to Zoom Out
+     
       const content = document.getElementById('gd-loading-content');
       if (content) {
-          // Force a gentle scale so the loading box stays centered but never disappears
+         
           let s = 1;
           if (typeof window !== 'undefined') s = window.innerHeight / 4000;
           s = Math.max(0.18, Math.min(0.55, s));
@@ -3455,24 +3430,6 @@ const AssetTracker = {
 
 
 
-// --- ASSETS & ENVIRONMENT ---
-// trackLoadImage(key, path, successCb, errorCb)
-// trackLoadSound(key, path, successCb, errorCb)
-// cleanImageBrown(img)
-// getColorForState(state)
-// injectCustomStyles()
-// ensureLoopFallbackBuffer()
-// backupCustomAssets()
-// removeCustomAssetsRuntime()
-// restoreCustomAssetsRuntime()
-// toggleCustomAssetsRuntime()
-// setEdgeLayerColor(r, g, b, a)
-// setEdgeLayerEnabled(v)
-// setEdgeLayerDebug(v)
-// RandomEnvironment()
-// applyEnvironmentDefaults(env)
-// spawnCloud()
-// updateClouds()
 
 function trackLoadImage(key, path, successCb, errorCb) {
   try { AssetTracker.expect(key || path); } catch (e) {}
@@ -4022,9 +3979,9 @@ const IDLE_SHEET_PATH = 'assets/2-Characters/1-Idle/idle_sheet.png';
 const IDLE_SHEET_COLS = 4;
 const IDLE_SHEET_ROWS = 6;
 
-// Per-action combined sheet column counts
+
 const WALK_SHEET_COLS = 4;
-const RUN_SHEET_COLS = 6; // running has 6 frames per direction
+const RUN_SHEET_COLS = 6; 
 const WALK_SHEET_ROWS = IDLE_SHEET_ROWS;
 const RUN_SHEET_ROWS = IDLE_SHEET_ROWS;
 
@@ -4563,7 +4520,7 @@ const HILL_ASSETS = {};
 function draw() {
   try { enforceCanvasSharpness(drawingContext); } catch (e) {}
   
-  // --- Generation Phases ---
+
   if (genPhase > 0) {
     if (genPhase === 1) {
       showLoadingOverlay = true;
@@ -4594,20 +4551,19 @@ function draw() {
     }
   }
 
-  // --- Main Draw Loop ---
+
   if (typeof window !== 'undefined' && window && window.__gameDebugShown !== true) { 
     verboseLog('[game] draw() running'); window.__gameDebugShown = true; 
   }
   
   try { ensureLoadingOverlayDom(); updateLoadingOverlayDom(); } catch (e) {}
 
-  // !!! START GLOBAL SCALING !!!
   push();
 
-  // 1. Apply the shrink factor
+
   if (gameScale !== 1) scale(gameScale);
 
-  // 2. Center the game if screen is ultra-wide
+
   const mapW = (logicalW || 0) * cellSize;
   if (mapW > 0 && mapW < virtualW) {
       translate((virtualW - mapW) / 2, 0);
@@ -4624,14 +4580,14 @@ function draw() {
   }
   
   if (playerPosition) {
-    // Pause movement when any overlay is visible (settings or pause menu)
+  
     if (!settingsOverlayDiv && !inGameMenuVisible) {
       handleMovement();
       updateMovementInterpolation();
     }
   }
 
-  // 3. Draw Game World Objects
+
   try {
     const drawables = [];
     if (Array.isArray(mapOverlays)) {
@@ -4676,19 +4632,19 @@ function draw() {
     }
   } catch (e) {}
 
-  // 4. Draw HUD (Scaled automatically now)
+
   drawDifficultyBadge();
   drawSprintMeter();
   drawClouds();
 
-  // 5. Draw Menu (Scaled automatically now)
+
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
   } catch (e) {}
   
   if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
 
-  // 6. Draw Debug
+
   if (EDGE_LAYER_DEBUG && edgeLayer && logicalW && logicalH) {
     noStroke(); fill(255, 0, 0, 100);
     for (let y = 0; y < logicalH; y++) {
@@ -4698,7 +4654,7 @@ function draw() {
     }
   }
 
-  pop(); // !!! END GLOBAL SCALING !!!
+  pop(); 
 }
 
 
@@ -5102,18 +5058,18 @@ function drawDifficultyBadge() {
   const paddingX = 18;
   const paddingY = 10;
   
-  // FIX: Use virtualW instead of width
+ 
   const vW = virtualW || (width / gameScale); 
   
   push();
-  gTextSize(24); // Make text larger for 4K view
+  gTextSize(24); 
   if (uiFont) textFont(uiFont);
   
   const tWidth = textWidth(label);
   const badgeW = tWidth + paddingX * 2;
   const badgeH = 32 + paddingY * 2;
   
-  const x = vW - badgeW - margin; // Align to virtual right edge
+  const x = vW - badgeW - margin; 
   const y = margin;
 
   fill(0, 0, 0, 150);
@@ -5127,55 +5083,55 @@ function drawDifficultyBadge() {
 }
 
 function drawSprintMeter() {
-  // Bottom-right vertical sprint bar that refills from where it stopped
+ 
   const now = millis();
   const margin = 20;
   const vW = virtualW || (width / gameScale);
   const vH = virtualH || (height / gameScale);
 
-  // Slightly narrower visual bar per request
+ 
   const barW = Math.max(24, Math.floor(vW * 0.04));
   const barH = Math.max(140, Math.min(360, Math.floor(vH * 0.28)));
   const x = vW - margin - barW;
   const y = vH - margin - barH;
 
-  // Compute percentage from sprintRemainingMs
+ 
   const pct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
 
   push();
   noStroke();
 
-  // Background container (larger padding)
+  
   fill(0, 0, 0, 180);
   rect(x - 6, y - 6, barW + 12, barH + 12, 8);
 
-  // Empty area
+  
   fill(50, 50, 50, 220);
   rect(x, y, barW, barH, 6);
 
-  // Filled portion (draw from bottom up so refill appears where it stopped)
+  
   if (pct > 0) {
-    if (pct < 0.2) fill(220, 60, 60); // low -> red
-    else fill(255, 215, 0); // normal -> gold
+    if (pct < 0.2) fill(220, 60, 60); 
+    else fill(255, 215, 0); 
     const fillH = Math.round(barH * pct);
     rect(x, y + (barH - fillH), barW, fillH, 6);
   }
 
-  // Cooldown overlay if sprint not available due to cooldown
+ 
   if (typeof sprintCooldownUntil === 'number' && now < sprintCooldownUntil) {
     const cdPct = Math.max(0, Math.min(1, (sprintCooldownUntil - now) / SPRINT_COOLDOWN_MS));
-    // draw an overlay showing cooldown progress (fades from top)
+   
+
     fill(0, 0, 0, 140);
     const overlayH = Math.round(barH * cdPct);
     rect(x, y, barW, overlayH);
   }
 
-  // Border
   stroke(0,0,0,220); strokeWeight(2);
   noFill();
   rect(x, y, barW, barH, 6);
 
-  // Larger label
+  
   noStroke(); fill(255);
   gTextSize(16);
   textAlign(CENTER, BOTTOM);
@@ -5684,22 +5640,20 @@ function spawnCloud(forceX) {
   
   const cloudImg = validImages[Math.floor(Math.random() * validImages.length)];
   
-  // FIX: Hardcode Map Height (3000px)
+ 
   const worldHeight = 3000; 
   
-  // Spawn from 0 (Very Top) to 3000 (Very Bottom)
-  // This guarantees coverage everywhere.
+ 
   const minY = 0; 
   const maxY = worldHeight; 
   const yPos = minY + Math.random() * (maxY - minY);
   
-  // DEBUG: Check console to prove it's working
-  // verboseLog(`Spawning cloud at Y: ${Math.floor(yPos)}`);
+  
 
   const baseSpeed = 0.3 + Math.random() * 1;
   const scale = 2.0 + Math.random() * 4.0;
   
-  // Calculate width based on 3000px height ratio
+
   const currentScale = height / 3000; 
   const startX = (typeof forceX === 'number') ? forceX : -cloudImg.width * scale;
 
@@ -6143,7 +6097,7 @@ function drawClouds() {
   pop();
 }
 
-// --- Toggle handlers for "Show Tutorials" and "Enabled HUB"
+
 (function(){
   function ensureError1El(){
     let el = document.getElementById('error1');
@@ -6206,7 +6160,7 @@ function drawClouds() {
   document.addEventListener('change', delegatedHandler, true);
   document.addEventListener('input', delegatedHandler, true);
 
-  // expose for manual testing from console
+
   try { window.showError1 = showError1; } catch(e) {}
 })();
 
