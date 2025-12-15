@@ -11,7 +11,7 @@ if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
         const patchedOptions = Object.assign({}, optionSource, { willReadFrequently: true });
         return originalGetContext.call(this, type, patchedOptions);
       }
-      return originalGetContext.call(this, type, options);
+      return originalGetContext.apply(this, arguments);
     };
     canvasProto.getContext = patchedGetContext;
     canvasProto.__gdWillReadFrequentlyPatched = true;
@@ -24,7 +24,7 @@ let cloudImages = [];
 let clouds = [];
 
 const MAX_CLOUDS = 100;
-const CLOUD_SPAWN_INTERVAL = 8000; 
+const CLOUD_SPAWN_INTERVAL = 8000;
 
 let lastCloudSpawn = 0;
 
@@ -39,15 +39,15 @@ let overlayProgressLastUpdate = 0;
 const LOADING_PROGRESS_RATE = 35;
 
 let inGameMenuVisible = false;
-let inGameMenuButtonRects = []; 
-let inGameMenuHovered = null; 
-let inGameMenuHoverScales = {}; 
+let inGameMenuButtonRects = [];
+let inGameMenuHovered = null;
+let inGameMenuHoverScales = {};
 let inGameMenuPrevHovered = null;
 
-let activeSettingElements = []; 
-let textSizeSetting = 75; 
-let difficultySetting = 'normal'; 
-let settingsOverlayDiv = null; 
+let activeSettingElements = [];
+let textSizeSetting = 75;
+let difficultySetting = 'normal';
+let settingsOverlayDiv = null;
 let settingsOverlayPanel = null;
 
 const MENU_BUTTON_TEXTURE_PATH = 'assets/3-GUI/Button_BG.png';
@@ -257,9 +257,6 @@ let lastRunTime = 0;
 // keyPressed() -
 function preload() {
   try { ensureLoadingOverlayDom(); overlayMessage = 'Loading assets...'; updateLoadingOverlayDom(); } catch (e) {}
-  try {
-    trackLoadImage('spritesheet:' + SPRITESHEET_PATH, SPRITESHEET_PATH, (img) => { spritesheet = img; verboseLog('[game] loaded spritesheet', SPRITESHEET_PATH, img.width, 'x', img.height); }, (err) => { spritesheet = null; console.warn('[game] failed to load spritesheet', SPRITESHEET_PATH, err); });
-  } catch (e) {}
   
   HILL_DIRECTIONS.forEach(dir => {
     const path = `assets/1-Background/2-Game/1-Forest/1-hill_${dir}.png`;
@@ -342,20 +339,6 @@ function preload() {
       );
     } catch (e) {}
   }
-  try { trackLoadImage('idle_sheet:' + IDLE_SHEET_PATH, IDLE_SHEET_PATH, (img) => { verboseLog('[game] loaded idle spritesheet', IDLE_SHEET_PATH, img.width, 'x', img.height); spritesheetIdle = img; }, (err) => { console.warn('[game] failed to load idle spritesheet', err); spritesheetIdle = null; }); } catch (e) {}
-  try { trackLoadImage('walk_sheet_combined:' + WALK_SHEET_COMBINED, WALK_SHEET_COMBINED, (img) => { verboseLog('[game] loaded walk combined sheet', WALK_SHEET_COMBINED, img.width, 'x', img.height); spritesheetWalk = img; }, (err) => { spritesheetWalk = null; }); } catch (e) {}
-  try { trackLoadImage('run_sheet_combined:' + RUN_SHEET_COMBINED, RUN_SHEET_COMBINED, (img) => { verboseLog('[game] loaded run combined sheet', RUN_SHEET_COMBINED, img.width, 'x', img.height); spritesheetRun = img; }, (err) => { spritesheetRun = null; }); } catch (e) {}
-  
-  
-  for (let i = 1; i <= CLOUD_IMAGE_COUNT; i++) {
-    try {
-      trackLoadImage(`cloud_${i}`, `assets/5-Objects/cloud_${i}.png`, 
-        (img) => { cloudImages[i - 1] = img; verboseLog(`[game] loaded cloud_${i}`); },
-        (err) => { console.warn(`[game] failed to load cloud_${i}`, err); }
-      );
-    } catch (e) {}
-  }
-
   Object.entries(DECOR_ASSET_PATHS).forEach(([name, path]) => {
     try {
       trackLoadImage(`decor:${name}`, path,
@@ -371,140 +354,8 @@ function preload() {
     console.warn('[game] failed to load UI font', err);
     uiFont = null;
   });
-  IDLE_DIRS.forEach(dir => {
-    const paths = IDLE_FRAME_PATHS[dir];
-    idleFrames[dir] = [];
-    if (Array.isArray(paths)) {
-      paths.forEach((p, idx) => {
-        if (p) {
-          idleFrames[dir][idx] = null;
-          loadImage(p,
-            (img) => { idleFrames[dir][idx] = img; verboseLog('[game] loaded frame', dir, idx, p, img.width, 'x', img.height); },
-            (err) => { console.warn('[game] failed to load frame', dir, idx, p, err); idleFrames[dir][idx] = null; }
-          );
-        } else {
-          idleFrames[dir][idx] = null;
-        }
-      });
-    } else if (IDLE_FRAME_TEMPLATE) {
-      for (let i = 0; i < IDLE_SHEET_COLS; i++) {
-        const p = IDLE_FRAME_TEMPLATE.replace('{DIR}', dir).replace('{COL}', String(i));
-        idleFrames[dir][i] = loadImage(p,
-          () => { verboseLog('[game] loaded frame', dir, i, p); },
-          (err) => { console.warn('[game] failed to load frame', dir, i, p, err); idleFrames[dir][i] = null; }
-        );
-      }
-    }
-    const sheetPath = IDLE_SHEET_PATHS[dir];
-    idleSheets[dir] = null;
-    if (sheetPath) {
-      idleSheets[dir] = null;
-      try {
-        trackLoadImage('idle_sheet_dir:' + sheetPath, sheetPath,
-          (img) => { idleSheets[dir] = img; verboseLog('[game] loaded direction sheet', dir, sheetPath, img.width, 'x', img.height); },
-          (err) => { console.warn('[game] failed to load direction sheet', dir, sheetPath, err); idleSheets[dir] = null; }
-        );
-      } catch (e) { idleSheets[dir] = null; }
-    } else {
-      idleSheets[dir] = null;
-    }
-  });
-  IDLE_DIRS.forEach(dir => {
-    const paths = WALK_FRAME_PATHS[dir];
-    walkFrames[dir] = [];
-    if (Array.isArray(paths)) {
-      paths.forEach((p, idx) => {
-        if (p) {
-          walkFrames[dir][idx] = null;
-          loadImage(p,
-            (img) => { walkFrames[dir][idx] = img; verboseLog('[game] loaded walk frame', dir, idx, p, img.width, 'x', img.height); },
-            (err) => { console.warn('[game] failed to load walk frame', dir, idx, p, err); walkFrames[dir][idx] = null; }
-          );
-        } else {
-          walkFrames[dir][idx] = null;
-        }
-      });
-    } else if (WALK_FRAME_TEMPLATE) {
-      for (let i = 0; i < IDLE_SHEET_COLS; i++) {
-        const p = WALK_FRAME_TEMPLATE.replace('{DIR}', dir).replace('{COL}', String(i));
-        walkFrames[dir][i] = loadImage(p,
-          () => { verboseLog('[game] loaded walk frame', dir, i, p); },
-          (err) => { console.warn('[game] failed to load walk frame', dir, i, p, err); walkFrames[dir][i] = null; }
-        );
-      }
-    }
-  });
-  IDLE_DIRS.forEach(dir => {
-    const paths = RUN_FRAME_PATHS[dir];
-    runFrames[dir] = [];
-    if (Array.isArray(paths)) {
-      paths.forEach((p, idx) => {
-        if (p) {
-          runFrames[dir][idx] = null;
-          loadImage(p,
-            (img) => { runFrames[dir][idx] = img; verboseLog('[game] loaded run frame', dir, idx, p, img.width, 'x', img.height); },
-            (err) => { console.warn('[game] failed to load run frame', dir, idx, p, err); runFrames[dir][idx] = null; }
-          );
-        } else {
-          runFrames[dir][idx] = null;
-        }
-      });
-    } else if (RUN_FRAME_TEMPLATE) {
-      for (let i = 0; i < IDLE_SHEET_COLS; i++) {
-        const p = RUN_FRAME_TEMPLATE.replace('{DIR}', dir).replace('{COL}', String(i));
-        runFrames[dir][i] = loadImage(p,
-          () => { verboseLog('[game] loaded run frame', dir, i, p); },
-          (err) => { console.warn('[game] failed to load run frame', dir, i, p, err); runFrames[dir][i] = null; }
-        );
-      }
-    }
-  });
-  const WALK_SHEET_PATHS = {
-    N:  'assets/2-Characters/2-Walking/walk_sheet_north.png',
-    NE: 'assets/2-Characters/2-Walking/walk_sheet_northeast.png',
-    E:  'assets/2-Characters/2-Walking/walk_sheet_east.png',
-    SE: 'assets/2-Characters/2-Walking/walk_sheet_southeast.png',
-    S:  'assets/2-Characters/2-Walking/walk_sheet_south.png',
-    SW: 'assets/2-Characters/2-Walking/walk_sheet_southwest.png',
-    W:  'assets/2-Characters/2-Walking/walk_sheet_west.png',
-    NW: 'assets/2-Characters/2-Walking/walk_sheet_northwest.png'
-  };
-  const RUN_SHEET_PATHS = {
-    N:  'assets/2-Characters/3-Running/run_sheet_north.png',
-    NE: 'assets/2-Characters/3-Running/run_sheet_north_east.png',
-    E:  'assets/2-Characters/3-Running/run_sheet_east.png',
-    SE: 'assets/2-Characters/3-Running/run_sheet_south_east.png',
-    S:  'assets/2-Characters/3-Running/run_sheets_south.png',
-    SW: 'assets/2-Characters/3-Running/run_sheet_south_west.png',
-    W:  'assets/2-Characters/3-Running/run_sheet_west.png',
-    NW: 'assets/2-Characters/3-Running/run_sheet_north_west.png'
-  };
-  IDLE_DIRS.forEach(dir => {
-    const wp = WALK_SHEET_PATHS[dir];
-    walkSheets[dir] = null;
-    if (wp) {
-      try {
-        trackLoadImage('walk_sheet_dir:' + wp, wp, (img) => { walkSheets[dir] = img; verboseLog('[game] loaded walk sheet', dir, wp, img.width, 'x', img.height); }, (err) => { console.warn('[game] failed to load walk sheet', dir, wp, err); walkSheets[dir] = null; });
-      } catch (e) { walkSheets[dir] = null; }
-    }
-    const rp = RUN_SHEET_PATHS[dir];
-    runSheets[dir] = null;
-    if (rp) {
-      try {
-        trackLoadImage('run_sheet_dir:' + rp, rp, (img) => { runSheets[dir] = img; verboseLog('[game] loaded run sheet', dir, rp, img.width, 'x', img.height); }, (err) => { console.warn('[game] failed to load run sheet', dir, rp, err); runSheets[dir] = null; });
-      } catch (e) { runSheets[dir] = null; }
-    }
-  });
-
-  IDLE_DIRS.forEach(dir => {
-    const jp = JUMP_SHEET_PATHS[dir];
-    jumpSheets[dir] = null;
-    if (jp) {
-      try {
-        trackLoadImage('jump_sheet_dir:' + jp, jp, (img) => { jumpSheets[dir] = img; verboseLog('[game] loaded jump sheet', dir, jp, img.width, 'x', img.height); }, (err) => { console.warn('[game] failed to load jump sheet', dir, jp, err); jumpSheets[dir] = null; });
-      } catch (e) { jumpSheets[dir] = null; }
-    }
-  });
+  scheduleDeferredCharacterAssets();
+  try { logAssetTrackerStatus('after preload queue'); } catch (e) {}
 
   try { trackLoadSound('gameMusic:assets/8-Music/game_music.wav', 'assets/8-Music/game_music.wav', (snd) => { gameMusic = snd; }, (err) => { gameMusic = null; }); } catch (e) { try { gameMusic = loadSound('assets/8-Music/game_music.wav'); } catch (ee) { gameMusic = null; } }
   try { trackLoadSound('clickSFX:assets/9-Sounds/Button_Press.mp3', 'assets/9-Sounds/Button_Press.mp3', (snd) => { clickSFX = snd; }, (err) => { clickSFX = null; }); } catch (e) { try { clickSFX = loadSound('assets/9-Sounds/Button_Press.mp3'); } catch (ee) { clickSFX = null; } }
@@ -873,7 +724,8 @@ try {
 
 
 function generateMap() {
-    genPhase = 1; 
+  clearPreviousGameState();
+  genPhase = 1;
 }
 
 function generateMap_Part1() {
@@ -1686,10 +1538,7 @@ function createMapImage() {
 
   const useSprites = showTextures && spritesheet && spritesheet.width > 1;
  
-  if (showTextures && !useSprites) {
-    console.warn('[createMapImage] textures requested but spritesheet not available - drawing raw map');
-    try { showToast('Textures not available yet — showing raw map', 'warn', 3000); } catch (e) {}
-  }
+  
 
   const overlays = [];
   const TREE_PIXEL_SIZE = 64;
@@ -1999,6 +1848,36 @@ function ensureEdgeLayerConnectivity() {
   if (adjustments > 0) {
     verboseLog('[game] ensureEdgeLayerConnectivity removed', adjustments, 'barrier tiles to keep paths accessible');
   }
+}
+
+function clearPreviousGameState() {
+  try {
+    if (mapImage && typeof mapImage.remove === 'function') {
+      mapImage.remove();
+    }
+  } catch (e) {}
+  mapImage = null;
+  mapOverlays = [];
+  decorativeObjects = [];
+  decorativeObstacleTiles = new Set();
+  treeObjects = [];
+  counts = {};
+  decorObjectsDirty = true;
+  edgeLayer = null;
+  mapStates = null;
+  terrainLayer = null;
+  playerPosition = null;
+  renderX = renderY = renderStartX = renderStartY = renderTargetX = renderTargetY = 0;
+  isMoving = false;
+  queuedMove = null;
+  isJumping = false;
+  clouds.length = 0;
+  lastCloudSpawn = 0;
+  overlayProgress = 0;
+  overlayProgressActive = false;
+  overlayProgressLastUpdate = 0;
+  showLoadingOverlay = true;
+  mapLoadComplete = false;
 }
 
 
@@ -3427,6 +3306,25 @@ const AssetTracker = {
   }
 };
 
+function logAssetTrackerStatus(context) {
+  try {
+    if (typeof AssetTracker === 'undefined') return;
+    const loaded = AssetTracker.loaded || 0;
+    const expected = AssetTracker.expected || 0;
+    const pending = Math.max(0, expected - loaded);
+    const registered = (AssetTracker.names && AssetTracker.names.size) || 0;
+    const stage = context ? String(context) : 'status';
+    const message = `${loaded}/${expected} loaded, pending=${pending}, registered=${registered}`;
+    if (typeof verboseLog === 'function') {
+      verboseLog('[AssetTracker]', stage, message);
+    } else {
+      console.info('[AssetTracker]', stage, message);
+    }
+  } catch (e) {
+    console.warn('[AssetTracker] log failed', e);
+  }
+}
+
 
 
 
@@ -4019,6 +3917,61 @@ function injectCustomStyles() {
         text-shadow: 0 0 12px #ffffffaa;
         color: #ffea00 !important;
       }
+
+    function releaseImageReference(img) {
+      if (!img) return;
+      if (typeof img.remove === 'function') {
+        try { img.remove(); } catch (e) {}
+      }
+    }
+
+    function clearObjectValues(target) {
+      if (!target || typeof target !== 'object') return;
+      Object.keys(target).forEach((key) => { target[key] = null; });
+    }
+
+    function releaseGameAssets() {
+      clearPreviousGameState();
+      releaseImageReference(spritesheetIdle);
+      releaseImageReference(spritesheetWalk);
+      releaseImageReference(spritesheetRun);
+      spritesheetIdle = null;
+      spritesheetWalk = null;
+      spritesheetRun = null;
+
+      releaseImageReference(BUTTON_BG);
+      releaseImageReference(TREE_OVERLAY_IMG);
+      releaseImageReference(uiFont);
+      BUTTON_BG = null;
+      TREE_OVERLAY_IMG = null;
+      uiFont = null;
+
+      clearObjectValues(TILE_IMAGES);
+      clearObjectValues(DECOR_ASSET_IMAGES);
+      clearObjectValues(HILL_ASSETS);
+
+      if (Array.isArray(cloudImages)) cloudImages.length = 0;
+
+      try {
+        if (gameMusic && typeof gameMusic.stop === 'function') {
+          gameMusic.stop();
+        }
+      } catch (stopErr) {}
+      gameMusic = null;
+      clickSFX = null;
+
+      if (typeof AssetTracker !== 'undefined') {
+        AssetTracker.loaded = 0;
+        AssetTracker.expected = 0;
+        if (AssetTracker.names && typeof AssetTracker.names.clear === 'function') {
+          AssetTracker.names.clear();
+        }
+        AssetTracker._callbacks = [];
+        AssetTracker._resolve = null;
+        AssetTracker._readyPromise = null;
+      }
+      genTempData = {};
+    }
       /* Inputs */
       input[type="checkbox"], select, input[type="range"] {
         accent-color: #ffcc00;
@@ -4123,6 +4076,26 @@ const RUN_FRAME_PATHS = {
 const RUN_FRAME_TEMPLATE = null;
 
 let runFrames = { N:[], NE:[], E:[], SE:[], S:[], SW:[], W:[], NW:[] };
+const WALK_SHEET_PATHS = {
+  N:  'assets/2-Characters/2-Walking/walk_sheet_north.png',
+  NE: 'assets/2-Characters/2-Walking/walk_sheet_northeast.png',
+  E:  'assets/2-Characters/2-Walking/walk_sheet_east.png',
+  SE: 'assets/2-Characters/2-Walking/walk_sheet_southeast.png',
+  S:  'assets/2-Characters/2-Walking/walk_sheet_south.png',
+  SW: 'assets/2-Characters/2-Walking/walk_sheet_southwest.png',
+  W:  'assets/2-Characters/2-Walking/walk_sheet_west.png',
+  NW: 'assets/2-Characters/2-Walking/walk_sheet_northwest.png'
+};
+const RUN_SHEET_PATHS = {
+  N:  'assets/2-Characters/3-Running/run_sheet_north.png',
+  NE: 'assets/2-Characters/3-Running/run_sheet_north_east.png',
+  E:  'assets/2-Characters/3-Running/run_sheet_east.png',
+  SE: 'assets/2-Characters/3-Running/run_sheet_south_east.png',
+  S:  'assets/2-Characters/3-Running/run_sheet_south.png',
+  SW: 'assets/2-Characters/3-Running/run_sheet_south_west.png',
+  W:  'assets/2-Characters/3-Running/run_sheet_west.png',
+  NW: 'assets/2-Characters/3-Running/run_sheet_north_west.png'
+};
 const IDLE_SHEET_PATHS = {
     N:  'assets/2-Characters/2-Walking/walk_sheet_north.png',
     NE: 'assets/2-Characters/2-Walking/walk_sheet_northeast.png',
@@ -4149,6 +4122,63 @@ const JUMP_SHEET_PATHS = {
     NW: 'assets/2-Characters/4-Jumping/jump_sheet_northwest.png'
 };
 let jumpSheets = { N:null, NE:null, E:null, SE:null, S:null, SW:null, W:null, NW:null };
+function scheduleDeferredCharacterAssets() {
+  if (scheduleDeferredCharacterAssets._queued) return;
+  scheduleDeferredCharacterAssets._queued = true;
+
+  const loadDirectionalSheets = (paths, targetMap, label) => {
+    if (!paths || typeof paths !== 'object' || !targetMap) return;
+    Object.entries(paths).forEach(([dir, path]) => {
+      targetMap[dir] = null;
+      if (!path) return;
+      try {
+        trackLoadImage(`${label}:${dir}`, path,
+          (img) => { targetMap[dir] = img; verboseLog('[game]', `${label} loaded`, dir, path, img && img.width, 'x', img && img.height); },
+          (err) => { console.warn('[game] failed to load', label, dir, path, err); targetMap[dir] = null; }
+        );
+      } catch (e) {
+        targetMap[dir] = null;
+      }
+    });
+  };
+
+  const loadCloudTextures = () => {
+    const globalScope = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : {});
+    if (!Array.isArray(globalScope.cloudImages)) globalScope.cloudImages = [];
+    const cloudArray = globalScope.cloudImages;
+    const targetCount = typeof CLOUD_IMAGE_COUNT === 'number' ? CLOUD_IMAGE_COUNT : 6;
+    for (let i = 1; i <= targetCount; i++) {
+      cloudArray[i - 1] = cloudArray[i - 1] || null;
+      const path = `assets/5-Objects/cloud_${i}.png`;
+      try {
+        trackLoadImage(`cloud_${i}`, path,
+          (img) => { cloudArray[i - 1] = img; verboseLog('[game] loaded cloud', i, img && img.width, 'x', img && img.height); },
+          (err) => { console.warn('[game] failed to load cloud', i, err); }
+        );
+      } catch (e) {
+        console.warn('[game] failed to queue cloud', i, e);
+      }
+    }
+  };
+
+  const runDeferredLoads = () => {
+    try { logAssetTrackerStatus('before deferred character assets'); } catch (e) {}
+    loadDirectionalSheets(IDLE_SHEET_PATHS, idleSheets, 'idle_sheet');
+    loadDirectionalSheets(WALK_SHEET_PATHS, walkSheets, 'walk_sheet');
+    loadDirectionalSheets(RUN_SHEET_PATHS, runSheets, 'run_sheet');
+    loadDirectionalSheets(JUMP_SHEET_PATHS, jumpSheets, 'jump_sheet');
+    loadCloudTextures();
+    try { logAssetTrackerStatus('after deferred character assets'); } catch (e) {}
+  };
+
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(runDeferredLoads, { timeout: 2500 });
+  } else {
+    setTimeout(runDeferredLoads, 120);
+  }
+
+  try { logAssetTrackerStatus('deferred character assets scheduled'); } catch (e) {}
+}
 let isJumping = false;
 let jumpTimer = 0;
 let jumpFrame = 0;
@@ -4711,6 +4741,15 @@ window.addEventListener('message', (ev) => {
           }
         } catch (settingsErr) {
           console.warn('[game] failed to apply updated audio settings', settingsErr);
+        }
+        break;
+      }
+      case 'release-game-assets': {
+        try {
+          releaseGameAssets();
+          verboseLog && verboseLog('[game] released assets on request');
+        } catch (releaseErr) {
+          console.warn('[game] releaseGameAssets failed', releaseErr);
         }
         break;
       }

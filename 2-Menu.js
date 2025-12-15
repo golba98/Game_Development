@@ -33,6 +33,8 @@ const DIFFICULTY_LABELS = Object.freeze({
   hard: 'Hard'
 });
 
+const MENU_VIDEO_PATH = "assets/1-Background/1-Menu/Menu_Vid.mp4";
+
 // === Utilities / Misc ===
 function normalizeDifficultyChoice(value) {
   if (typeof value !== 'string') return null;
@@ -385,7 +387,7 @@ function releaseSettingsMenuRoot() {
 function preload() {
   rectSkin = loadImage("assets/1-Background/1-Menu/Settings_Background.png");
   myFont   = loadFont("assets/3-GUI/font.ttf");
-  bgVideo  = createVideo("assets/1-Background/1-Menu/Menu_Vid.mp4");
+  bgVideo  = createVideo(MENU_VIDEO_PATH);
   bgMusic      = loadSound('assets/8-Music/menu_music.wav');
   clickSFX     = loadSound('assets/9-Sounds/Button_Press.mp3');
   bgPlayButton = loadImage('assets/1-Background/1-Menu/Background.png');
@@ -404,22 +406,8 @@ function setup() {
   loadAllSettings();
   injectCustomStyles();
 
-  bgVideo.hide();
-  try {
-    if (bgVideo.elt) {
-      bgVideo.elt.muted = true;
-      bgVideo.elt.loop = false;
-      bgVideo.elt.addEventListener('loadeddata', () => {
-        captureLoopFallbackFrame();
-      }, { once: true });
-    }
-  } catch (e) {}
-
-  bgVideo.play();
-  bgVideo.loop();
-
   videoBuffer = createGraphics(width, height);
-  bgVideo.onended(() => { videoLoopPending = true; });
+  initializeMenuBackgroundVideo(bgVideo);
 
   applyVolumes();
   startMenuMusicIfNeeded();
@@ -495,9 +483,18 @@ function setup() {
     const ov = document.getElementById('game-overlay');
 
     const cleanupAndResume = () => {
+      try {
+        const iframe = document.getElementById('game-iframe');
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ type: 'release-game-assets' }, '*');
+        }
+      } catch (e) {
+        console.warn('[menu] failed to request release-game-assets', e);
+      }
       try { if (ov) ov.remove(); } catch (e) { console.warn('remove overlay failed', e); }
       try { if (getAudioContext) getAudioContext().resume && getAudioContext().resume(); } catch (e) {}
       try { startMenuMusicIfNeeded(); } catch (e) { console.warn('startMenuMusicIfNeeded failed', e); }
+      try { enableMenuBackgroundVideo(); } catch (e) { console.warn('enableMenuBackgroundVideo failed', e); }
       showMainMenu();
       setTimeout(() => { try { window.focus(); } catch (e) {} }, 50);
       
@@ -564,8 +561,9 @@ function createMainMenu() {
     console.log("Play pressed — opening game overlay iframe with settings");
 
     unlockAudioAndStart(() => {
+      disableMenuBackgroundVideo();
       playClickSFX();
-        hideMainMenu();
+      hideMainMenu();
         try {
           stopMenuMusicImmediate();
           console.log('[createMainMenu] requested stopMenuMusicImmediate for overlay');
@@ -598,6 +596,7 @@ function createMainMenu() {
         overlay.appendChild(iframe);
         document.body.appendChild(overlay);
         try { document.documentElement.style.overflow = 'hidden'; document.body.style.overflow='hidden'; } catch(e) {}
+        disableMenuBackgroundVideo();
 
         iframe.addEventListener('load', () => {
           try {
@@ -656,6 +655,7 @@ function createMainMenu() {
           } catch (e) {}
         }, 180);
       } else {
+        disableMenuBackgroundVideo();
         overlay.style.display = 'flex';
       }
     });
@@ -1268,6 +1268,69 @@ function captureLoopFallbackFrame() {
   loopFallbackBuffer.clear();
   loopFallbackBuffer.image(bgVideo, 0, 0, width, height);
   fallbackFrameReady = true;
+}
+ 
+function disposeMenuBackgroundVideo() {
+  if (!bgVideo) return;
+  try {
+    if (typeof bgVideo.pause === 'function') bgVideo.pause();
+    bgVideo.remove();
+  } catch (e) {}
+  bgVideo = null;
+  fallbackFrameReady = false;
+  videoLoopPending = false;
+  wasInVideoFadeWindow = false;
+  videoOpacity = 0;
+  fallbackOpacity = 0;
+  if (videoBuffer) {
+    try { videoBuffer.remove(); } catch (e) {}
+  }
+  videoBuffer = null;
+  if (loopFallbackBuffer) {
+    try { loopFallbackBuffer.remove(); } catch (e) {}
+  }
+  loopFallbackBuffer = null;
+}
+
+function initializeMenuBackgroundVideo(videoElement) {
+  if (!videoElement) return;
+  bgVideo = videoElement;
+  try {
+    bgVideo.hide();
+    if (bgVideo.elt) {
+      bgVideo.elt.muted = true;
+      bgVideo.elt.loop = false;
+      bgVideo.elt.addEventListener('loadeddata', () => {
+        captureLoopFallbackFrame();
+      }, { once: true });
+    }
+  } catch (e) {}
+  videoOpacity = 255;
+  fallbackOpacity = 0;
+  fallbackFrameReady = false;
+  wasInVideoFadeWindow = false;
+  videoLoopPending = false;
+  bgVideo.onended(() => { videoLoopPending = true; });
+  try { bgVideo.loop(); bgVideo.play(); } catch (e) {}
+}
+
+function disableMenuBackgroundVideo() {
+  if (inGame) return;
+  inGame = true;
+  disposeMenuBackgroundVideo();
+}
+
+function enableMenuBackgroundVideo() {
+  if (document.getElementById('game-overlay')) {
+    return;
+  }
+  inGame = false;
+  if (bgVideo) {
+    try { bgVideo.loop(); bgVideo.play(); } catch (e) {}
+    return;
+  }
+  videoBuffer = videoBuffer || createGraphics(width, height);
+  initializeMenuBackgroundVideo(createVideo(MENU_VIDEO_PATH));
 }
 
 function updateBackgroundVideo() {

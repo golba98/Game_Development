@@ -58,6 +58,12 @@ function send404(res, msg) {
   res.end(msg || 'Not found');
 }
 
+function setCorsHeaders(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
 function contentTypeFor(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === '.html') return 'text/html';
@@ -71,6 +77,12 @@ function contentTypeFor(filePath) {
 }
 
 const server = http.createServer((req, res) => {
+  setCorsHeaders(res);
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   const parsed = url.parse(req.url || '/');
   const pathname = parsed.pathname || '/';
 
