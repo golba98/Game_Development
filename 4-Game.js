@@ -31,6 +31,9 @@ let lastCloudSpawn = 0;
 const CLOUD_IMAGE_COUNT = 4;
 
 let showLoadingOverlay = true;
+let showMinimap = false;
+let smoothCamX = null;
+let smoothCamY = null;
 let overlayMessage = 'Loading map...';
 let lastLoadingScale = null;
 let overlayProgress = 0;
@@ -236,7 +239,7 @@ let genTimer = 0;
 let genTempData = {};  
 
 
-const FIXED_VIRTUAL_HEIGHT = 3000; 
+const FIXED_VIRTUAL_HEIGHT = 900; 
 let gameScale = 1;
 
 
@@ -559,9 +562,8 @@ function _confirmResize() {
     return;
   }
 
-  const heightScale = H / mapH;
-  const widthScale = W / mapW;
-  gameScale = Math.max(0.001, Math.max(heightScale, widthScale));
+  // Use fixed virtual height for consistent zoom
+  gameScale = Math.max(0.001, H / FIXED_VIRTUAL_HEIGHT);
   virtualW = W / gameScale;
   virtualH = H / gameScale;
 
@@ -648,8 +650,8 @@ function keyPressed() {
       } else {
         const dir = deltaToDirection(dx, dy);
         const d = directionToDelta(dir);
-      const maxTileX = Math.max(0, Math.floor(((virtualW || W) - cellSize) / cellSize));
-      const maxTileY = Math.max(0, Math.floor(((virtualH || H) - cellSize) / cellSize));
+      const maxTileX = (logicalW || 0) - 1;
+      const maxTileY = (logicalH || 0) - 1;
       let targetX = (typeof playerPosition.x === 'number' ? playerPosition.x : 0) + d.dx;
       let targetY = (typeof playerPosition.y === 'number' ? playerPosition.y : 0) + d.dy;
       targetX = Math.max(0, Math.min(targetX, maxTileX));
@@ -674,6 +676,11 @@ function keyPressed() {
     return;
   }
   if (key === 'Escape' || keyCode === 27) { togglePauseMenuFromEscape(); return false; }
+
+  if (key === 'm' || key === 'M') {
+      showMinimap = !showMinimap;
+      return;
+  }
 
   if (key === 'f' || key === 'F') {
     fullscreen(!fullscreen());
@@ -1990,8 +1997,8 @@ function handleMovement() {
   let moved = false;
   let targetX = playerPosition.x;
   let targetY = playerPosition.y;
-  const maxTileX = Math.max(0, Math.floor(((virtualW || W) - cellSize) / cellSize));
-  const maxTileY = Math.max(0, Math.floor(((virtualH || H) - cellSize) / cellSize));
+  const maxTileX = (logicalW || 0) - 1;
+  const maxTileY = (logicalH || 0) - 1;
   function keyTriggered(keyNow, prevKey, holdObj) {
     if (keyNow && !prevKey) {
       holdObj.start = now;
@@ -2027,8 +2034,8 @@ function handleMovement() {
       const prevX = playerPosition.x;
       const prevY = playerPosition.y;
       if (isMoving) {
-        const qx = Math.max(0, Math.min(targetX, Math.max(0, Math.floor(((virtualW || W) - cellSize) / cellSize))));
-        const qy = Math.max(0, Math.min(targetY, Math.max(0, Math.floor(((virtualH || H) - cellSize) / cellSize))));
+        const qx = Math.max(0, Math.min(targetX, maxTileX));
+        const qy = Math.max(0, Math.min(targetY, maxTileY));
         queuedMove = { prevX, prevY, targetX: qx, targetY: qy };
       } else {
         playerPosition.x = targetX;
@@ -2056,8 +2063,8 @@ function tryMoveDirection(keyChar) {
   else if (k === 'W') { targetY--; }
   else if (k === 'S') { targetY++; }
   else return;
-  const maxTileX = Math.max(0, Math.floor(((virtualW || W) - cellSize) / cellSize));
-  const maxTileY = Math.max(0, Math.floor(((virtualH || H) - cellSize) / cellSize));
+  const maxTileX = (logicalW || 0) - 1;
+  const maxTileY = (logicalH || 0) - 1;
   targetX = Math.max(0, Math.min(targetX, maxTileX));
   targetY = Math.max(0, Math.min(targetY, maxTileY));
   if (!canMoveTo(playerPosition.x, playerPosition.y, targetX, targetY)) return;
@@ -4593,17 +4600,59 @@ function draw() {
 
   if (gameScale !== 1) scale(gameScale);
 
-
+  // --- CAMERA LOGIC ---
+  let targetCamX = 0;
+  let targetCamY = 0;
   const mapW = (logicalW || 0) * cellSize;
-  if (mapW > 0 && mapW < virtualW) {
-      translate((virtualW - mapW) / 2, 0);
+  const mapH = (logicalH || 0) * cellSize;
+
+  if (playerPosition) {
+      const pX = isMoving ? renderX : playerPosition.x;
+      const pY = isMoving ? renderY : playerPosition.y;
+      
+      const playerPixelX = pX * cellSize + cellSize / 2;
+      const playerPixelY = pY * cellSize + cellSize / 2;
+      
+      targetCamX = playerPixelX - virtualW / 2;
+      targetCamY = playerPixelY - virtualH / 2;
+      
+      if (mapW > virtualW) {
+        targetCamX = Math.max(0, Math.min(targetCamX, mapW - virtualW));
+      } else {
+        targetCamX = -(virtualW - mapW) / 2;
+      }
+
+      if (mapH > virtualH) {
+        targetCamY = Math.max(0, Math.min(targetCamY, mapH - virtualH));
+      } else {
+        targetCamY = -(virtualH - mapH) / 2;
+      }
   }
 
+  // Camera Smoothing
+  if (smoothCamX === null || smoothCamY === null) {
+    smoothCamX = targetCamX;
+    smoothCamY = targetCamY;
+  } else {
+    // 0.15 smoothing factor for responsiveness without jitter
+    smoothCamX = lerp(smoothCamX, targetCamX, 0.15);
+    smoothCamY = lerp(smoothCamY, targetCamY, 0.15);
+  }
+
+  // Use floor to prevent sub-pixel shimmering on tiles
+  const drawCamX = Math.floor(smoothCamX);
+  const drawCamY = Math.floor(smoothCamY);
+
   background(34, 139, 34);
+
+  // START WORLD TRANSFORM
+  push();
+  translate(-drawCamX, -drawCamY);
   
   if (mapImage) image(mapImage, 0, 0);
 
   if (showLoadingOverlay) {
+    pop(); 
     background(0); 
     pop(); 
     return;        
@@ -4662,18 +4711,7 @@ function draw() {
     }
   } catch (e) {}
 
-
-  drawDifficultyBadge();
-  drawSprintMeter();
   drawClouds();
-
-
-  try {
-    if (typeof drawInGameMenu === 'function') drawInGameMenu();
-  } catch (e) {}
-  
-  if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
-
 
   if (EDGE_LAYER_DEBUG && edgeLayer && logicalW && logicalH) {
     noStroke(); fill(255, 0, 0, 100);
@@ -4683,6 +4721,102 @@ function draw() {
       }
     }
   }
+
+  pop(); // END WORLD TRANSFORM
+
+  // --- MINIMAP ---
+  if (showMinimap && mapImage) {
+    const mmW = 200;
+    const mmH = 200;
+    // Move to Bottom-Left
+    const mmX = 20;
+    const mmY = (virtualH || height) - mmH - 20;
+
+    push();
+    // Background Fog
+    fill(0, 0, 0, 180);
+    // Gold Border
+    stroke(MENU_GOLD_BORDER);
+    strokeWeight(3);
+    rect(mmX, mmY, mmW, mmH, 4);
+    noStroke();
+
+    // Map content
+    const mapAspect = mapImage.width / mapImage.height;
+    let drawW = mmW;
+    let drawH = mmW / mapAspect;
+    if (drawH > mmH) {
+       drawH = mmH;
+       drawW = mmH * mapAspect;
+    }
+    const offX = (mmW - drawW) / 2;
+    const offY = (mmH - drawH) / 2;
+    
+    // Draw map with slight transparency to blend better with fog
+    tint(255, 230);
+    image(mapImage, mmX + offX, mmY + offY, drawW, drawH);
+    noTint();
+
+    // Draw Trees on Minimap
+    if (treeObjects && logicalW && logicalH) {
+       fill(50, 205, 50); // Lime Green for high visibility
+       noStroke();
+       for(const t of treeObjects) {
+          const pxRel = t.x / logicalW;
+          const pyRel = t.y / logicalH;
+          const tx = mmX + offX + (pxRel * drawW);
+          const ty = mmY + offY + (pyRel * drawH);
+          circle(tx, ty, 3);
+       }
+    }
+
+    // Player marker (Arrow)
+    if (playerPosition) {
+      const pX = isMoving ? renderX : playerPosition.x;
+      const pY = isMoving ? renderY : playerPosition.y;
+      
+      const pxRel = pX / logicalW;
+      const pyRel = pY / logicalH;
+      
+      const markerX = mmX + offX + (pxRel * drawW);
+      const markerY = mmY + offY + (pyRel * drawH);
+      
+      // Calculate rotation
+      const dirMap = { 
+          'N': -HALF_PI, 'NE': -QUARTER_PI, 
+          'E': 0, 'SE': QUARTER_PI, 
+          'S': HALF_PI, 'SW': HALF_PI + QUARTER_PI, 
+          'W': PI, 'NW': -HALF_PI - QUARTER_PI 
+      };
+      const angle = dirMap[lastDirection || 'S'] ?? HALF_PI;
+
+      push();
+      translate(markerX, markerY);
+      rotate(angle);
+      
+      // Arrow Shape
+      fill(255);
+      stroke(0, 0, 0, 150);
+      strokeWeight(1);
+      beginShape();
+      vertex(5, 0);    // Tip
+      vertex(-4, -4);  // Back Left
+      vertex(-2, 0);   // Inner Notch
+      vertex(-4, 4);   // Back Right
+      endShape(CLOSE);
+      pop();
+    }
+    pop();
+  }
+
+  drawDifficultyBadge();
+  drawSprintMeter();
+
+  try {
+    if (typeof drawInGameMenu === 'function') drawInGameMenu();
+  } catch (e) {}
+  
+  if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
 
   pop(); 
 }
@@ -5092,89 +5226,141 @@ try {
 
 
 function drawDifficultyBadge() {
-  const label = `Difficulty: ${getDifficultyDisplayLabel()}`;
+  const vW = virtualW || (width / gameScale);
   const margin = 20;
-  const paddingX = 18;
-  const paddingY = 10;
-  
- 
-  const vW = virtualW || (width / gameScale); 
-  
-  push();
-  gTextSize(24); 
-  if (uiFont) textFont(uiFont);
-  
-  const tWidth = textWidth(label);
-  const badgeW = tWidth + paddingX * 2;
-  const badgeH = 32 + paddingY * 2;
-  
-  const x = vW - badgeW - margin; 
+  const badgeSize = 32;
+  const x = vW - margin - badgeSize;
   const y = margin;
+  
+  // Determine color based on difficulty
+  let badgeColor;
+  let diff = (currentDifficulty || 'normal').toLowerCase();
+  if (diff === 'easy') badgeColor = color(205, 127, 50); // Bronze
+  else if (diff === 'hard') badgeColor = color(255, 215, 0); // Gold
+  else badgeColor = color(192, 192, 192); // Silver (Normal)
 
-  fill(0, 0, 0, 150);
+  push();
+  
+  // Draw Shield/Badge Background
+  stroke(0, 0, 0, 150);
+  strokeWeight(2);
+  fill(badgeColor);
+  
+  // Simple Shield Shape
+  beginShape();
+  vertex(x, y);
+  vertex(x + badgeSize, y);
+  vertex(x + badgeSize, y + badgeSize * 0.8);
+  vertex(x + badgeSize / 2, y + badgeSize * 1.2);
+  vertex(x, y + badgeSize * 0.8);
+  endShape(CLOSE);
+
+  // Inner detail
   noStroke();
-  rect(x, y, badgeW, badgeH, 8);
+  fill(255, 255, 255, 60);
+  circle(x + badgeSize/2, y + badgeSize*0.4, badgeSize/3);
 
-  fill(255);
-  textAlign(CENTER, CENTER);
-  text(label, x + badgeW / 2, y + badgeH / 2);
+  // Interaction: Show text on hover
+  const mx = mouseX / gameScale;
+  const my = mouseY / gameScale;
+  const isHover = mx >= x && mx <= x + badgeSize && my >= y && my <= y + badgeSize * 1.2;
+
+  if (isHover) {
+    const label = `Difficulty: ${getDifficultyDisplayLabel()}`;
+    if (uiFont) textFont(uiFont);
+    gTextSize(16);
+    const tW = textWidth(label);
+    
+    // Tooltip bg
+    fill(0, 0, 0, 220);
+    noStroke();
+    rect(x - tW - 10, y, tW + 8, 24, 4);
+    
+    // Text
+    fill(255);
+    textAlign(RIGHT, CENTER);
+    text(label, x - 6, y + 12);
+  }
+
   pop();
 }
 
 function drawSprintMeter() {
- 
-  const now = millis();
-  const margin = 20;
   const vW = virtualW || (width / gameScale);
   const vH = virtualH || (height / gameScale);
-
- 
-  const barW = Math.max(24, Math.floor(vW * 0.04));
-  const barH = Math.max(140, Math.min(360, Math.floor(vH * 0.28)));
-  const x = vW - margin - barW;
-  const y = vH - margin - barH;
-
- 
+  const now = millis();
+  
+  // Visibility Logic: Fade out if full
   const pct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
+  
+  let targetAlpha = 0;
+  if (sprintActive || pct < 0.99 || (sprintCooldownUntil > now)) {
+    targetAlpha = 255;
+  }
+  
+  // Simple linear interpolation for fade (optional, could rely on CSS or complex state, but simple is good here)
+  // For now, we'll just snap to visible/invisible or use a global if we wanted smooth fade, 
+  // but let's stick to immediate visibility for responsiveness, or a simple check.
+  if (targetAlpha === 0) return; // Don't draw if full and not cooling down
+
+  const barW = 200;
+  const barH = 10;
+  const cx = vW / 2;
+  const y = vH - 40;
+  const x = cx - barW / 2;
 
   push();
+  
+  // Icon (Lightning Bolt)
+  const iconSize = 18;
+  const ix = x - iconSize - 8;
+  const iy = y + barH / 2;
+  
   noStroke();
+  fill(255, 215, 0, targetAlpha); // Gold
+  beginShape();
+  vertex(ix, iy - 6);
+  vertex(ix + 6, iy - 6);
+  vertex(ix - 2, iy + 1);
+  vertex(ix + 4, iy + 1);
+  vertex(ix - 4, iy + 9);
+  vertex(ix, iy + 1);
+  vertex(ix - 6, iy + 1);
+  endShape(CLOSE);
 
-  
-  fill(0, 0, 0, 180);
-  rect(x - 6, y - 6, barW + 12, barH + 12, 8);
+  // Bar Background
+  fill(0, 0, 0, 150 * (targetAlpha / 255));
+  stroke(MENU_GOLD_BORDER);
+  strokeWeight(2);
+  rect(x, y, barW, barH, 4);
 
-  
-  fill(50, 50, 50, 220);
-  rect(x, y, barW, barH, 6);
-
-  
+  // Bar Fill
   if (pct > 0) {
-    if (pct < 0.2) fill(220, 60, 60); 
-    else fill(255, 215, 0); 
-    const fillH = Math.round(barH * pct);
-    rect(x, y + (barH - fillH), barW, fillH, 6);
+    noStroke();
+    // Gradient Color based on percentage
+    // High = Cyan/Green, Low = Red
+    let r, g, b;
+    if (pct > 0.5) {
+       r = map(pct, 0.5, 1, 255, 0);
+       g = 255;
+       b = map(pct, 0.5, 1, 0, 255);
+    } else {
+       r = 255;
+       g = map(pct, 0, 0.5, 0, 255);
+       b = 0;
+    }
+    fill(r, g, b, targetAlpha);
+    
+    // Scissor or just width rect
+    rect(x + 2, y + 2, (barW - 4) * pct, barH - 4, 2);
   }
 
- 
+  // Cooldown Overlay
   if (typeof sprintCooldownUntil === 'number' && now < sprintCooldownUntil) {
     const cdPct = Math.max(0, Math.min(1, (sprintCooldownUntil - now) / SPRINT_COOLDOWN_MS));
-   
-
-    fill(0, 0, 0, 140);
-    const overlayH = Math.round(barH * cdPct);
-    rect(x, y, barW, overlayH);
+    fill(200, 200, 200, 100 * (targetAlpha / 255));
+    rect(x + 2, y + 2, (barW - 4) * cdPct, barH - 4, 2);
   }
-
-  stroke(0,0,0,220); strokeWeight(2);
-  noFill();
-  rect(x, y, barW, barH, 6);
-
-  
-  noStroke(); fill(255);
-  gTextSize(16);
-  textAlign(CENTER, BOTTOM);
-  text('SPRINT', x + barW / 2, y - 10);
 
   pop();
 }
