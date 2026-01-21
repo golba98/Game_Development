@@ -240,6 +240,8 @@ let genTempData = {};
 
 
 const FIXED_VIRTUAL_HEIGHT = 900; 
+const FIXED_MAP_WIDTH_TILES = 150;
+const FIXED_MAP_HEIGHT_TILES = 150;
 let gameScale = 1;
 
 
@@ -739,8 +741,8 @@ function generateMap_Part1() {
   verboseLog('[game] Generating Part 1 (Base)...');
   
   if (!W || !H) return;
-  logicalW = Math.ceil((virtualW || W) / cellSize);
-  logicalH = Math.ceil((virtualH || H) / cellSize);
+  logicalW = FIXED_MAP_WIDTH_TILES;
+  logicalH = FIXED_MAP_HEIGHT_TILES;
 
   mapStates = new Uint8Array(logicalW * logicalH);
   terrainLayer = new Uint8Array(logicalW * logicalH);
@@ -906,120 +908,91 @@ function pruneUnreachable(startX, startY) {
 }
 
 function generateHills(map, w, h) {
-  
-  const seed1 = Math.random() * 9999;
-  const seed2 = Math.random() * 9999;
-  
-  
-  const scale1 = 0.06;
-  const thresh1 = 0.52;
+  // --- SETTINGS ---
+  const scale = 0.035; 
+  const threshold = 0.48;
+  const seed = Math.random() * 99999;
+  let grid = new Uint8Array(w * h);
 
-  
-  const scale2 = 0.08; 
-  const thresh2 = 0.58; 
-
-  
-  let grid1 = new Uint8Array(w * h); 
-  let grid2 = new Uint8Array(w * h); 
-
-  
+  // 1. Initial Noise Pass
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const idx = y * w + x;
-      
-      if (x < 3 || x > w - 4 || y < 3 || y > h - 4) continue;
-
-      
-      const n1 = noise((x * scale1) + seed1, (y * scale1) + seed1);
-      if (n1 > thresh1) grid1[idx] = 1;
-
-      
-      const n2 = noise((x * scale2) + seed2, (y * scale2) + seed2);
-      if (n2 > thresh2) grid2[idx] = 1;
+      if (x < 4 || x > w - 5 || y < 4 || y > h - 5) continue;
+      const n = noise((x * scale) + seed, (y * scale) + seed);
+      if (n > threshold) grid[y * w + x] = 1;
     }
   }
 
-  
-  
-  
-  
-  let cleanGrid2 = new Uint8Array(grid2);
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const idx = y * w + x;
-      if (grid2[idx] === 1) {
-        
-        
-        if (grid1[idx] === 0 || 
-            grid1[idx-1] === 0 || grid1[idx+1] === 0 || 
-            grid1[idx-w] === 0 || grid1[idx+w] === 0) {
-          cleanGrid2[idx] = 0;
+  // 2. Cellular Automata Smoothing (5 Iterations)
+  for (let i = 0; i < 5; i++) {
+    const nextGrid = new Uint8Array(grid);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = y * w + x;
+        let neighbors = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            if (grid[(y + dy) * w + (x + dx)] === 1) neighbors++;
+          }
         }
-      } else {
-        
-        cleanGrid2[idx] = 0; 
+        if (grid[idx] === 1) nextGrid[idx] = (neighbors >= 4) ? 1 : 0;
+        else nextGrid[idx] = (neighbors >= 5) ? 1 : 0;
       }
     }
+    grid = nextGrid;
   }
-  grid2 = cleanGrid2;
 
-  
-  
-  const performSquaring = (g) => {
-    for (let i = 0; i < 2; i++) {
-      const nextG = new Uint8Array(g);
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const idx = y * w + x;
-          let cn = 0; 
-          if (g[idx-1]) cn++; if (g[idx+1]) cn++;
-          if (g[idx-w]) cn++; if (g[idx+w]) cn++;
+  // 3. Strict Pruning Pass (Remove Thin/Unsupported Shapes)
+  for (let p = 0; p < 8; p++) {
+    let changed = false;
+    const nextGrid = new Uint8Array(grid);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = y * w + x;
+        if (grid[idx] === 0) continue;
 
-          if (g[idx] === 0 && cn >= 2) nextG[idx] = 1; 
-          else if (g[idx] === 1 && cn <= 1) nextG[idx] = 0; 
+        const n = grid[(y - 1) * w + x];
+        const s = grid[(y + 1) * w + x];
+        const e = grid[y * w + (x + 1)];
+        const wDir = grid[y * w + (x - 1)];
+
+        const cardinalHillCount = n + s + e + wDir;
+
+        // Rule A: Isolated or Tip (0 or 1 neighbor) -> Kill
+        if (cardinalHillCount < 2) {
+          nextGrid[idx] = 0;
+          changed = true;
+          continue;
         }
+
+        // Rule B: Thin Bar (2 neighbors, but opposite) -> Kill
+        if (cardinalHillCount === 2) {
+          if ((n && s) || (e && wDir)) {
+            nextGrid[idx] = 0;
+            changed = true;
+            continue;
+          }
+        }
+        
+        // Keep valid shape (Corner or Solid)
+        nextGrid[idx] = 1;
       }
-      for(let k=0; k<g.length; k++) g[k] = nextG[k];
     }
-  };
+    grid = nextGrid;
+    if (!changed) break;
+  }
 
-  performSquaring(grid1);
-  performSquaring(grid2);
-
-  
-  
-  
+  // 4. Render to Map
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
       const idx = y * w + x;
-      
-      
-      
-      
-      
-      let finalTile = 0;
-
-      
-      if (grid2[idx] === 1) {
-        const t2 = getHillTileType(grid2, x, y, w);
-        
-        
-        finalTile = t2;
-      }
-      
-      
-      
-      if (finalTile === 0 || finalTile === TILE_TYPES.GRASS) {
-        if (grid1[idx] === 1) {
-          const t1 = getHillTileType(grid1, x, y, w);
-          
-          
-          
-          if (grid2[idx] === 0) finalTile = t1;
+      if (grid[idx] === 1) {
+        const tileType = getHillTileType(grid, x, y, w);
+        if (tileType !== 0 && tileType !== TILE_TYPES.GRASS) {
+          map[idx] = tileType;
         }
       }
-
-      if (finalTile !== 0) map[idx] = finalTile;
     }
   }
 }
@@ -4214,8 +4187,8 @@ let playerPosition = null;
 
 const BASE_MOVE_DURATION_MS = 100;
 const BASE_MOVE_COOLDOWN_MS = 160;
-const SPRINT_MOVE_DURATION_MS = 48;
-const SPRINT_MOVE_COOLDOWN_MS = 140;
+const SPRINT_MOVE_DURATION_MS = 75;
+const SPRINT_MOVE_COOLDOWN_MS = 150;
 const SPRINT_MAX_DURATION_MS = 3000;
 const SPRINT_COOLDOWN_MS = 4000;
 
@@ -4759,14 +4732,15 @@ function draw() {
 
     // Draw Trees on Minimap
     if (treeObjects && logicalW && logicalH) {
-       fill(50, 205, 50); // Lime Green for high visibility
-       noStroke();
+       fill(15, 70, 15); // Dark Pine Green
+       stroke(0, 150);   // Black outline for contrast
+       strokeWeight(1);
        for(const t of treeObjects) {
           const pxRel = t.x / logicalW;
           const pyRel = t.y / logicalH;
           const tx = mmX + offX + (pxRel * drawW);
           const ty = mmY + offY + (pyRel * drawH);
-          circle(tx, ty, 3);
+          circle(tx, ty, 4);
        }
     }
 
