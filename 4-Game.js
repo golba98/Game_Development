@@ -1,5 +1,13 @@
 let virtualW, virtualH;
 let pendingGameActivated = false;
+let enemies = [];
+let mantisMoveSprite = null;
+let mantisAttackSprite = null;
+let playerHealth = 7;
+let maxHealth = 7;
+let heartImage = null;
+let playerHurtTimer = 0;
+let minimapImage = null;
 
 if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
   const canvasProto = HTMLCanvasElement.prototype;
@@ -364,6 +372,23 @@ function preload() {
 
   try { trackLoadSound('gameMusic:assets/8-Music/game_music.wav', 'assets/8-Music/game_music.wav', (snd) => { gameMusic = snd; }, (err) => { gameMusic = null; }); } catch (e) { try { gameMusic = loadSound('assets/8-Music/game_music.wav'); } catch (ee) { gameMusic = null; } }
   try { trackLoadSound('clickSFX:assets/9-Sounds/Button_Press.mp3', 'assets/9-Sounds/Button_Press.mp3', (snd) => { clickSFX = snd; }, (err) => { clickSFX = null; }); } catch (e) { try { clickSFX = loadSound('assets/9-Sounds/Button_Press.mp3'); } catch (ee) { clickSFX = null; } }
+
+  try {
+    trackLoadImage('mantis_move', 'assets/2-Characters/5-Enemies/MantisMove.png',
+      (img) => { mantisMoveSprite = img; verboseLog('[game] loaded MantisMove.png'); },
+      (err) => { console.warn('[game] failed to load MantisMove.png', err); }
+    );
+
+    trackLoadImage('mantis_attack', 'assets/2-Characters/5-Enemies/MantisAttack.png',
+      (img) => { mantisAttackSprite = img; verboseLog('[game] loaded MantisAttack.png'); },
+      (err) => { console.warn('[game] failed to load MantisAttack.png', err); }
+    );
+
+    trackLoadImage('heart', 'assets/3-GUI/Heart.png',
+      (img) => { heartImage = img; verboseLog('[game] loaded Heart.png'); },
+      (err) => { console.warn('[game] failed to load Heart.png', err); }
+    );
+  } catch (e) {}
 }
 
 function setup() {
@@ -781,6 +806,26 @@ function generateMap_Part2() {
   markDecorObjectsDirty();
   createMapImage();
 
+  try {
+     let enemyCount = 12;
+     if (difficultySetting === 'hard') enemyCount = 24;
+     else if (difficultySetting === 'easy') enemyCount = 6;
+     
+     for (let i = 0; i < enemyCount; i++) {
+        let ex, ey;
+        let attempts = 0;
+        do {
+           ex = Math.floor(Math.random() * logicalW);
+           ey = Math.floor(Math.random() * logicalH);
+           attempts++;
+        } while (attempts < 50 && isSolid(mapStates[ey * logicalW + ex]));
+        
+        if (!isSolid(mapStates[ey * logicalW + ex])) {
+            spawnEnemy('mantis', ex, ey);
+        }
+     }
+  } catch(e) {}
+
   treeObjects = [];
   if (TREE_OVERLAY_IMG) {
     for (let y = 0; y < logicalH; y++) {
@@ -1189,7 +1234,14 @@ function buildActiveMapPayload() {
       cellSize: cellSize,
       mapStates: Array.from(mapStates),
       terrainLayer: terrainLayer ? Array.from(terrainLayer) : null,
-      treeObjects: Array.isArray(treeObjects) ? treeObjects.slice() : []
+      treeObjects: Array.isArray(treeObjects) ? treeObjects.slice() : [],
+      enemies: Array.isArray(enemies) ? enemies.map(e => ({
+          type: e.type,
+          x: e.x,
+          y: e.y,
+          direction: e.direction,
+          moveTimer: e.moveTimer
+      })) : []
     };
   } catch (err) {
     console.warn('[game] buildActiveMapPayload failed', err);
@@ -1358,6 +1410,19 @@ function applyLoadedMap(obj) {
       terrainLayer = mapStates.slice();
     }
     treeObjects = Array.isArray(obj.treeObjects) ? obj.treeObjects.slice() : [];
+    
+    enemies = [];
+    if (Array.isArray(obj.enemies)) {
+        for (const eData of obj.enemies) {
+            if (eData.type === 'mantis') {
+                const mantis = createMantis(eData.x, eData.y);
+                if (eData.direction) mantis.direction = eData.direction;
+                if (eData.moveTimer) mantis.moveTimer = eData.moveTimer;
+                enemies.push(mantis);
+            }
+        }
+    }
+
     markDecorObjectsDirty();
 
     counts = {};
@@ -1438,6 +1503,19 @@ function loadMapFromStorage() {
       terrainLayer = mapStates.slice();
     }
     treeObjects = Array.isArray(obj.treeObjects) ? obj.treeObjects.slice() : [];
+    
+    enemies = [];
+    if (Array.isArray(obj.enemies)) {
+        for (const eData of obj.enemies) {
+            if (eData.type === 'mantis') {
+                const mantis = createMantis(eData.x, eData.y);
+                if (eData.direction) mantis.direction = eData.direction;
+                if (eData.moveTimer) mantis.moveTimer = eData.moveTimer;
+                enemies.push(mantis);
+            }
+        }
+    }
+
     counts = {};
     for (let i = 0; i < mapStates.length; i++) counts[mapStates[i]] = (counts[mapStates[i]] || 0) + 1;
     const centerX = Math.floor((logicalW || Math.ceil(W / (cellSize || 32))) / 2);
@@ -1772,6 +1850,25 @@ function createMapImage() {
   } catch (e) {
     console.warn('[game] failed to paint edgeLayer into raw map image', e);
   }
+  
+  // --- MINIMAP CACHE ---
+  if (mapImage) {
+    try {
+        if (minimapImage) minimapImage.remove();
+        minimapImage = createGraphics(200, 200);
+        
+        const mapAspect = mapImage.width / mapImage.height;
+        let drawW = 200;
+        let drawH = 200 / mapAspect;
+        if (drawH > 200) {
+           drawH = 200;
+           drawW = 200 * mapAspect;
+        }
+        
+        minimapImage.background(0, 0, 0, 0); // Transparent
+        minimapImage.image(mapImage, 0, 0, drawW, drawH);
+    } catch(e) { console.warn('[game] failed to create minimap cache', e); }
+  }
 }
 
 function ensureEdgeLayerConnectivity() {
@@ -1841,6 +1938,7 @@ function clearPreviousGameState() {
   decorativeObjects = [];
   decorativeObstacleTiles = new Set();
   treeObjects = [];
+  enemies = [];
   counts = {};
   decorObjectsDirty = true;
   edgeLayer = null;
@@ -1939,6 +2037,240 @@ function shuffleArray(array) {
 
 
 
+
+// --- ENEMIES ---
+function spawnEnemy(type, x, y) {
+  if (type === 'mantis') {
+    enemies.push(createMantis(x, y));
+  }
+}
+
+function createMantis(startX, startY) {
+  return {
+    type: 'mantis',
+    x: startX,
+    y: startY,
+    renderX: startX,
+    renderY: startY,
+    direction: 'S', // S, E, W, N
+    moving: false,
+    animFrame: 0,
+    animTimer: 0,
+    moveTimer: 0,
+    
+    // Attack properties
+    attacking: false,
+    attackFrame: 0,
+    attackTimer: 0,
+    attackCooldown: 0,
+    hasDealtDamage: false,
+    
+    update: function() {
+      const now = millis();
+      const dt = (typeof deltaTime !== 'undefined' ? deltaTime : 16);
+
+      // --- ATTACK STATE ---
+      if (this.attacking) {
+         this.attackTimer += dt;
+         if (this.attackTimer > 100) { // Speed of attack animation
+             this.attackTimer = 0;
+             this.attackFrame++;
+             
+             // Damage Frame (e.g., frame 4)
+             if (this.attackFrame === 4 && !this.hasDealtDamage) {
+                 if (playerPosition) {
+                     const dist = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
+                     if (dist < 1.5) { // Still in range
+                         playerHealth = Math.max(0, playerHealth - 1);
+                         this.hasDealtDamage = true;
+                         playerHurtTimer = 500; // Flash red for 500ms
+                         // try { showToast('Took damage!', 'warn', 1000); } catch(e) {}
+                     }
+                 }
+             }
+
+             if (this.attackFrame >= 7) {
+                 this.attacking = false;
+                 this.attackCooldown = 1500; // 1.5s cooldown
+                 this.attackFrame = 0;
+             }
+         }
+         return; // Don't move while attacking
+      }
+
+      if (this.attackCooldown > 0) this.attackCooldown -= dt;
+
+      // --- MOVEMENT & AGGRO ---
+      this.animTimer += dt;
+      if (this.animTimer > 200) {
+        this.animTimer = 0;
+        this.animFrame = (this.animFrame + 1) % 4;
+      }
+      
+      const speed = 0.15;
+      if (Math.abs(this.renderX - this.x) > 0.01) this.renderX = lerp(this.renderX, this.x, speed);
+      else this.renderX = this.x;
+      
+      if (Math.abs(this.renderY - this.y) > 0.01) this.renderY = lerp(this.renderY, this.y, speed);
+      else this.renderY = this.y;
+      
+      if (this.moveTimer > 0) {
+        this.moveTimer -= dt;
+        return;
+      }
+      
+      // AGGRO LOGIC
+      let targetX = null;
+      let targetY = null;
+      let isAggro = false;
+
+      if (playerPosition) {
+          const dist = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
+          
+          // Trigger Attack if close and cooldown ready
+          if (dist < 1.5 && this.attackCooldown <= 0) {
+              this.attacking = true;
+              this.attackFrame = 0;
+              this.attackTimer = 0;
+              this.hasDealtDamage = false;
+              // Face player before attacking
+              const dx = playerPosition.x - this.x;
+              const dy = playerPosition.y - this.y;
+              if (Math.abs(dx) > Math.abs(dy)) {
+                  this.direction = dx > 0 ? 'E' : 'W';
+              } else {
+                  this.direction = dy > 0 ? 'S' : 'N';
+              }
+              return;
+          }
+
+          if (dist < 8) { // Aggro range
+             isAggro = true;
+             targetX = playerPosition.x;
+             targetY = playerPosition.y;
+          }
+      }
+
+      if (isAggro) {
+          const dx = targetX - this.x;
+          const dy = targetY - this.y;
+          
+          let moveX = 0;
+          let moveY = 0;
+          let newDir = this.direction;
+
+          if (Math.abs(dx) > Math.abs(dy)) {
+              if (dx > 0) { moveX = 1; newDir = 'E'; }
+              else { moveX = -1; newDir = 'W'; }
+          } else {
+              if (dy > 0) { moveY = 1; newDir = 'S'; }
+              else { moveY = -1; newDir = 'N'; }
+          }
+          
+          // Try primary direction
+          let nx = this.x + moveX;
+          let ny = this.y + moveY;
+          let canMove = false;
+          
+          if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH && typeof isSolid === 'function' && !isSolid(getTileState(nx, ny))) {
+              canMove = true;
+          } else {
+             // Try secondary axis if primary blocked
+             moveX = 0; moveY = 0;
+             if (Math.abs(dx) > Math.abs(dy)) { // Original was X, try Y
+                 if (dy > 0) { moveY = 1; newDir = 'S'; } else if (dy < 0) { moveY = -1; newDir = 'N'; }
+             } else { // Original was Y, try X
+                 if (dx > 0) { moveX = 1; newDir = 'E'; } else if (dx < 0) { moveX = -1; newDir = 'W'; }
+             }
+             if (moveX !== 0 || moveY !== 0) {
+                 nx = this.x + moveX;
+                 ny = this.y + moveY;
+                 if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH && typeof isSolid === 'function' && !isSolid(getTileState(nx, ny))) {
+                     canMove = true;
+                 }
+             }
+          }
+
+          if (canMove) {
+              this.x = nx;
+              this.y = ny;
+              this.direction = newDir;
+              this.moveTimer = 400; // Faster movement when aggro
+              return;
+          }
+      }
+
+      // IDLE WANDER
+      if (Math.random() < 0.02) {
+        const dirs = [
+            { dx: 0, dy: 1, dir: 'S' },
+            { dx: 0, dy: -1, dir: 'N' },
+            { dx: 1, dy: 0, dir: 'E' },
+            { dx: -1, dy: 0, dir: 'W' }
+        ];
+        const choice = dirs[Math.floor(Math.random() * dirs.length)];
+        const nx = this.x + choice.dx;
+        const ny = this.y + choice.dy;
+        
+        if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH) {
+            if (typeof isSolid === 'function' && !isSolid(getTileState(nx, ny))) {
+                this.x = nx;
+                this.y = ny;
+                this.direction = choice.dir;
+                this.moveTimer = 1000 + Math.random() * 2000;
+            }
+        }
+      }
+    },
+    
+    draw: function() {
+        let sprite = mantisMoveSprite;
+        let frame = this.animFrame;
+        let cols = 4;
+        let maxFrames = 4;
+
+        if (this.attacking && mantisAttackSprite) {
+            sprite = mantisAttackSprite;
+            frame = this.attackFrame;
+            cols = 7;
+            maxFrames = 7;
+        }
+
+        if (!sprite) return;
+        
+        let row = 0;
+        if (this.direction === 'S') row = 0;
+        else if (this.direction === 'E') row = 1;
+        else if (this.direction === 'W') row = 2;
+        else if (this.direction === 'N') row = 3;
+        
+        const fw = sprite.width / cols;
+        const fh = sprite.height / 4;
+        
+        const sx = frame * fw;
+        const sy = row * fh;
+        
+        const destX = this.renderX * cellSize;
+        const destY = this.renderY * cellSize;
+        
+        // Draw slightly larger than cell
+        const drawH = cellSize * 1.2;
+        const drawW = drawH * (fw / fh);
+        
+        const drawX = destX + (cellSize - drawW) / 2;
+        const drawY = destY + (cellSize - drawH); // anchor bottom
+        
+        image(sprite, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+    }
+  };
+}
+
+function updateEnemies() {
+  if (!enemies) return;
+  for (const e of enemies) {
+    if (e.update) e.update();
+  }
+}
 
 // --- CHARACTER & MOVEMENT ---
 // handleMovement() -
@@ -2246,6 +2578,15 @@ function getCellSizeSpeedScale() {
 }
 
 function drawPlayer() {
+  if (playerHurtTimer > 0) {
+     tint(255, 0, 0);
+     playerHurtTimer -= (typeof deltaTime !== 'undefined' ? deltaTime : 16);
+  }
+  _drawPlayerInternal();
+  noTint();
+}
+
+function _drawPlayerInternal() {
   const inputLeft  = keyIsDown && keyIsDown(65);
   const inputRight = keyIsDown && keyIsDown(68);
   const inputUp    = keyIsDown && keyIsDown(87);
@@ -2748,6 +3089,30 @@ function closeInGameMenu() {
   }
   inGameMenuVisible = false;
   try { if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize(); } catch(e) {}
+}
+
+function drawHealthBar() {
+  if (!heartImage) return;
+  const startX = 20;
+  const startY = 20;
+  const heartSpacing = 35;
+  const heartSize = 32;
+  
+  push();
+  for (let i = 0; i < maxHealth; i++) {
+    const x = startX + (i * heartSpacing);
+    if (i < playerHealth) {
+       // Full heart
+       tint(255, 255);
+       image(heartImage, x, startY, heartSize, heartSize);
+    } else {
+       // Empty/Lost heart (dimmed)
+       tint(100, 100); 
+       image(heartImage, x, startY, heartSize, heartSize);
+    }
+  }
+  noTint();
+  pop();
 }
 
 function drawInGameMenu() { return; }
@@ -4636,6 +5001,7 @@ function draw() {
     if (!settingsOverlayDiv && !inGameMenuVisible) {
       handleMovement();
       updateMovementInterpolation();
+      updateEnemies();
     }
   }
 
@@ -4669,6 +5035,12 @@ function draw() {
       const playerBaseY = (drawTileY * cellSize) + cellSize;
       drawables.push({ type: 'player', baseY: playerBaseY });
     }
+    if (enemies && enemies.length) {
+      for (const e of enemies) {
+           const baseY = (e.renderY * cellSize) + cellSize; 
+           drawables.push({ type: 'enemy', entity: e, baseY });
+      }
+    }
     drawables.sort((a, b) => (a.baseY - b.baseY));
     
     for (const d of drawables) {
@@ -4680,6 +5052,8 @@ function draw() {
         try { if (d.img) image(d.img, d.drawX, d.drawY, d.destW, d.destH); } catch (e) {}
       } else if (d.type === 'player') {
         try { drawPlayer(); } catch (e) {}
+      } else if (d.type === 'enemy') {
+        try { d.entity.draw(); } catch (e) {}
       }
     }
   } catch (e) {}
@@ -4727,7 +5101,11 @@ function draw() {
     
     // Draw map with slight transparency to blend better with fog
     tint(255, 230);
-    image(mapImage, mmX + offX, mmY + offY, drawW, drawH);
+    if (minimapImage) {
+        image(minimapImage, mmX + offX, mmY + offY, drawW, drawH);
+    } else {
+        image(mapImage, mmX + offX, mmY + offY, drawW, drawH);
+    }
     noTint();
 
     // Draw Trees on Minimap
@@ -4784,6 +5162,7 @@ function draw() {
   }
 
   drawDifficultyBadge();
+  drawHealthBar();
   drawSprintMeter();
 
   try {
