@@ -1096,89 +1096,78 @@ function carveRivers(map, w, h, opts) {
   const { clearStartX, clearEndX, clearStartY, clearEndY } = opts;
   const RIVER_TILE = opts.RIVER_TILE;
   const riverId = () => (RIVER_TILE !== null ? RIVER_TILE : TILE_TYPES.FOREST);
-  const numRivers = 1 + Math.floor(Math.random() * 2);
-  const maxSteps = Math.max(w, h) * 6;
+  
   function isInsideClear(x, y) {
     return x > clearStartX && x < clearEndX && y > clearStartY && y < clearEndY;
   }
-  function pickStartAndTarget() {
+
+  // --- 1. GUARANTEED MIDDLE RIVER ---
+  const isHorizontal = Math.random() < 0.5;
+  let mx = isHorizontal ? 0 : w / 2 + (Math.random() - 0.5) * (w * 0.2);
+  let my = isHorizontal ? h / 2 + (Math.random() - 0.5) * (h * 0.2) : 0;
+  
+  const targetMX = isHorizontal ? w - 1 : mx + (Math.random() - 0.5) * 10;
+  const targetMY = isHorizontal ? my + (Math.random() - 0.5) * 10 : h - 1;
+
+  let curMX = mx;
+  let curMY = my;
+  let mSteps = 0;
+  const maxMSteps = Math.max(w, h) * 2;
+
+  while (mSteps < maxMSteps) {
+    const radius = 2.5 + noise(mSteps * 0.1) * 2.0; // Wider middle river
+    for (let dy = -Math.ceil(radius); dy <= radius; dy++) {
+      for (let dx = -Math.ceil(radius); dx <= radius; dx++) {
+        const nx = Math.floor(curMX + dx);
+        const ny = Math.floor(curMY + dy);
+        if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+          if (dx * dx + dy * dy <= radius * radius) map[ny * w + nx] = riverId();
+        }
+      }
+    }
+
+    if (isHorizontal) {
+      curMX += 1.0;
+      curMY += (noise(curMX * 0.05, 555) - 0.5) * 1.5;
+      if (curMX >= w) break;
+    } else {
+      curMY += 1.0;
+      curMX += (noise(curMY * 0.05, 777) - 0.5) * 1.5;
+      if (curMY >= h) break;
+    }
+    mSteps++;
+  }
+
+  // --- 2. OPTIONAL EXTRA RIVERS ---
+  const numExtra = Math.floor(Math.random() * 2);
+  for (let r = 0; r < numExtra; r++) {
+    // ... (rest of the previous random river logic)
     const side = Math.floor(Math.random() * 4);
     let sx, sy, tx, ty;
     if (side === 0) { sx = Math.floor(Math.random() * w); sy = 0; tx = Math.floor((w * 0.25) + Math.random() * w * 0.5); ty = h - 1; }
     else if (side === 1) { sx = w - 1; sy = Math.floor(Math.random() * h); tx = 0; ty = Math.floor((h * 0.25) + Math.random() * h * 0.5); }
     else if (side === 2) { sx = Math.floor(Math.random() * w); sy = h - 1; tx = Math.floor((w * 0.25) + Math.random() * w * 0.5); ty = 0; }
     else { sx = 0; sy = Math.floor(Math.random() * h); tx = w - 1; ty = Math.floor((h * 0.25) + Math.random() * h * 0.5); }
-    if (isInsideClear(sx, sy)) { if (side === 0) sy = 0; if (side === 1) sx = w - 1; if (side === 2) sy = h - 1; if (side === 3) sx = 0; }
-    if (isInsideClear(tx, ty)) { if (side === 0) ty = h - 1; if (side === 1) tx = 0; if (side === 2) ty = 0; if (side === 3) tx = w - 1; }
-    return { start: { x: sx, y: sy, side }, target: { x: tx, y: ty, side: (side + 2) % 4 } };
-  }
-  function neighbors8(cx, cy) {
-    const n = [];
-    for (let yy = cy - 1; yy <= cy + 1; yy++) {
-      for (let xx = cx - 1; xx <= cx + 1; xx++) {
-        if (xx === cx && yy === cy) continue;
-        if (xx >= 0 && xx < w && yy >= 0 && yy < h) n.push({ x: xx, y: yy });
-      }
-    }
-    return n;
-  }
-  function reachedSide(x, y, side) {
-    if (side === 0) return y === 0;
-    if (side === 1) return x === w - 1;
-    if (side === 2) return y === h - 1;
-    if (side === 3) return x === 0;
-    return false;
-  }
-  for (let r = 0; r < numRivers; r++) {
-    const { start, target } = pickStartAndTarget();
-    let x = start.x, y = start.y;
+    
     let steps = 0;
-    const biasStrength = 1.0;
-    const jitterNoiseScale = 0.12;
-    while (steps < maxSteps) {
-      const idx = y * w + x;
-      map[idx] = riverId();
-      for (const n of neighbors8(x, y)) {
-        const nIdx = n.y * w + n.x;
-        if (Math.random() < 0.45) map[nIdx] = riverId();
-      }
-      if (reachedSide(x, y, target.side)) {
-        if (Math.random() < 0.4) {
-          const extra = neighbors8(x, y).filter(n => reachedSide(n.x, n.y, target.side));
-          if (extra.length) {
-            const e = extra[Math.floor(Math.random() * extra.length)];
-            map[e.y * w + e.x] = riverId();
+    let x = sx, y = sy;
+    while (steps < w + h) {
+      const radius = 1.2 + Math.random() * 1.0;
+      for (let dy = -Math.ceil(radius); dy <= radius; dy++) {
+        for (let dx = -Math.ceil(radius); dx <= radius; dx++) {
+          const nx = Math.floor(x + dx);
+          const ny = Math.floor(y + dy);
+          if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+            if (dx * dx + dy * dy <= radius * radius) map[ny * w + nx] = riverId();
           }
         }
-        break;
       }
-      let usable = neighbors8(x, y).filter(n => !isInsideClear(n.x, n.y));
-      const allowInside = usable.length === 0;
-      if (allowInside) usable = neighbors8(x, y);
-      let best = null;
-      let bestScore = Infinity;
-      for (const c of usable) {
-        const dist = Math.hypot(target.x - c.x, target.y - c.y);
-        const jitter = (noise(c.x * jitterNoiseScale, c.y * jitterNoiseScale) - 0.5) * 6;
-        const insidePenalty = isInsideClear(c.x, c.y) ? 50 : 0;
-        const score = dist * biasStrength + jitter + insidePenalty;
-        const forwardDot = ((target.x - x) * (c.x - x) + (target.y - y) * (c.y - y));
-        const backtrackPenalty = forwardDot < 0 ? 4 : 0;
-        const finalScore = score + backtrackPenalty;
-        if (finalScore < bestScore) {
-          bestScore = finalScore;
-          best = c;
-        }
-      }
-      if (!best) break;
-      x = best.x;
-      y = best.y;
+      const dx = Math.sign(tx - x) || (Math.random() - 0.5);
+      const dy = Math.sign(ty - y) || (Math.random() - 0.5);
+      x += dx + (noise(steps * 0.1, r) - 0.5) * 2;
+      y += dy + (noise(steps * 0.1, r + 10) - 0.5) * 2;
+      if (Math.hypot(tx - x, ty - y) < 2) break;
       steps++;
-      if (steps % 60 === 0 && Math.random() < 0.25) {
-        const edgeJump = pickStartAndTarget().start;
-        x = Math.max(0, Math.min(w - 1, edgeJump.x));
-        y = Math.max(0, Math.min(h - 1, edgeJump.y));
-      }
     }
   }
 }
@@ -1188,39 +1177,40 @@ function layBridgeTile(map, w, h, x, y, RIVER_TILE, BRIDGE_TILE) {
   const idx = y * w + x;
   map[idx] = BRIDGE_TILE;
 
-  const cardinal = [
-    { dx: 1, dy: 0, axis: 'h' },
-    { dx: -1, dy: 0, axis: 'h' },
-    { dx: 0, dy: 1, axis: 'v' },
-    { dx: 0, dy: -1, axis: 'v' }
-  ];
-
+  // Determine river flow direction (horizontal or vertical)
   let horizontalRiver = 0;
   let verticalRiver = 0;
-  for (const dir of cardinal) {
-    const nx = x + dir.dx;
-    const ny = y + dir.dy;
-    if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-    if (map[ny * w + nx] === RIVER_TILE) {
-      if (dir.axis === 'h') horizontalRiver++;
-      else verticalRiver++;
-    }
+  const range = 3; // Check a small area around the bridge
+  
+  for (let d = -range; d <= range; d++) {
+    if (x + d >= 0 && x + d < w && map[y * w + (x + d)] === RIVER_TILE) horizontalRiver++;
+    if (y + d >= 0 && y + d < h && map[(y + d) * w + x] === RIVER_TILE) verticalRiver++;
   }
 
-  const expandVertical = horizontalRiver > verticalRiver;
-  const offsets = expandVertical
-    ? [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }]
-    : [{ dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
-
-  for (const off of offsets) {
-    const nx = x + off.dx;
-    const ny = y + off.dy;
-    if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-    const nIdx = ny * w + nx;
-    const tile = map[nIdx];
-    if (tile === RIVER_TILE || tile === TILE_TYPES.FOREST || tile === TILE_TYPES.CLIFF || tile === TILE_TYPES.LOG || tile === TILE_TYPES.GRASS) {
-      map[nIdx] = BRIDGE_TILE;
+  const isVerticalBridge = horizontalRiver > verticalRiver;
+  
+  // Extend bridge until it hits solid ground on both sides
+  const extendBridge = (dx, dy) => {
+    let curX = x + dx;
+    let curY = y + dy;
+    while (curX >= 0 && curX < w && curY >= 0 && curY < h) {
+      const cIdx = curY * w + curX;
+      if (map[cIdx] === RIVER_TILE) {
+        map[cIdx] = BRIDGE_TILE;
+      } else {
+        break; // Hit ground
+      }
+      curX += dx;
+      curY += dy;
     }
+  };
+
+  if (isVerticalBridge) {
+    extendBridge(0, 1);
+    extendBridge(0, -1);
+  } else {
+    extendBridge(1, 0);
+    extendBridge(-1, 0);
   }
 }
 
@@ -1659,12 +1649,44 @@ function createMapImage() {
       if (img) {
         const drawX = px + Math.floor((cellSize - imgDestW) / 2);
         const drawY = py + (cellSize - imgDestH);
+        
+        // --- BRIDGE SHADOW ---
+        if (tileState === TILE_TYPES.RAMP || tileState === TILE_TYPES.LOG) {
+            mapImage.push();
+            mapImage.noStroke();
+            mapImage.fill(0, 0, 0, 80);
+            mapImage.rect(px + 4, py + 4, cellSize, cellSize); // Simple drop shadow
+            mapImage.pop();
+        }
+
         mapImage.image(img, drawX, drawY, imgDestW, imgDestH);
       } else {
         const c = getColorForState(tileState);
         mapImage.fill(c[0], c[1], c[2]);
         mapImage.noStroke();
         mapImage.rect(px, py, cellSize, cellSize);
+      }
+
+      // --- RIVER BANKS ---
+      if (tileState === TILE_TYPES.GRASS) {
+          // Check for adjacent water
+          const neighbors = [
+              {dx: 1, dy: 0}, {dx: -1, dy: 0}, {dx: 0, dy: 1}, {dx: 0, dy: -1}
+          ];
+          let isNearWater = false;
+          for (const n of neighbors) {
+              if (getTileState(lx + n.dx, ly + n.dy) === TILE_TYPES.RIVER) {
+                  isNearWater = true;
+                  break;
+              }
+          }
+          if (isNearWater) {
+              mapImage.push();
+              mapImage.noStroke();
+              mapImage.fill(0, 0, 0, 40); // Subtle darkening for the bank
+              mapImage.rect(px, py, cellSize, cellSize);
+              mapImage.pop();
+          }
       }
 
       if (tileState >= TILE_TYPES.HILL_NORTH && tileState <= TILE_TYPES.HILL_NORTHWEST) {
@@ -2196,7 +2218,9 @@ function createMantis(startX, startY) {
               this.x = nx;
               this.y = ny;
               this.direction = newDir;
-              this.moveTimer = 400; // Faster movement when aggro
+              let waitTime = 400;
+              if (getTileState(this.x, this.y) === TILE_TYPES.RIVER) waitTime *= 2.0;
+              this.moveTimer = waitTime; // Faster movement when aggro
               return;
           }
       }
@@ -2218,7 +2242,9 @@ function createMantis(startX, startY) {
                 this.x = nx;
                 this.y = ny;
                 this.direction = choice.dir;
-                this.moveTimer = 1000 + Math.random() * 2000;
+                let waitTime = 1000 + Math.random() * 2000;
+                if (getTileState(this.x, this.y) === TILE_TYPES.RIVER) waitTime *= 2.0;
+                this.moveTimer = waitTime;
             }
         }
       }
@@ -2564,12 +2590,20 @@ function updateSprintState() {
 
 function getActiveMoveDurationMs() {
   const base = sprintActive ? SPRINT_MOVE_DURATION_MS : BASE_MOVE_DURATION_MS;
-  return Math.max(1, Math.round(base * getCellSizeSpeedScale()));
+  let multiplier = 1.0;
+  if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
+    multiplier = 1.5;
+  }
+  return Math.max(1, Math.round(base * multiplier * getCellSizeSpeedScale()));
 }
 
 function getActiveMoveCooldownMs() {
   const base = sprintActive ? SPRINT_MOVE_COOLDOWN_MS : BASE_MOVE_COOLDOWN_MS;
-  return Math.max(0, Math.round(base * getCellSizeSpeedScale()));
+  let multiplier = 1.0;
+  if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
+    multiplier = 1.5;
+  }
+  return Math.max(0, Math.round(base * multiplier * getCellSizeSpeedScale()));
 }
 
 function getCellSizeSpeedScale() {
@@ -2598,6 +2632,13 @@ function _drawPlayerInternal() {
   const destX = drawTileX * cellSize;
   let destY = drawTileY * cellSize;
 
+  // Determine if in water for visual clipping
+  let inWater = false;
+  if (getTileState(Math.floor(drawTileX + 0.5), Math.floor(drawTileY + 0.5)) === TILE_TYPES.RIVER) {
+      inWater = true;
+  }
+  const clipFactor = inWater ? 0.75 : 1.0; // Show only top 75% if in water
+
   if (isJumping) {
     const jumpProgress = (jumpTimer % JUMP_DURATION) / JUMP_DURATION;
     const jumpHeight = Math.sin(jumpProgress * Math.PI) * cellSize * 1.5; 
@@ -2621,11 +2662,11 @@ function _drawPlayerInternal() {
         const desiredHeight = cellSize * 1.25;
         const scale = desiredHeight / fh;
         const drawW = fw * scale;
-        const drawH = fh * scale;
+        const drawH = (fh * scale) * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - drawH;
+        const drawY = destY + cellSize - (fh * scale); // Top stays same
         push(); noSmooth();
-        image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+        image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
         pop();
         return; 
     }
@@ -2665,10 +2706,12 @@ function _drawPlayerInternal() {
         const desiredHeight = cellSize * 1.25;
         const scale = desiredHeight / fh;
         const drawW = fw * scale;
-        const drawH = fh * scale;
+        const drawH = (fh * scale) * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - drawH;
-        push(); noSmooth(); image(frameImgWalk, drawX, drawY, drawW, drawH); pop();
+        const drawY = destY + cellSize - (fh * scale);
+        push(); noSmooth(); 
+        image(frameImgWalk, drawX, drawY, drawW, drawH, 0, 0, fw, fh * clipFactor); 
+        pop();
         return;
       }
       const dirSheetWalk = walkSheets[dir] || null;
@@ -2681,12 +2724,12 @@ function _drawPlayerInternal() {
         const desiredHeight = cellSize * 1.25;
         const scale = desiredHeight / fh;
         const drawW = fw * scale;
-        const drawH = fh * scale;
+        const drawH = (fh * scale) * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - drawH;
+        const drawY = destY + cellSize - (fh * scale);
         push(); noSmooth();
-        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh);
-        else image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
+        else image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
         pop();
         return;
       }
@@ -2698,12 +2741,12 @@ function _drawPlayerInternal() {
         const desiredHeight = cellSize * 1.25;
         const scale = desiredHeight / fh;
         const drawW = fw * scale;
-        const drawH = fh * scale;
+        const drawH = (fh * scale) * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - drawH;
+        const drawY = destY + cellSize - (fh * scale);
         push(); noSmooth();
-        if (facing === 'left') image(spritesheetWalk, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh);
-        else image(spritesheetWalk, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+        if (facing === 'left') image(spritesheetWalk, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
+        else image(spritesheetWalk, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
         pop();
         return;
       }
@@ -2715,10 +2758,10 @@ function _drawPlayerInternal() {
         const desiredHeight = cellSize * 1.25;
         const scale = desiredHeight / fh;
         const drawW = fw * scale;
-        const drawH = fh * scale;
+        const drawH = (fh * scale) * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - drawH;
-        push(); noSmooth(); image(frameImgRun, drawX, drawY, drawW, drawH); pop();
+        const drawY = destY + cellSize - (fh * scale);
+        push(); noSmooth(); image(frameImgRun, drawX, drawY, drawW, drawH, 0, 0, fw, fh * clipFactor); pop();
         return;
       }
       const dirSheetRun = runSheets[dir] || null;
@@ -2731,12 +2774,12 @@ function _drawPlayerInternal() {
         const desiredHeight = cellSize * 1.25;
         const scale = desiredHeight / fh;
         const drawW = fw * scale;
-        const drawH = fh * scale;
+        const drawH = (fh * scale) * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - drawH;
+        const drawY = destY + cellSize - (fh * scale);
         push(); noSmooth();
-        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh);
-        else image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
+        else image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
         pop();
         return;
       }
@@ -2748,12 +2791,12 @@ function _drawPlayerInternal() {
         const desiredHeight = cellSize * 1.25;
         const scale = desiredHeight / fh;
         const drawW = fw * scale;
-        const drawH = fh * scale;
+        const drawH = (fh * scale) * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - drawH;
+        const drawY = destY + cellSize - (fh * scale);
         push(); noSmooth();
-        if (facing === 'left') image(spritesheetRun, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh);
-        else image(spritesheetRun, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+        if (facing === 'left') image(spritesheetRun, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
+        else image(spritesheetRun, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
         pop();
         return;
       }
@@ -2766,10 +2809,10 @@ function _drawPlayerInternal() {
     const desiredHeight = cellSize * 1.25;
     const scale = desiredHeight / fh;
     const drawW = fw * scale;
-    const drawH = fh * scale;
+    const drawH = (fh * scale) * clipFactor;
     const drawX = destX + (cellSize / 2) - (drawW / 2);
-    const drawY = destY + cellSize - drawH;
-    push(); noSmooth(); image(frameImg, drawX, drawY, drawW, drawH); pop();
+    const drawY = destY + cellSize - (fh * scale);
+    push(); noSmooth(); image(frameImg, drawX, drawY, drawW, drawH, 0, 0, fw, fh * clipFactor); pop();
     return;
   }
   const dirSheet = idleSheets[dir] || null;
@@ -2782,12 +2825,12 @@ function _drawPlayerInternal() {
     const desiredHeight = cellSize * 1.25;
     const scale = desiredHeight / fh;
     const drawW = fw * scale;
-    const drawH = fh * scale;
+    const drawH = (fh * scale) * clipFactor;
     const drawX = destX + (cellSize / 2) - (drawW / 2);
-    const drawY = destY + cellSize - drawH;
+    const drawY = destY + cellSize - (fh * scale);
     push(); noSmooth();
-    if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh);
-    else image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+    if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
+    else image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
     pop();
     return;
   }
@@ -2815,12 +2858,12 @@ function _drawPlayerInternal() {
     const desiredHeight = cellSize * 1.25;
     const scale = desiredHeight / fh;
     const drawW = fw * scale;
-    const drawH = fh * scale;
+    const drawH = (fh * scale) * clipFactor;
     const drawX = destX + (cellSize / 2) - (drawW / 2);
-    const drawY = destY + cellSize - drawH;
+    const drawY = destY + cellSize - (fh * scale);
     push(); noSmooth();
-    if (flip || facing === 'left') image(spritesheetIdle, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh);
-    else image(spritesheetIdle, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+    if (flip || facing === 'left') image(spritesheetIdle, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
+    else image(spritesheetIdle, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
     pop();
     return;
   }
@@ -4624,7 +4667,7 @@ const TILE_TYPES = Object.freeze({
 });
 
 const WALKABLE_TILES = new Set([
-  TILE_TYPES.GRASS, TILE_TYPES.LOG, TILE_TYPES.FLOWERS, TILE_TYPES.RAMP
+  TILE_TYPES.GRASS, TILE_TYPES.LOG, TILE_TYPES.FLOWERS, TILE_TYPES.RAMP, TILE_TYPES.RIVER
 ]);
 
 const ITEM_DATA = Object.freeze({
