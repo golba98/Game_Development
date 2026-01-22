@@ -8,6 +8,7 @@ let maxHealth = 7;
 let heartImage = null;
 let playerHurtTimer = 0;
 let minimapImage = null;
+let gameDelta = 0;
 
 if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
   const canvasProto = HTMLCanvasElement.prototype;
@@ -2067,7 +2068,7 @@ function createMantis(startX, startY) {
     
     update: function() {
       const now = millis();
-      const dt = (typeof deltaTime !== 'undefined' ? deltaTime : 16);
+      const dt = gameDelta;
 
       // --- ATTACK STATE ---
       if (this.attacking) {
@@ -2580,7 +2581,7 @@ function getCellSizeSpeedScale() {
 function drawPlayer() {
   if (playerHurtTimer > 0) {
      tint(255, 0, 0);
-     playerHurtTimer -= (typeof deltaTime !== 'undefined' ? deltaTime : 16);
+     playerHurtTimer -= gameDelta;
   }
   _drawPlayerInternal();
   noTint();
@@ -2602,7 +2603,7 @@ function _drawPlayerInternal() {
     const jumpHeight = Math.sin(jumpProgress * Math.PI) * cellSize * 1.5; 
     destY -= jumpHeight;
 
-    jumpTimer += deltaTime;
+    jumpTimer += gameDelta;
     if (jumpTimer >= JUMP_DURATION) {
       isJumping = false;
       jumpTimer = 0;
@@ -2649,7 +2650,7 @@ function _drawPlayerInternal() {
   let cols = IDLE_SHEET_COLS;
   if (action === 'walk') cols = WALK_SHEET_COLS;
   else if (action === 'run') cols = RUN_SHEET_COLS;
-  playerAnimTimer += (typeof deltaTime === 'number' ? deltaTime : 16.67);
+  playerAnimTimer += gameDelta;
   if (playerAnimTimer >= playerAnimSpeed) {
     playerAnimTimer -= playerAnimSpeed;
     playerAnimFrame = (playerAnimFrame + 1) % cols;
@@ -4895,6 +4896,8 @@ const HILL_ASSETS = {};
 function draw() {
   try { enforceCanvasSharpness(drawingContext); } catch (e) {}
   
+  // Clamp deltaTime to prevent huge jumps after lag/tab switch
+  gameDelta = (typeof deltaTime !== 'undefined') ? Math.min(deltaTime, 50) : 16.67;
 
   if (genPhase > 0) {
     if (genPhase === 1) {
