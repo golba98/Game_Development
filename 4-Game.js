@@ -1101,21 +1101,19 @@ function carveRivers(map, w, h, opts) {
     return x > clearStartX && x < clearEndX && y > clearStartY && y < clearEndY;
   }
 
-  // --- 1. GUARANTEED MIDDLE RIVER ---
+  // --- 1. MAIN RIVER (Guaranteed Middle) ---
   const isHorizontal = Math.random() < 0.5;
-  let mx = isHorizontal ? 0 : w / 2 + (Math.random() - 0.5) * (w * 0.2);
-  let my = isHorizontal ? h / 2 + (Math.random() - 0.5) * (h * 0.2) : 0;
+  let mx = isHorizontal ? 0 : w / 2 + (Math.random() - 0.5) * (w * 0.1);
+  let my = isHorizontal ? h / 2 + (Math.random() - 0.5) * (h * 0.1) : 0;
   
-  const targetMX = isHorizontal ? w - 1 : mx + (Math.random() - 0.5) * 10;
-  const targetMY = isHorizontal ? my + (Math.random() - 0.5) * 10 : h - 1;
-
   let curMX = mx;
   let curMY = my;
-  let mSteps = 0;
-  const maxMSteps = Math.max(w, h) * 2;
+  let mainRiverPoints = [];
 
-  while (mSteps < maxMSteps) {
-    const radius = 2.5 + noise(mSteps * 0.1) * 2.0; // Wider middle river
+  const mainSteps = Math.max(w, h) * 1.5;
+  for (let s = 0; s < mainSteps; s++) {
+    // Variable thickness for a natural look
+    const radius = 0.8 + noise(s * 0.1, 123) * 1.0;
     for (let dy = -Math.ceil(radius); dy <= radius; dy++) {
       for (let dx = -Math.ceil(radius); dx <= radius; dx++) {
         const nx = Math.floor(curMX + dx);
@@ -1125,49 +1123,48 @@ function carveRivers(map, w, h, opts) {
         }
       }
     }
+    mainRiverPoints.push({x: curMX, y: curMY});
 
     if (isHorizontal) {
       curMX += 1.0;
-      curMY += (noise(curMX * 0.05, 555) - 0.5) * 1.5;
+      curMY += (noise(curMX * 0.04, 555) - 0.5) * 1.8;
       if (curMX >= w) break;
     } else {
       curMY += 1.0;
-      curMX += (noise(curMY * 0.05, 777) - 0.5) * 1.5;
+      curMX += (noise(curMY * 0.04, 777) - 0.5) * 1.8;
       if (curMY >= h) break;
     }
-    mSteps++;
   }
 
-  // --- 2. OPTIONAL EXTRA RIVERS ---
-  const numExtra = Math.floor(Math.random() * 2);
-  for (let r = 0; r < numExtra; r++) {
-    // ... (rest of the previous random river logic)
-    const side = Math.floor(Math.random() * 4);
-    let sx, sy, tx, ty;
-    if (side === 0) { sx = Math.floor(Math.random() * w); sy = 0; tx = Math.floor((w * 0.25) + Math.random() * w * 0.5); ty = h - 1; }
-    else if (side === 1) { sx = w - 1; sy = Math.floor(Math.random() * h); tx = 0; ty = Math.floor((h * 0.25) + Math.random() * h * 0.5); }
-    else if (side === 2) { sx = Math.floor(Math.random() * w); sy = h - 1; tx = Math.floor((w * 0.25) + Math.random() * w * 0.5); ty = 0; }
-    else { sx = 0; sy = Math.floor(Math.random() * h); tx = w - 1; ty = Math.floor((h * 0.25) + Math.random() * h * 0.5); }
+  // --- 2. NATURAL BRANCHES ---
+  const numBranches = 2 + Math.floor(Math.random() * 2);
+  for (let b = 0; b < numBranches; b++) {
+    // Pick a point on the main river to start the branch
+    const startIdx = Math.floor(Math.random() * (mainRiverPoints.length * 0.6)) + Math.floor(mainRiverPoints.length * 0.2);
+    const startP = mainRiverPoints[startIdx];
     
-    let steps = 0;
-    let x = sx, y = sy;
-    while (steps < w + h) {
-      const radius = 1.2 + Math.random() * 1.0;
+    let curBX = startP.x;
+    let curBY = startP.y;
+    
+    // Choose a general direction away from the main path
+    let angle = isHorizontal ? (Math.random() < 0.5 ? -HALF_PI : HALF_PI) : (Math.random() < 0.5 ? 0 : PI);
+    angle += (Math.random() - 0.5) * 0.5;
+
+    for (let s = 0; s < 40; s++) {
+      const radius = 0.6 + noise(s * 0.1, b * 10) * 0.8;
       for (let dy = -Math.ceil(radius); dy <= radius; dy++) {
         for (let dx = -Math.ceil(radius); dx <= radius; dx++) {
-          const nx = Math.floor(x + dx);
-          const ny = Math.floor(y + dy);
+          const nx = Math.floor(curBX + dx);
+          const ny = Math.floor(curBY + dy);
           if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
             if (dx * dx + dy * dy <= radius * radius) map[ny * w + nx] = riverId();
           }
         }
       }
-      const dx = Math.sign(tx - x) || (Math.random() - 0.5);
-      const dy = Math.sign(ty - y) || (Math.random() - 0.5);
-      x += dx + (noise(steps * 0.1, r) - 0.5) * 2;
-      y += dy + (noise(steps * 0.1, r + 10) - 0.5) * 2;
-      if (Math.hypot(tx - x, ty - y) < 2) break;
-      steps++;
+      curBX += Math.cos(angle);
+      curBY += Math.sin(angle);
+      angle += (noise(s * 0.1, b * 50) - 0.5) * 0.3;
+      if (curBX < 0 || curBX >= w || curBY < 0 || curBY >= h) break;
     }
   }
 }
