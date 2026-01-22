@@ -1,6 +1,7 @@
 let virtualW, virtualH;
 let pendingGameActivated = false;
 let enemies = [];
+let initialEnemies = [];
 let projectiles = [];
 let mantisMoveSprite = null;
 let mantisAttackSprite = null;
@@ -11,6 +12,10 @@ let playerHealth = 7;
 let maxHealth = 7;
 let heartImage = null;
 let playerHurtTimer = 0;
+let isGameOver = false;
+let initialSpawnPosition = { x: 0, y: 0 };
+let gameOverOverlay = null;
+let gameOverTimer = 0;
 let minimapImage = null;
 let gameDelta = 0;
 
@@ -643,6 +648,7 @@ function createFullWindowCanvas() {
 }
 
 function mousePressed() {
+  if (isGameOver) return;
   try {
     
     const mx = mouseX / gameScale;
@@ -677,6 +683,7 @@ function togglePauseMenuFromEscape() {
 }
 
 function keyPressed() {
+  if (isGameOver) return;
   if (key === ' ' && !isJumping && !isMoving) {
     
     isJumping = true;
@@ -819,6 +826,7 @@ function generateMap_Part2() {
   for (let i = 0; i < mapStates.length; i++) counts[mapStates[i]] = (counts[mapStates[i]] || 0) + 1;
 
   playerPosition = { x: spawn.spawnX, y: spawn.spawnY };
+  initialSpawnPosition = { x: spawn.spawnX, y: spawn.spawnY };
   renderX = playerPosition.x; renderY = playerPosition.y;
   renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY;
   isMoving = false;
@@ -848,6 +856,7 @@ function generateMap_Part2() {
             spawnEnemy(eType, ex, ey);
         }
      }
+     initialEnemies = enemies.map(e => ({ type: e.type, x: e.x, y: e.y }));
   } catch(e) {}
 
   treeObjects = [];
@@ -1438,6 +1447,7 @@ function applyLoadedMap(obj) {
             }
         }
     }
+    initialEnemies = enemies.map(e => ({ type: e.type, x: e.x, y: e.y }));
 
     markDecorObjectsDirty();
 
@@ -1447,6 +1457,7 @@ function applyLoadedMap(obj) {
     const centerX = Math.floor((logicalW || Math.ceil(W / (cellSize || 32))) / 2);
     const centerY = Math.floor((logicalH || Math.ceil(H / (cellSize || 32))) / 2);
     playerPosition = { x: centerX, y: centerY };
+    initialSpawnPosition = { x: centerX, y: centerY };
     renderX = playerPosition.x; renderY = playerPosition.y; renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY; isMoving = false;
     createMapImage();
     redraw();
@@ -1536,12 +1547,14 @@ function loadMapFromStorage() {
             }
         }
     }
+    initialEnemies = enemies.map(e => ({ type: e.type, x: e.x, y: e.y }));
 
     counts = {};
     for (let i = 0; i < mapStates.length; i++) counts[mapStates[i]] = (counts[mapStates[i]] || 0) + 1;
     const centerX = Math.floor((logicalW || Math.ceil(W / (cellSize || 32))) / 2);
     const centerY = Math.floor((logicalH || Math.ceil(H / (cellSize || 32))) / 2);
     playerPosition = { x: centerX, y: centerY };
+    initialSpawnPosition = { x: centerX, y: centerY };
     renderX = playerPosition.x;
     renderY = playerPosition.y;
     renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY; isMoving = false;
@@ -3393,6 +3406,87 @@ function closeInGameMenu() {
   }
   inGameMenuVisible = false;
   try { if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize(); } catch(e) {}
+}
+
+function triggerGameOver() {
+  if (isGameOver) return;
+  isGameOver = true;
+  showGameOverScreen();
+}
+
+function showGameOverScreen() {
+  if (gameOverOverlay) {
+    gameOverOverlay.close();
+    gameOverOverlay = null;
+  }
+  
+  const { container, panel, close } = createZoomStablePanel(420, 320, 'gd-gameover-menu');
+  gameOverOverlay = { close, container };
+
+  let title = createDiv('GAME OVER');
+  title.parent(panel);
+  title.style('font-size', '48px');
+  title.style('font-weight', 'bold');
+  title.style('margin-bottom', '40px');
+  title.style('color', '#ff4444');
+  title.style('text-shadow', '3px 3px 0 #000');
+
+  const createMenuBtn = (label, onClick) => {
+    let btn = createButton(label);
+    btn.parent(panel);
+    btn.style('margin-bottom', '20px');
+    applyMenuButtonUI(btn, 260, 48);
+    btn.mousePressed(onClick);
+    return btn;
+  };
+
+  createMenuBtn('RESTART', () => {
+    restartGame();
+  });
+
+  createMenuBtn('EXIT TO MENU', () => {
+    exitToMenu();
+  });
+}
+
+function restartGame() {
+  if (gameOverOverlay) {
+    gameOverOverlay.close();
+    gameOverOverlay = null;
+  }
+  isGameOver = false;
+  playerHealth = maxHealth;
+  
+  if (initialSpawnPosition) {
+    playerPosition = { x: initialSpawnPosition.x, y: initialSpawnPosition.y };
+    renderX = playerPosition.x;
+    renderY = playerPosition.y;
+    renderStartX = renderX;
+    renderStartY = renderY;
+    renderTargetX = renderX;
+    renderTargetY = renderY;
+    isMoving = false;
+  }
+  
+  projectiles = [];
+  
+  if (initialEnemies && initialEnemies.length > 0) {
+    enemies = [];
+    for (const e of initialEnemies) {
+      spawnEnemy(e.type, e.x, e.y);
+    }
+  }
+  
+  try { if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize(); } catch(e) {}
+}
+
+function exitToMenu() {
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'close-game-overlay' }, '*');
+    }
+  } catch (e) {}
+  window.location.href = '1-Menu_Index.html';
 }
 
 function drawHealthBar() {
@@ -5303,8 +5397,11 @@ function draw() {
   }
   
   if (playerPosition) {
+    if (playerHealth <= 0 && !isGameOver) {
+      triggerGameOver();
+    }
   
-    if (!settingsOverlayDiv && !inGameMenuVisible) {
+    if (!settingsOverlayDiv && !inGameMenuVisible && !isGameOver) {
       handleMovement();
       updateMovementInterpolation();
       updateEnemies();
