@@ -541,9 +541,9 @@ function setup() {
       verboseLog('[game] assets loaded. Pre-warming clouds...');
       
      
-      const vW = (typeof virtualW !== 'undefined') ? virtualW : (width / (gameScale || 1));
+      const mapW = (logicalW || 150) * cellSize;
       for(let i = 0; i < 40; i++) {
-          spawnCloud(Math.random() * vW); 
+          spawnCloud(Math.random() * mapW); 
       }
     }
 
@@ -5528,6 +5528,8 @@ function draw() {
     }
   } catch (e) {}
 
+  drawClouds();
+
   if (EDGE_LAYER_DEBUG && edgeLayer && logicalW && logicalH) {
     noStroke(); fill(255, 0, 0, 100);
     for (let y = 0; y < logicalH; y++) {
@@ -5538,8 +5540,6 @@ function draw() {
   }
 
   pop(); // END WORLD TRANSFORM
-
-  drawClouds();
 
   // --- MINIMAP ---
   if (showMinimap && mapImage) {
@@ -6692,20 +6692,19 @@ function spawnCloud(forceX) {
   
   const cloudImg = validImages[Math.floor(Math.random() * validImages.length)];
   
- 
-  const vH = (typeof virtualH !== 'undefined') ? virtualH : (height / (gameScale || 1));
-  const minY = -100; 
-  const maxY = vH + 100; 
+  // Use map coordinates (world space)
+  const mapW = (logicalW || 150) * cellSize;
+  const mapH = (logicalH || 150) * cellSize;
+  
+  const minY = -cellSize * 5; 
+  const maxY = mapH + cellSize * 5; 
   const yPos = minY + Math.random() * (maxY - minY);
-  
-  
 
   const baseSpeed = 0.3 + Math.random() * 1;
   const scale = 2.0 + Math.random() * 4.0;
   
-
-  const currentScale = height / 3000; 
-  const startX = (typeof forceX === 'number') ? forceX : -cloudImg.width * scale;
+  // Spawn left of map if no forceX provided
+  const startX = (typeof forceX === 'number') ? forceX : -cloudImg.width * scale - 200;
 
   clouds.push({
     img: cloudImg,
@@ -7109,18 +7108,19 @@ function updateClouds() {
   }
   
   
-  const virtualWidth = (gameScale && gameScale !== 0) ? width / gameScale : width;
+  // Use map coordinates (world space)
+  const mapW = (logicalW || 150) * cellSize;
 
   for (let i = clouds.length - 1; i >= 0; i--) {
     const cloud = clouds[i];
     
     cloud.x += cloud.speed;
     cloud.driftPhase += 0.01;
-    cloud.y = cloud.baseY + Math.sin(cloud.driftPhase) * 20 * cloud.verticalDrift;
+    cloud.y = cloud.baseY + Math.sin(cloud.driftPhase) * 20 * (cloud.verticalDrift || 0.1);
     
    
     const cloudWidth = cloud.img.width * cloud.scale;
-    if (cloud.x > virtualWidth + cloudWidth) {
+    if (cloud.x > mapW + 500) {
       clouds.splice(i, 1);
     }
   }
