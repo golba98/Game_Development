@@ -3363,18 +3363,18 @@ function openInGameMenu() {
   const { container, panel, close } = createZoomStablePanel(420, 320, 'gd-ingame-menu');
   inGameMenuOverlay = { close, container };
 
-  // Title positioned well above the panel
+  // Title positioned well above the panel box
   let title = createDiv('PAUSED');
-  title.parent(container);
+  title.parent(panel);
   title.style('position', 'absolute');
   title.style('width', '100%');
   title.style('text-align', 'center');
-  title.style('top', 'calc(50% - 280px)'); // Moved even further up from 210px
+  title.style('top', '-100px'); // 100px above the top of the box
+  title.style('left', '0');
   title.style('font-size', '48px');
   title.style('font-weight', 'bold');
   title.style('color', '#000'); 
   title.style('text-shadow', 'none');
-  makeElementZoomInvariant(title.elt, 'center center');
 
   const createMenuBtn = (label, onClick) => {
     let btn = createButton(label);
@@ -3428,18 +3428,18 @@ function showGameOverScreen() {
   const { container, panel, close } = createZoomStablePanel(420, 320, 'gd-gameover-menu');
   gameOverOverlay = { close, container };
 
-  // Title positioned well above the panel
+  // Title positioned well above the panel box
   let title = createDiv('GAME OVER');
-  title.parent(container);
+  title.parent(panel);
   title.style('position', 'absolute');
   title.style('width', '100%');
   title.style('text-align', 'center');
-  title.style('top', 'calc(50% - 280px)'); // Moved even further up from 210px
+  title.style('top', '-100px'); // 100px above the top of the box
+  title.style('left', '0');
   title.style('font-size', '48px');
   title.style('font-weight', 'bold');
   title.style('color', '#000');
   title.style('text-shadow', 'none');
-  makeElementZoomInvariant(title.elt, 'center center');
 
   const createMenuBtn = (label, onClick) => {
     let btn = createButton(label);
