@@ -1,8 +1,12 @@
 let virtualW, virtualH;
 let pendingGameActivated = false;
 let enemies = [];
+let projectiles = [];
 let mantisMoveSprite = null;
 let mantisAttackSprite = null;
+let maggotWalkSprite = null;
+let maggotSpitSprite = null;
+let acidBlobSprite = null;
 let playerHealth = 7;
 let maxHealth = 7;
 let heartImage = null;
@@ -383,6 +387,21 @@ function preload() {
     trackLoadImage('mantis_attack', 'assets/2-Characters/5-Enemies/MantisAttack.png',
       (img) => { mantisAttackSprite = img; verboseLog('[game] loaded MantisAttack.png'); },
       (err) => { console.warn('[game] failed to load MantisAttack.png', err); }
+    );
+
+    trackLoadImage('maggot_walk', 'assets/2-Characters/5-Enemies/MaggotWalk.png',
+      (img) => { maggotWalkSprite = img; verboseLog('[game] loaded MaggotWalk.png'); },
+      (err) => { console.warn('[game] failed to load MaggotWalk.png', err); }
+    );
+
+    trackLoadImage('maggot_spit', 'assets/2-Characters/5-Enemies/MaggotSpit.png',
+      (img) => { maggotSpitSprite = img; verboseLog('[game] loaded MaggotSpit.png'); },
+      (err) => { console.warn('[game] failed to load MaggotSpit.png', err); }
+    );
+
+    trackLoadImage('acid_blob', 'assets/2-Characters/5-Enemies/AcidBlob.png',
+      (img) => { acidBlobSprite = img; verboseLog('[game] loaded AcidBlob.png'); },
+      (err) => { console.warn('[game] failed to load AcidBlob.png', err); }
     );
 
     trackLoadImage('heart', 'assets/3-GUI/Heart.png',
@@ -825,7 +844,8 @@ function generateMap_Part2() {
         
         const finalTile = mapStates[ey * logicalW + ex];
         if (!isSolid(finalTile) && finalTile !== TILE_TYPES.RIVER) {
-            spawnEnemy('mantis', ex, ey);
+            const eType = Math.random() < 0.5 ? 'mantis' : 'maggot';
+            spawnEnemy(eType, ex, ey);
         }
      }
   } catch(e) {}
@@ -1405,11 +1425,16 @@ function applyLoadedMap(obj) {
     enemies = [];
     if (Array.isArray(obj.enemies)) {
         for (const eData of obj.enemies) {
+            let enemy = null;
             if (eData.type === 'mantis') {
-                const mantis = createMantis(eData.x, eData.y);
-                if (eData.direction) mantis.direction = eData.direction;
-                if (eData.moveTimer) mantis.moveTimer = eData.moveTimer;
-                enemies.push(mantis);
+                enemy = createMantis(eData.x, eData.y);
+            } else if (eData.type === 'maggot') {
+                enemy = createMaggot(eData.x, eData.y);
+            }
+            if (enemy) {
+                if (eData.direction) enemy.direction = eData.direction;
+                if (eData.moveTimer) enemy.moveTimer = eData.moveTimer;
+                enemies.push(enemy);
             }
         }
     }
@@ -1498,11 +1523,16 @@ function loadMapFromStorage() {
     enemies = [];
     if (Array.isArray(obj.enemies)) {
         for (const eData of obj.enemies) {
+            let enemy = null;
             if (eData.type === 'mantis') {
-                const mantis = createMantis(eData.x, eData.y);
-                if (eData.direction) mantis.direction = eData.direction;
-                if (eData.moveTimer) mantis.moveTimer = eData.moveTimer;
-                enemies.push(mantis);
+                enemy = createMantis(eData.x, eData.y);
+            } else if (eData.type === 'maggot') {
+                enemy = createMaggot(eData.x, eData.y);
+            }
+            if (enemy) {
+                if (eData.direction) enemy.direction = eData.direction;
+                if (eData.moveTimer) enemy.moveTimer = eData.moveTimer;
+                enemies.push(enemy);
             }
         }
     }
@@ -2065,6 +2095,8 @@ function shuffleArray(array) {
 function spawnEnemy(type, x, y) {
   if (type === 'mantis') {
     enemies.push(createMantis(x, y));
+  } else if (type === 'maggot') {
+    enemies.push(createMaggot(x, y));
   }
 }
 
@@ -2289,6 +2321,235 @@ function createMantis(startX, startY) {
         image(sprite, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
     }
   };
+}
+
+function createMaggot(startX, startY) {
+  return {
+    type: 'maggot',
+    x: startX,
+    y: startY,
+    renderX: startX,
+    renderY: startY,
+    direction: 'S', // S, W, E, N (Row 0, 1, 2, 3)
+    moving: false,
+    animFrame: 0,
+    animTimer: 0,
+    moveTimer: 0,
+    
+    // Attack properties
+    attacking: false,
+    attackFrame: 0,
+    attackTimer: 0,
+    attackCooldown: 0,
+    hasSpawnedProjectile: false,
+    
+    update: function() {
+      const dt = gameDelta;
+
+      // --- ATTACK STATE ---
+      if (this.attacking) {
+         this.attackTimer += dt;
+         if (this.attackTimer > 120) { // Speed of spit animation
+             this.attackTimer = 0;
+             this.attackFrame++;
+             
+             // Spawn Projectile Frame (e.g., frame 4)
+             if (this.attackFrame === 4 && !this.hasSpawnedProjectile) {
+                 if (playerPosition) {
+                     spawnAcidBlob(this.x, this.y, playerPosition.x, playerPosition.y, this.direction);
+                     this.hasSpawnedProjectile = true;
+                 }
+             }
+
+             if (this.attackFrame >= 7) {
+                 this.attacking = false;
+                 this.attackCooldown = 2000; // 2s cooldown
+                 this.attackFrame = 0;
+             }
+         }
+         return; // Don't move while spitting
+      }
+
+      if (this.attackCooldown > 0) this.attackCooldown -= dt;
+
+      // --- MOVEMENT & AGGRO ---
+      this.animTimer += dt;
+      if (this.animTimer > 250) {
+        this.animTimer = 0;
+        this.animFrame = (this.animFrame + 1) % 4;
+      }
+      
+      const speed = 0.1;
+      if (Math.abs(this.renderX - this.x) > 0.01) this.renderX = lerp(this.renderX, this.x, speed);
+      else this.renderX = this.x;
+      
+      if (Math.abs(this.renderY - this.y) > 0.01) this.renderY = lerp(this.renderY, this.y, speed);
+      else this.renderY = this.y;
+      
+      if (this.moveTimer > 0) {
+        this.moveTimer -= dt;
+        return;
+      }
+      
+      // AGGRO LOGIC
+      if (playerPosition) {
+          const dist = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
+          
+          // Trigger Attack if in range and cooldown ready
+          if (dist < 6 && this.attackCooldown <= 0) {
+              this.attacking = true;
+              this.attackFrame = 0;
+              this.attackTimer = 0;
+              this.hasSpawnedProjectile = false;
+              // Face player before attacking (but keep current direction as requested?)
+              // The user said: "it keeps it currenty keeps that direction uses MaggotSpit"
+              // I will interpret this as: don't change direction specifically for the attack if already facing somewhat that way,
+              // but if it "notices" them maybe it should face them? 
+              // "When it attacks when it notices a user it keeps it currenty keeps that direction"
+              // I'll leave direction as is.
+              return;
+          }
+      }
+
+      // IDLE WANDER
+      if (Math.random() < 0.01) {
+        const dirs = [
+            { dx: 0, dy: 1, dir: 'S' },
+            { dx: 0, dy: -1, dir: 'N' },
+            { dx: 1, dy: 0, dir: 'E' },
+            { dx: -1, dy: 0, dir: 'W' }
+        ];
+        const choice = dirs[Math.floor(Math.random() * dirs.length)];
+        const nx = this.x + choice.dx;
+        const ny = this.y + choice.dy;
+        
+        if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH) {
+            const ts = getTileState(nx, ny);
+            if (typeof isSolid === 'function' && !isSolid(ts) && ts !== TILE_TYPES.RIVER) {
+                this.x = nx;
+                this.y = ny;
+                this.direction = choice.dir;
+                this.moveTimer = 1500 + Math.random() * 3000;
+            }
+        }
+      }
+    },
+    
+    draw: function() {
+        let sprite = maggotWalkSprite;
+        let frame = this.animFrame;
+        let cols = 4;
+
+        if (this.attacking && maggotSpitSprite) {
+            sprite = maggotSpitSprite;
+            frame = this.attackFrame;
+            cols = 7;
+        }
+
+        if (!sprite) return;
+        
+        let row = 0;
+        if (this.direction === 'S') row = 0;
+        else if (this.direction === 'W') row = 1;
+        else if (this.direction === 'E') row = 2;
+        else if (this.direction === 'N') row = 3;
+        
+        const fw = sprite.width / cols;
+        const fh = sprite.height / 4;
+        
+        const sx = frame * fw;
+        const sy = row * fh;
+        
+        const destX = this.renderX * cellSize;
+        const destY = this.renderY * cellSize;
+        
+        const drawH = cellSize * 1.0;
+        const drawW = drawH * (fw / fh);
+        
+        const drawX = destX + (cellSize - drawW) / 2;
+        const drawY = destY + (cellSize - drawH);
+        
+        image(sprite, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+    }
+  };
+}
+
+function spawnAcidBlob(startX, startY, targetX, targetY, initialDir) {
+    const angle = Math.atan2(targetY - startY, targetX - startX);
+    const vx = Math.cos(angle) * 0.15; // Speed in tiles per frame
+    const vy = Math.sin(angle) * 0.15;
+    
+    // Determine projectile direction based on velocity
+    let projDir = initialDir;
+    if (Math.abs(vx) > Math.abs(vy)) {
+        projDir = vx > 0 ? 'E' : 'W';
+    } else {
+        projDir = vy > 0 ? 'S' : 'N';
+    }
+    
+    projectiles.push({
+        type: 'acid_blob',
+        x: startX,
+        y: startY,
+        vx: vx,
+        vy: vy,
+        direction: projDir,
+        animFrame: 0,
+        animTimer: 0,
+        distanceTraveled: 0,
+        maxDistance: 10,
+        
+        update: function() {
+            const dt = gameDelta;
+            this.x += this.vx * (dt / 16.67);
+            this.y += this.vy * (dt / 16.67);
+            this.distanceTraveled += Math.hypot(this.vx, this.vy) * (dt / 16.67);
+            
+            this.animTimer += dt;
+            if (this.animTimer > 80) {
+                this.animTimer = 0;
+                this.animFrame = (this.animFrame + 1) % 7;
+            }
+            
+            // Check collision with player
+            if (playerPosition) {
+                const d = Math.hypot(this.x - playerPosition.x, this.y - playerPosition.y);
+                if (d < 0.6) {
+                    playerHealth = Math.max(0, playerHealth - 1);
+                    playerHurtTimer = 500;
+                    return true; // Remove
+                }
+            }
+            
+            if (this.distanceTraveled > this.maxDistance) return true;
+            return false;
+        },
+        
+        draw: function() {
+            if (!acidBlobSprite) return;
+            let row = 0;
+            if (this.direction === 'S') row = 0;
+            else if (this.direction === 'W') row = 1;
+            else if (this.direction === 'E') row = 2;
+            else if (this.direction === 'N') row = 3;
+            
+            const fw = acidBlobSprite.width / 7;
+            const fh = acidBlobSprite.height / 4;
+            const sx = this.animFrame * fw;
+            const sy = row * fh;
+            
+            const drawSize = cellSize * 0.8;
+            image(acidBlobSprite, this.x * cellSize + (cellSize-drawSize)/2, this.y * cellSize + (cellSize-drawSize)/2, drawSize, drawSize, sx, sy, fw, fh);
+        }
+    });
+}
+
+function updateProjectiles() {
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        if (projectiles[i].update()) {
+            projectiles.splice(i, 1);
+        }
+    }
 }
 
 function updateEnemies() {
@@ -5047,6 +5308,7 @@ function draw() {
       handleMovement();
       updateMovementInterpolation();
       updateEnemies();
+      updateProjectiles();
     }
   }
 
@@ -5086,6 +5348,12 @@ function draw() {
            drawables.push({ type: 'enemy', entity: e, baseY });
       }
     }
+    if (projectiles && projectiles.length) {
+      for (const p of projectiles) {
+           const baseY = (p.y * cellSize) + cellSize;
+           drawables.push({ type: 'projectile', entity: p, baseY });
+      }
+    }
     drawables.sort((a, b) => (a.baseY - b.baseY));
     
     for (const d of drawables) {
@@ -5098,6 +5366,8 @@ function draw() {
       } else if (d.type === 'player') {
         try { drawPlayer(); } catch (e) {}
       } else if (d.type === 'enemy') {
+        try { d.entity.draw(); } catch (e) {}
+      } else if (d.type === 'projectile') {
         try { d.entity.draw(); } catch (e) {}
       }
     }
