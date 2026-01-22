@@ -2749,7 +2749,17 @@ function canMoveTo(fromX, fromY, toX, toY) {
     return false;
   }
 
-  // 4. General Solidarity
+  // 4. Enemies
+  if (enemies && enemies.length > 0) {
+    for (const e of enemies) {
+      // If enemy is effectively at the target tile
+      if (Math.floor(e.x) === toX && Math.floor(e.y) === toY) {
+        return false;
+      }
+    }
+  }
+
+  // 5. General Solidarity
   if (isSolid(toState)) return false;
   
   try {
@@ -2776,7 +2786,7 @@ function isSolid(tileState) {
   
   
   if (tileState === TILE_TYPES.MOB) {
-      return false;
+      return true;
   }
 
   
