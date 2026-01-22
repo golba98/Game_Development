@@ -2714,22 +2714,44 @@ function handleItemInteraction(targetX, targetY) {
 }
 
 function canMoveTo(fromX, fromY, toX, toY) {
+  const fromState = getTileState(fromX, fromY);
   const toState = getTileState(toX, toY);
   const targetIdx = toY * logicalW + toX;
-  if (decorativeObstacleTiles.has(targetIdx)) return false;
+  const currentIdx = fromY * logicalW + fromX;
   
-  if (typeof TILE_TYPES !== 'undefined' && TILE_TYPES && typeof TILE_TYPES.HILL_NORTH === 'number') {
-    const hillMin = TILE_TYPES.HILL_NORTH;
-    const hillMax = TILE_TYPES.HILL_NORTHWEST;
-    if (toState >= hillMin && toState <= hillMax) {
-      if (isJumping) {
-        return true; 
-      } else {
-        return false;
-      }
-    }
+  const hillMin = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.HILL_NORTH : 13;
+  const hillMax = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.HILL_NORTHWEST : 20;
+  const cliffTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.CLIFF : 6;
+  const isToHill = (toState >= hillMin && toState <= hillMax) || (toState === cliffTile);
+  const isFromHill = (fromState >= hillMin && fromState <= hillMax) || (fromState === cliffTile);
+  const isToLog = (typeof TILE_TYPES !== 'undefined') && toState === TILE_TYPES.LOG;
+  const isFromLog = (typeof TILE_TYPES !== 'undefined') && fromState === TILE_TYPES.LOG;
+  const isToObstacle = decorativeObstacleTiles.has(targetIdx);
+  const isFromObstacle = decorativeObstacleTiles.has(currentIdx);
+
+  // 1. Decorative Obstacles
+  if (isToObstacle) {
+    if (isJumping || isFromObstacle) return true; // Can jump over/onto or walk between obstacles
+    return false;
   }
+  
+  // 2. Hills (Cliffs)
+  if (isToHill) {
+    // Can move to a hill if jumping OR if already on a hill
+    if (isJumping || isFromHill) return true;
+    return false;
+  }
+
+  // 3. Logs (Tiles)
+  if (isToLog) {
+    // Can move to a log if jumping OR if already on a log
+    if (isJumping || isFromLog) return true;
+    return false;
+  }
+
+  // 4. General Solidarity
   if (isSolid(toState)) return false;
+  
   try {
     if (EDGE_LAYER_ENABLED && edgeLayer && logicalW && logicalH) {
       if (toX >= 0 && toX < logicalW && toY >= 0 && toY < logicalH) {
@@ -5049,7 +5071,7 @@ const TILE_TYPES = Object.freeze({
 });
 
 const WALKABLE_TILES = new Set([
-  TILE_TYPES.GRASS, TILE_TYPES.LOG, TILE_TYPES.FLOWERS, TILE_TYPES.RAMP, TILE_TYPES.RIVER
+  TILE_TYPES.GRASS, TILE_TYPES.FLOWERS, TILE_TYPES.RAMP, TILE_TYPES.RIVER
 ]);
 
 const ITEM_DATA = Object.freeze({
@@ -5077,7 +5099,6 @@ const DECORATIVE_WALKABLE_NAMES = Object.freeze([
   'flowers_more_1',
   'flowers_pink_1',
   'flower_yellow',
-  'log_horizontal_1',
   'rock_small_1',
   'rock_upward_1'
 ]);
@@ -5085,7 +5106,8 @@ const DECORATIVE_WALKABLE_NAMES = Object.freeze([
 const DECORATIVE_OBSTACLE_NAMES = Object.freeze([
   'bush_upward_1',
   'log_vertically_1',
-  'log_upward_1'
+  'log_upward_1',
+  'log_horizontal_1'
 ]);
 
 const DECOR_SPECIAL_NAMES = Object.freeze(['hole_1']);
