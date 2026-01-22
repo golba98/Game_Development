@@ -4778,7 +4778,6 @@ function releaseImageReference(img) {
       }
       genTempData = {};
     }
-}
 
 let SETTINGS_OVERLAY = null;
 let ESC_MENU_BACKGROUND = null;
