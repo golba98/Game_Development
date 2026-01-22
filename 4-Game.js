@@ -5795,11 +5795,15 @@ function openInGameSettings(currentVals) {
 
   let title = createDiv('SETTINGS');
   title.parent(panel);
+  title.style('position', 'absolute');
+  title.style('width', '100%');
+  title.style('text-align', 'center');
+  title.style('top', '-100px'); // Positioned above the box
+  title.style('left', '0');
   title.style('font-size', '42px');
   title.style('font-weight', 'bold');
-  title.style('margin-bottom', '18px');
-  title.style('color', MENU_GOLD_COLOR);
-  title.style('text-shadow', '3px 3px 0 #000');
+  title.style('color', '#000');
+  title.style('text-shadow', 'none');
 
   const layoutRow = createDiv('');
   layoutRow.parent(panel);
