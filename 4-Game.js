@@ -819,9 +819,12 @@ function generateMap_Part2() {
            ex = Math.floor(Math.random() * logicalW);
            ey = Math.floor(Math.random() * logicalH);
            attempts++;
-        } while (attempts < 50 && isSolid(mapStates[ey * logicalW + ex]));
+           const tState = mapStates[ey * logicalW + ex];
+           var invalid = isSolid(tState) || tState === TILE_TYPES.RIVER;
+        } while (attempts < 50 && invalid);
         
-        if (!isSolid(mapStates[ey * logicalW + ex])) {
+        const finalTile = mapStates[ey * logicalW + ex];
+        if (!isSolid(finalTile) && finalTile !== TILE_TYPES.RIVER) {
             spawnEnemy('mantis', ex, ey);
         }
      }
@@ -2192,7 +2195,9 @@ function createMantis(startX, startY) {
           let ny = this.y + moveY;
           let canMove = false;
           
-          if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH && typeof isSolid === 'function' && !isSolid(getTileState(nx, ny))) {
+          const isWater = (tx, ty) => getTileState(tx, ty) === TILE_TYPES.RIVER;
+
+          if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH && typeof isSolid === 'function' && !isSolid(getTileState(nx, ny)) && !isWater(nx, ny)) {
               canMove = true;
           } else {
              // Try secondary axis if primary blocked
@@ -2205,7 +2210,7 @@ function createMantis(startX, startY) {
              if (moveX !== 0 || moveY !== 0) {
                  nx = this.x + moveX;
                  ny = this.y + moveY;
-                 if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH && typeof isSolid === 'function' && !isSolid(getTileState(nx, ny))) {
+                 if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH && typeof isSolid === 'function' && !isSolid(getTileState(nx, ny)) && !isWater(nx, ny)) {
                      canMove = true;
                  }
              }
@@ -2215,9 +2220,7 @@ function createMantis(startX, startY) {
               this.x = nx;
               this.y = ny;
               this.direction = newDir;
-              let waitTime = 400;
-              if (getTileState(this.x, this.y) === TILE_TYPES.RIVER) waitTime *= 2.0;
-              this.moveTimer = waitTime; // Faster movement when aggro
+              this.moveTimer = 400; // Faster movement when aggro
               return;
           }
       }
@@ -2235,13 +2238,12 @@ function createMantis(startX, startY) {
         const ny = this.y + choice.dy;
         
         if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH) {
-            if (typeof isSolid === 'function' && !isSolid(getTileState(nx, ny))) {
+            const ts = getTileState(nx, ny);
+            if (typeof isSolid === 'function' && !isSolid(ts) && ts !== TILE_TYPES.RIVER) {
                 this.x = nx;
                 this.y = ny;
                 this.direction = choice.dir;
-                let waitTime = 1000 + Math.random() * 2000;
-                if (getTileState(this.x, this.y) === TILE_TYPES.RIVER) waitTime *= 2.0;
-                this.moveTimer = waitTime;
+                this.moveTimer = 1000 + Math.random() * 2000;
             }
         }
       }
