@@ -41,8 +41,8 @@ let mapLoadComplete = false;
 let cloudImages = [];
 let clouds = [];
 
-const MAX_CLOUDS = 100;
-const CLOUD_SPAWN_INTERVAL = 8000;
+const MAX_CLOUDS = 150;
+const CLOUD_SPAWN_INTERVAL = 3000; 
 
 let lastCloudSpawn = 0;
 
@@ -541,9 +541,9 @@ function setup() {
       verboseLog('[game] assets loaded. Pre-warming clouds...');
       
      
-      const wWidth = width / (height / 3000); 
-      for(let i = 0; i < 25; i++) {
-          spawnCloud(Math.random() * wWidth); 
+      const vW = (typeof virtualW !== 'undefined') ? virtualW : (width / (gameScale || 1));
+      for(let i = 0; i < 40; i++) {
+          spawnCloud(Math.random() * vW); 
       }
     }
 
@@ -4946,10 +4946,8 @@ function scheduleDeferredCharacterAssets() {
   };
 
   const loadCloudTextures = () => {
-    const globalScope = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : {});
-    if (!Array.isArray(globalScope.cloudImages)) globalScope.cloudImages = [];
-    const cloudArray = globalScope.cloudImages;
-    const targetCount = typeof CLOUD_IMAGE_COUNT === 'number' ? CLOUD_IMAGE_COUNT : 6;
+    const cloudArray = cloudImages;
+    const targetCount = typeof CLOUD_IMAGE_COUNT === 'number' ? CLOUD_IMAGE_COUNT : 4;
     for (let i = 1; i <= targetCount; i++) {
       cloudArray[i - 1] = cloudArray[i - 1] || null;
       const path = `assets/5-Objects/cloud_${i}.png`;
@@ -4975,9 +4973,9 @@ function scheduleDeferredCharacterAssets() {
   };
 
   if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(runDeferredLoads, { timeout: 2500 });
+    requestIdleCallback(runDeferredLoads, { timeout: 500 });
   } else {
-    setTimeout(runDeferredLoads, 120);
+    setTimeout(runDeferredLoads, 50);
   }
 
   try { logAssetTrackerStatus('deferred character assets scheduled'); } catch (e) {}
@@ -5530,8 +5528,6 @@ function draw() {
     }
   } catch (e) {}
 
-  drawClouds();
-
   if (EDGE_LAYER_DEBUG && edgeLayer && logicalW && logicalH) {
     noStroke(); fill(255, 0, 0, 100);
     for (let y = 0; y < logicalH; y++) {
@@ -5542,6 +5538,8 @@ function draw() {
   }
 
   pop(); // END WORLD TRANSFORM
+
+  drawClouds();
 
   // --- MINIMAP ---
   if (showMinimap && mapImage) {
@@ -6695,11 +6693,9 @@ function spawnCloud(forceX) {
   const cloudImg = validImages[Math.floor(Math.random() * validImages.length)];
   
  
-  const worldHeight = 3000; 
-  
- 
-  const minY = 0; 
-  const maxY = worldHeight; 
+  const vH = (typeof virtualH !== 'undefined') ? virtualH : (height / (gameScale || 1));
+  const minY = -100; 
+  const maxY = vH + 100; 
   const yPos = minY + Math.random() * (maxY - minY);
   
   
