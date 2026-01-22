@@ -3368,8 +3368,8 @@ function openInGameMenu() {
   title.style('font-size', '48px');
   title.style('font-weight', 'bold');
   title.style('margin-bottom', '40px');
-  title.style('color', MENU_GOLD_COLOR);
-  title.style('text-shadow', '3px 3px 0 #000');
+  title.style('color', '#000');
+  title.style('text-align', 'center');
 
   const createMenuBtn = (label, onClick) => {
     let btn = createButton(label);
@@ -3428,8 +3428,8 @@ function showGameOverScreen() {
   title.style('font-size', '48px');
   title.style('font-weight', 'bold');
   title.style('margin-bottom', '40px');
-  title.style('color', '#ff4444');
-  title.style('text-shadow', '3px 3px 0 #000');
+  title.style('color', '#000');
+  title.style('text-align', 'center');
 
   const createMenuBtn = (label, onClick) => {
     let btn = createButton(label);
@@ -3669,7 +3669,6 @@ function applyMenuButtonUI(btn, w = 260, h = 48) {
   btn.style('height', `${h}px`);
   btn.style('font-size', '28px');
   btn.style('font-family', 'inherit');
-  btn.style('font-weight', 'bold');
   btn.style('letter-spacing', '0.4px');
   btn.style('border', `3px solid ${MENU_GOLD_BORDER}`);
   btn.style('color', '#fff');
@@ -4636,7 +4635,6 @@ function injectCustomStyles() {
   try {
     if (typeof document === 'undefined' || !document.head) return;
     
-    
     const existing = document.getElementById('gd-custom-styles');
     if (existing) existing.remove();
 
@@ -4652,16 +4650,81 @@ function injectCustomStyles() {
       }
       * {
         font-family: 'MyFont', sans-serif !important;
-        transition: all 0.18s ease;
+        box-sizing: border-box;
       }
-      /* Button Hover Effects */
+      
       button:hover {
         transform: scale(1.05);
-        text-shadow: 0 0 12px #ffffffaa;
-        color: #ffea00 !important;
+        color: #ffea80 !important;
       }
 
-    function releaseImageReference(img) {
+      input[type="range"] {
+        -webkit-appearance: none; 
+        width: 100%;
+        background: transparent;
+        margin: 10px 0;
+      }
+
+      input[type="range"]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 26px !important;
+        cursor: pointer;
+        background: #222;
+        border: 3px solid #555;
+        border-radius: 15px;
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 38px !important;
+        width: 38px !important;
+        background: #ffcc00;        
+        border-radius: 10px;        
+        cursor: pointer;
+        margin-top: -10px;          
+        box-shadow: 0 0 15px rgba(0,0,0,0.8);
+        z-index: 20002;
+        position: relative;
+      }
+
+      input[type="checkbox"] {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 38px !important;
+        height: 38px !important;
+        background-color: #333;
+        border: 3px solid #888;
+        border-radius: 8px;
+        cursor: pointer;
+        position: relative;
+        vertical-align: middle;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      input[type="checkbox"]:checked {
+        background-color: #ffcc00 !important;
+        border-color: #fff !important;
+      }
+
+      input[type="checkbox"]:checked::after {
+        content: '✔';
+        font-size: 28px;
+        color: black;
+        font-weight: bold;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -55%);
+        line-height: 1;
+      }
+    `));
+    document.head.appendChild(style);
+  } catch (e) { console.warn('[game] injectCustomStyles failed', e); }
+}
+
+function releaseImageReference(img) {
       if (!img) return;
       if (typeof img.remove === 'function') {
         try { img.remove(); } catch (e) {}
@@ -4715,55 +4778,6 @@ function injectCustomStyles() {
       }
       genTempData = {};
     }
-      /* Inputs */
-      input[type="checkbox"], select, input[type="range"] {
-        accent-color: #ffcc00;
-        cursor: pointer;
-      }
-      /* Range Sliders (Webkit) */
-      input[type="range"] {
-        height: 10px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.25);
-        outline: none;
-        -webkit-appearance: none;
-        appearance: none;
-      }
-      input[type="range"]::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        width: 40px;
-        height: 24px;
-        border-radius: 12px;
-        background: #ffcc00;
-        box-shadow: 0 0 6px #ffcc0070;
-        border: 2px solid #f5b800;
-        cursor: pointer;
-        margin-top: -7px; /* Align thumb vertically */
-      }
-      /* Range Sliders (Firefox) */
-      input[type="range"]::-moz-range-thumb {
-        width: 40px;
-        height: 24px;
-        border-radius: 12px;
-        background: #ffcc00;
-        border: 2px solid #f5b800;
-        box-shadow: 0 0 6px #ffcc0070;
-        cursor: pointer;
-      }
-      /* Specific UI Classes */
-      .setting-label {
-        color: white !important;
-        text-shadow: 0 1px 4px black;
-        pointer-events: none;
-        font-size: 24px;
-      }
-      .setting-checkbox {
-        display: flex;
-        align-items: center;
-      }
-    `));
-    document.head.appendChild(style);
-  } catch (e) { console.warn('[game] injectCustomStyles failed', e); }
 }
 
 let SETTINGS_OVERLAY = null;
@@ -6585,17 +6599,17 @@ function stylePixelButton(btn) {
   btn.style('image-rendering', 'pixelated'); 
   
   
-  btn.style('font-family', 'MyFont, sans-serif'); 
-  btn.style('text-shadow', '3px 3px 0 #000');
+  btn.style('font-family', '"MyFont", sans-serif'); 
+  btn.style('text-shadow', '0 0 10px #ffffff60');
   
   
   btn.mouseOver(() => {
-    btn.style('filter', 'brightness(1.2)');
     btn.style('transform', 'scale(1.05)');
+    btn.style('color', '#ffea80');
   });
   btn.mouseOut(() => {
-    btn.style('filter', 'brightness(1.0)');
     btn.style('transform', 'scale(1.0)');
+    btn.style('color', 'white');
   });
   
   
