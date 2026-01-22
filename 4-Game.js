@@ -4655,7 +4655,12 @@ function injectCustomStyles() {
       
       button:hover {
         transform: scale(1.05);
-        color: #ffea80 !important;
+        color: #ffff80 !important;
+      }
+
+      button:active {
+        transform: scale(0.98);
+        color: #fff9b0 !important;
       }
 
       input[type="range"] {
@@ -6604,7 +6609,7 @@ function stylePixelButton(btn) {
   
   btn.mouseOver(() => {
     btn.style('transform', 'scale(1.05)');
-    btn.style('color', '#ffea80');
+    btn.style('color', '#ffff80');
   });
   btn.mouseOut(() => {
     btn.style('transform', 'scale(1.0)');
