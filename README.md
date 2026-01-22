@@ -1,0 +1,151 @@
+PROJECT: TOP-DOWN PROCEDURAL RPG ENGINE
+=======================================
+Version: 1.0.0
+Author:  Jordan Vorster
+Engine:  Custom JavaScript / p5.js
+
+
+OVERVIEW
+--------
+This project is a robust 2D game engine built from scratch using JavaScript and 
+the p5.js library. It features a sophisticated procedural generation system that 
+creates unique, organic worlds containing forests, rivers, hills, and varied 
+terrain types every time you play.
+
+Unlike standard static games, this engine uses a Client-Server architecture 
+(via Node.js) to allow for persistent world data, enabling players to generate, 
+edit, save, and load their unique map seeds.
+
+
+INSTALLATION & SETUP
+--------------------
+To fully utilize the Save/Load features, this game requires a local Node.js server.
+
+METHOD 1: LOCAL NODE SERVER (Not Recommended)
+-----------------------------------------
+1. PREREQUISITES:
+   - Install Node.js from https://nodejs.org/
+
+2. SETUP:
+   - Open your command prompt or terminal.
+   - Navigate to the project root folder.
+   - (Optional) If you have a package.json, run: npm install
+
+3. LAUNCHING THE SERVER:
+   - Run the command: node scripts/map_server.js
+   - You should see: "Map & static server listening on http://localhost:3000"
+
+4. PLAYING:
+   - Open your web browser to: http://localhost:3000
+   - The game will load and automatically fetch the active map.
+
+METHOD 2: QUICK PLAY (VS Code Live Server)
+------------------------------------------
+*Good for quick testing. Map saving will be restricted to temporary storage.*
+
+1. Open the project folder in Visual Studio Code.
+2. Install the "Live Server" extension (by Ritwick Dey).
+3. Right-click on the file "3-Game_Index.html" in the file explorer.
+4. Select "Open with Live Server".
+5. The game will launch in your default browser.
+
+METHOD 3: DOCKER CONTAINER (Recommended)
+------------------------------------------
+*Ensures a consistent environment isolated from your local machine settings.*
+
+1. PREREQUISITES:
+   - Install Docker Desktop from https://www.docker.com/products/docker-desktop/
+   - Note need an account thus sign in accordingly 
+   - Here after it will download a windows version of Linux and would need to restart your computer 
+   - NOTE keep the app open to do the following:
+
+2. BUILD THE IMAGE:
+   - Open your terminal in the project root folder (where 'Dockerfile.txt' is located).
+   - Or open termincal and run the command 
+    cd "path_where_the_Dockerfile.txt_is" - Note add your path
+   - Run the command: 
+     docker build -f Dockerfile.txt -t forest-rpg .
+
+3. RUN THE CONTAINER:
+   - Run the command:
+     docker run -p 3000:3000 forest-rpg
+   - This maps port 3000 inside the container to port 3000 on your machine.
+
+4. PLAYING:
+   - Open your web browser to: http://localhost:3000/1-Menu_Index.html
+
+5. STOP 
+   - Once you're done playing run the following command to stop the server:
+   docker stop $(docker ps -q)
+
+
+CONTROLS
+--------
+Gameplay:
+  [W, A, S, D]   : Move Character
+  [Shift]        : Sprint (Consumes Stamina)
+  [Esc]          : Pause Menu / Back
+
+System / Debug:
+  [P]            : Procedural Regeneration (Generate a fresh new world instantly)
+  [T]            : Toggle Assets (Switch between sprite textures and raw colors)
+  [Space]        : Jump (Experimental physics)
+  [F]            : Fullscreen NOTE: Currently has a problem 
+
+
+ENGINE FEATURES
+---------------
+
+1. PROCEDURAL GENERATION ALGORITHMS
+   - **Perlin Noise Terrain**: Uses noise maps to generate organic forest distribution.
+   - **River Carving**: A custom pathfinding algorithm ("Drunken Walk" with bias) 
+     carves rivers from map edges, ensuring they meander naturally.
+   - **Cellular Automata Hills**: Hill generation uses a smoothing algorithm to 
+     create natural-looking cliff shapes.
+   - **Connectivity Checks**: A flood-fill algorithm ensures the map is playable 
+     and that spawn points are not trapped by water or cliffs.
+
+2. RENDERING SYSTEM
+   - **Pixel-Perfect Scaling**: Custom canvas handling ensures crisp pixel art 
+     visuals at any window resolution (4K compatible).
+   - **Parallax Layers**: Background clouds and foreground elements move at 
+     different speeds to create depth.
+   - **Dynamic Lighting/Weather**: (In progress) Support for cloud shadows.
+
+3. SAVE/LOAD SYSTEM
+   - **JSON Map Payloads**: Maps are serialized into JSON files containing 
+     terrain data, object locations, and metadata.
+   - **Server Persistence**: The `map_server.js` script handles read/write 
+     operations to the `/maps/` directory, allowing your world to persist 
+     between browser refreshes.
+
+4. USER INTERFACE (UI)
+   - **Zoom-Stable UI**: Menus and HUD elements automatically adjust scale based 
+     on browser zoom levels to remain usable.
+   - **Toast Notifications**: Non-intrusive popups for game events (e.g., "Map Saved").
+   - **Settings Menu**: Fully functional audio mixers, difficulty settings, and 
+     accessibility options (text size).
+
+5. AUDIO ENGINE
+   - **Dynamic Mixing**: Master, Music, and SFX volume channels.
+   - **Context Recovery**: Automatically handles browser autoplay policies to 
+     ensure audio resumes correctly after user interaction.
+
+
+DIRECTORY STRUCTURE
+-------------------
+/assets        -> Game sprites, music, and sound effects.
+/maps          -> JSON files for saved worlds (generated by the server).
+/scripts       -> Node.js utilities (Map Server, cleanup tools).
+4-Game.js      -> Core game logic, rendering, and physics loop.
+3-Game_Index.html -> Main entry point for the game client.
+2-Menu.js      -> Core menu logic and intro UI.
+1-Menu_Index.html -> Main entry point for the menu client
+
+
+TROUBLESHOOTING
+---------------
+- "Map not saving": Ensure `node scripts/map_server.js` is running.
+- "Audio not playing": Click anywhere on the screen to initialize the AudioContext.
+- "Blurry graphics": Ensure your browser zoom is set to 100%, though the engine
+  attempts to auto-correct this.

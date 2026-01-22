@@ -9,6 +9,7 @@ const BACK_BUTTON_VERTICAL_OFFSET = 120;
 
 
 
+// === Utilities / Constants ===
 const DEFAULT_SETTINGS = Object.freeze({
   masterVol: 0.8,
   musicVol: 0.6,
@@ -17,12 +18,24 @@ const DEFAULT_SETTINGS = Object.freeze({
   difficulty: 'normal'
 });
 
+
+if (typeof window !== 'undefined') {
+  window.MENU_TEXT_SIZE_PRESETS = [
+    { label: 'Small', value: 60 },
+    { label: 'Default', value: 75 },
+    { label: 'Big', value: 90 }
+  ];
+}
+
 const DIFFICULTY_LABELS = Object.freeze({
   easy: 'Easy',
   normal: 'Normal',
   hard: 'Hard'
 });
 
+const MENU_VIDEO_PATH = "assets/1-Background/1-Menu/Menu_Vid.mp4";
+
+// === Utilities / Misc ===
 function normalizeDifficultyChoice(value) {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toLowerCase();
@@ -57,8 +70,35 @@ let bgPlayMusic = null;
 let clickSFX = null;
 let menuMusicStopped = false;
 
+// === Zoom / DOM Stability / Scaling ===
+let _lastMenuZoomLog = null;
+function installMenuZoomLogger() {
+  const logZoom = () => {
+    try {
+      const vv = window.visualViewport;
+      const scale = vv && vv.scale ? vv.scale : (window.outerWidth / window.innerWidth) || 1;
+      const dpr = window.devicePixelRatio || 1;
+      const ratio = (window.outerWidth && window.innerWidth) ? window.outerWidth / window.innerWidth : 1;
+      const version = [scale, dpr, ratio].map(v => Number(v.toFixed(3))).join(',');
+      if (!_lastMenuZoomLog || Math.abs(scale - _lastMenuZoomLog) > 0.01) {
+        console.log('[menu-zoom] scale', scale, 'dpr', dpr, 'outer/inner ratio', ratio, 'headers zoom', document.documentElement.style.zoom, document.body.style.zoom, 'visualViewport', vv ? vv.scale : 'n/a');
+        _lastMenuZoomLog = scale;
+      }
+    } catch (e) {
+      console.warn('[menu-zoom] logger failed', e);
+    }
+  };
+  if (window.visualViewport && typeof window.visualViewport.addEventListener === 'function') {
+    window.visualViewport.addEventListener('resize', logZoom);
+  }
+  window.addEventListener('resize', logZoom);
+  window.addEventListener('zoom', logZoom);
+  logZoom();
+}
 
 
+
+// === Audio & Music ===
 function stopMenuMusicImmediate() {
   try {
     if (!bgMusic) { menuMusicStopped = true; return; }
@@ -110,13 +150,244 @@ let wasInVideoFadeWindow = false;
 let resizeTimeout = null;
 let _menuResizeTimer = null;
 let _menuLastSize = { w: 0, h: 0 };
+let _menuResizeInitialScale = 1;
 
 let skipNextMenuReload = false;
 
+let menuDomParent = null;
+let settingsMenuRoot = null;
+let settingsMenuContent = null;
+let settingsMenuStabilityHandle = null;
+let settingsMenuScaleWrapper = null;
+let settingsMenuZoomHandle = null;
+const BASE_MENU_DPR = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
+let __menuZoomProbeEl = null;
+const zoomNeutralElements = new Set();
+const zoomAwareSliders = new Map();
+
+// === DOM Helpers ===
+function getMenuDomParent() {
+  return menuDomParent || document.body;
+}
+
+let _lastMenuRootOffset = { x: null, y: null };
+// === Zoom Helpers ===
+function watchZoomNeutralElement(el) {
+  if (!el) return;
+  const node = el.elt || el;
+  if (!node || !node.style) return;
+  node.style.transformOrigin = 'top left';
+  node.style.willChange = 'transform';
+  zoomNeutralElements.add(node);
+}
+
+function unwatchZoomNeutralElement(el) {
+  if (!el) return;
+  const node = el.elt || el;
+  if (!node) return;
+  zoomNeutralElements.delete(node);
+}
+
+function registerZoomAwareSlider(el, baseWidth, baseHeight) {
+  if (!el) return;
+  const node = el.elt || el;
+  if (!node) return;
+  zoomAwareSliders.set(node, { baseWidth, baseHeight });
+}
+
+function unregisterZoomAwareSlider(el) {
+  if (!el) return;
+  const node = el.elt || el;
+  if (!node) return;
+  zoomAwareSliders.delete(node);
+}
+// === Zoom / Measurement ===
+function getCurrentMenuZoom() {
+  const vv = window.visualViewport;
+  const viewportScale = vv && vv.scale;
+  if (viewportScale && isFinite(viewportScale) && viewportScale > 0) {
+    return viewportScale;
+  }
+  return estimateMenuBrowserZoom();
+}
+// === DOM Stability Routines ===
+function keepMenuRootStable(el) {
+  if (!el) return () => {};
+  let loopId = null;
+  const update = () => {
+    if (!el || !el.parentNode) return;
+    const vv = window.visualViewport;
+    const offsetX = vv ? (vv.offsetLeft || 0) : 0;
+    const offsetY = vv ? (vv.offsetTop || 0) : 0;
+    const zoom = getCurrentMenuZoom();
+    const safeZoom = (zoom && isFinite(zoom) && zoom > 0) ? zoom : 1;
+    const translateX = offsetX;
+    const translateY = offsetY;
+    el.style.transform = `translate(${-translateX}px, ${-translateY}px)`;
+    el.style.transformOrigin = 'top left';
+    if (_lastMenuRootOffset.x !== translateX || _lastMenuRootOffset.y !== translateY) {
+      console.log('[menu-debug] root translate', { offsetX, offsetY, zoom: safeZoom, translateX, translateY });
+      _lastMenuRootOffset = { x: translateX, y: translateY };
+    }
+    loopId = requestAnimationFrame(update);
+  };
+  update();
+  return () => { if (loopId) cancelAnimationFrame(loopId); };
+}
+
+function keepMenuScaleStable(el) {
+  if (!el) return () => {};
+  let loopId = null;
+  const update = () => {
+    if (!el || !el.parentNode) return;
+    const zoom = getCurrentMenuZoom();
+    const safeZoom = (zoom && isFinite(zoom) && zoom > 0) ? zoom : 1;
+    const clampedZoom = Math.max(0.1, Math.min(10, safeZoom));
+    const inv = 1 / clampedZoom;
+    el.style.transform = `scale(${inv})`;
+    el.style.transformOrigin = 'top left';
+    zoomNeutralElements.forEach(node => {
+      if (!node) return;
+      node.style.transform = `scale(${clampedZoom})`;
+    });
+    zoomAwareSliders.forEach(({ baseWidth, baseHeight }, node) => {
+      if (!node || !baseWidth) return;
+      node.style.width = `${Math.max(0, baseWidth * clampedZoom)}px`;
+      if (baseHeight) {
+        node.style.height = `${Math.max(0, baseHeight * clampedZoom)}px`;
+      }
+    });
+    loopId = requestAnimationFrame(update);
+  };
+  update();
+  return () => { if (loopId) cancelAnimationFrame(loopId); };
+}
+
+// === Zoom Measurement ===
+function measureMenuZoomViaInch() {
+  try {
+    if (typeof document === 'undefined') return null;
+    if (!__menuZoomProbeEl) {
+      __menuZoomProbeEl = document.createElement('div');
+      __menuZoomProbeEl.id = 'menu-zoom-probe';
+      __menuZoomProbeEl.style.position = 'absolute';
+      __menuZoomProbeEl.style.width = '1in';
+      __menuZoomProbeEl.style.height = '1in';
+      __menuZoomProbeEl.style.left = '-9999px';
+      __menuZoomProbeEl.style.top = '-9999px';
+      __menuZoomProbeEl.style.pointerEvents = 'none';
+      document.body.appendChild(__menuZoomProbeEl);
+    }
+    const rect = __menuZoomProbeEl.getBoundingClientRect();
+    if (!rect || !rect.width) return null;
+    return rect.width / 96;
+  } catch (e) { return null; }
+}
+
+let _menuLastLoggedZoom = null;
+function estimateMenuBrowserZoom() {
+  if (typeof window === 'undefined') return 1;
+  const candidates = [];
+  if (window.outerWidth && window.innerWidth) {
+    const layoutRatio = window.outerWidth / window.innerWidth;
+    if (isFinite(layoutRatio) && layoutRatio > 0) {
+      candidates.push(layoutRatio);
+    }
+  }
+  const vv = window.visualViewport;
+  if (vv && vv.scale) candidates.push(vv.scale);
+  const probeZoom = measureMenuZoomViaInch();
+  if (probeZoom) candidates.push(probeZoom);
+  if (window.devicePixelRatio) {
+    const dprZoom = (window.devicePixelRatio) / (BASE_MENU_DPR || 1);
+    candidates.push(dprZoom);
+  }
+  if (window.outerWidth && window.innerWidth) {
+    candidates.push(window.outerWidth / window.innerWidth);
+  }
+  const zoom = candidates.find(v => v && isFinite(v) && v > 0.05 && v < 20) || 1;
+  const clamped = Math.max(0.1, Math.min(10, zoom));
+  if (!_menuLastLoggedZoom || Math.abs(clamped - _menuLastLoggedZoom) > 0.01) {
+    console.log('[menu-zoom] estimated browser zoom =', clamped, '(candidates', candidates, ')');
+    _menuLastLoggedZoom = clamped;
+  }
+  return clamped;
+}
+
+// === Settings DOM / Root ===
+function ensureSettingsMenuRoot() {
+  if (settingsMenuRoot && settingsMenuContent) {
+    menuDomParent = settingsMenuContent;
+    return settingsMenuContent;
+  }
+  releaseSettingsMenuRoot();
+  settingsMenuRoot = createDiv('');
+  settingsMenuRoot.id('menu-settings-root');
+  settingsMenuRoot.style('position', 'fixed');
+  settingsMenuRoot.style('top', '0');
+  settingsMenuRoot.style('left', '0');
+  settingsMenuRoot.style('width', '100%');
+  settingsMenuRoot.style('height', '100%');
+  settingsMenuRoot.style('z-index', '2147483646');
+  settingsMenuRoot.style('pointer-events', 'none');
+  settingsMenuRoot.style('transform-origin', 'top left');
+  settingsMenuRoot.style('will-change', 'transform');
+  settingsMenuRoot.style('background', 'transparent');
+  settingsMenuRoot.parent(document.body);
+
+  settingsMenuScaleWrapper = createDiv('');
+  settingsMenuScaleWrapper.parent(settingsMenuRoot);
+  settingsMenuScaleWrapper.style('position', 'absolute');
+  settingsMenuScaleWrapper.style('top', '0');
+  settingsMenuScaleWrapper.style('left', '0');
+  settingsMenuScaleWrapper.style('width', '100%');
+  settingsMenuScaleWrapper.style('height', '100%');
+  settingsMenuScaleWrapper.style('pointer-events', 'none');
+  settingsMenuScaleWrapper.style('transform-origin', 'top left');
+  settingsMenuScaleWrapper.style('will-change', 'transform');
+
+  settingsMenuContent = createDiv('');
+  settingsMenuContent.parent(settingsMenuScaleWrapper);
+  settingsMenuContent.style('position', 'absolute');
+  settingsMenuContent.style('top', '0');
+  settingsMenuContent.style('left', '0');
+  settingsMenuContent.style('width', '100%');
+  settingsMenuContent.style('height', '100%');
+  settingsMenuContent.style('pointer-events', 'auto');
+  settingsMenuContent.style('display', 'block');
+
+  settingsMenuStabilityHandle = keepMenuRootStable(settingsMenuRoot.elt);
+  settingsMenuZoomHandle = keepMenuScaleStable(settingsMenuScaleWrapper.elt);
+  menuDomParent = settingsMenuContent;
+  return settingsMenuContent;
+}
+
+function releaseSettingsMenuRoot() {
+  menuDomParent = null;
+  if (settingsMenuStabilityHandle) {
+    settingsMenuStabilityHandle();
+    settingsMenuStabilityHandle = null;
+  }
+  if (settingsMenuZoomHandle) {
+    settingsMenuZoomHandle();
+    settingsMenuZoomHandle = null;
+  }
+  if (settingsMenuRoot) {
+    settingsMenuRoot.remove();
+    settingsMenuRoot = null;
+  }
+  if (settingsMenuScaleWrapper) {
+    settingsMenuScaleWrapper.remove();
+    settingsMenuScaleWrapper = null;
+  }
+  settingsMenuContent = null;
+}
+
+// === Lifecycle / Setup / Rendering ===
 function preload() {
   rectSkin = loadImage("assets/1-Background/1-Menu/Settings_Background.png");
   myFont   = loadFont("assets/3-GUI/font.ttf");
-  bgVideo  = createVideo("assets/1-Background/1-Menu/Menu_Vid.mp4");
+  bgVideo  = createVideo(MENU_VIDEO_PATH);
   bgMusic      = loadSound('assets/8-Music/menu_music.wav');
   clickSFX     = loadSound('assets/9-Sounds/Button_Press.mp3');
   bgPlayButton = loadImage('assets/1-Background/1-Menu/Background.png');
@@ -135,22 +406,8 @@ function setup() {
   loadAllSettings();
   injectCustomStyles();
 
-  bgVideo.hide();
-  try {
-    if (bgVideo.elt) {
-      bgVideo.elt.muted = true;
-      bgVideo.elt.loop = false;
-      bgVideo.elt.addEventListener('loadeddata', () => {
-        captureLoopFallbackFrame();
-      }, { once: true });
-    }
-  } catch (e) {}
-
-  bgVideo.play();
-  bgVideo.loop();
-
   videoBuffer = createGraphics(width, height);
-  bgVideo.onended(() => { videoLoopPending = true; });
+  initializeMenuBackgroundVideo(bgVideo);
 
   applyVolumes();
   startMenuMusicIfNeeded();
@@ -168,10 +425,12 @@ function setup() {
   window.addEventListener('keydown', resumeOnFirstGesture, { once: true });
   calculateLayout();
   createMainMenu();
+  installMenuZoomLogger();
 
   try { getAudioContext && getAudioContext().suspend && getAudioContext().suspend(); } catch (e) {}
 }
 
+  // === Iframe / Message handling ===
   window.removeGameOverlay = function () {
     requestStopGameMusicAndCloseOverlay();
   };
@@ -218,14 +477,24 @@ function setup() {
 }, false);
 
   
+  // === Iframe / Overlay Controls ===
   function requestStopGameMusicAndCloseOverlay() {
     const iframe = document.getElementById('game-iframe');
     const ov = document.getElementById('game-overlay');
 
     const cleanupAndResume = () => {
+      try {
+        const iframe = document.getElementById('game-iframe');
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ type: 'release-game-assets' }, '*');
+        }
+      } catch (e) {
+        console.warn('[menu] failed to request release-game-assets', e);
+      }
       try { if (ov) ov.remove(); } catch (e) { console.warn('remove overlay failed', e); }
       try { if (getAudioContext) getAudioContext().resume && getAudioContext().resume(); } catch (e) {}
       try { startMenuMusicIfNeeded(); } catch (e) { console.warn('startMenuMusicIfNeeded failed', e); }
+      try { enableMenuBackgroundVideo(); } catch (e) { console.warn('enableMenuBackgroundVideo failed', e); }
       showMainMenu();
       setTimeout(() => { try { window.focus(); } catch (e) {} }, 50);
       
@@ -275,6 +544,7 @@ let mainButtonWidth = 0;
 let mainButtonHeight = 0;
 let mainButtonGap = 0;
 
+// === Layout / Menu Creation ===
 function calculateLayout() {
   mainButtonWidth = 0.25 * width;
   mainButtonHeight = 0.12 * height;
@@ -285,14 +555,15 @@ function createMainMenu() {
   const cx = width / 2;
   const startY = height / 2 - (mainButtonHeight * 1.5 + mainButtonGap);
 
-  playButtonBackground = createBgImg("assets/3-GUI/Button BG.png", cx - mainButtonWidth / 2, startY, mainButtonWidth, mainButtonHeight);
+  playButtonBackground = createBgImg("assets/3-GUI/Button_BG.png", cx - mainButtonWidth / 2, startY, mainButtonWidth, mainButtonHeight);
 
   btnPlay = makeBtn("▶ Play", cx - mainButtonWidth / 2, startY, mainButtonWidth, mainButtonHeight, () => {
     console.log("Play pressed — opening game overlay iframe with settings");
 
     unlockAudioAndStart(() => {
+      disableMenuBackgroundVideo();
       playClickSFX();
-        hideMainMenu();
+      hideMainMenu();
         try {
           stopMenuMusicImmediate();
           console.log('[createMainMenu] requested stopMenuMusicImmediate for overlay');
@@ -325,6 +596,7 @@ function createMainMenu() {
         overlay.appendChild(iframe);
         document.body.appendChild(overlay);
         try { document.documentElement.style.overflow = 'hidden'; document.body.style.overflow='hidden'; } catch(e) {}
+        disableMenuBackgroundVideo();
 
         iframe.addEventListener('load', () => {
           try {
@@ -383,13 +655,14 @@ function createMainMenu() {
           } catch (e) {}
         }, 180);
       } else {
+        disableMenuBackgroundVideo();
         overlay.style.display = 'flex';
       }
     });
   });
 
   const settingsY = startY + mainButtonHeight + mainButtonGap;
-  settingsButtonBackground = createBgImg("assets/3-GUI/Button BG.png", cx - mainButtonWidth / 2, settingsY, mainButtonWidth, mainButtonHeight);
+  settingsButtonBackground = createBgImg("assets/3-GUI/Button_BG.png", cx - mainButtonWidth / 2, settingsY, mainButtonWidth, mainButtonHeight);
   btnSettings = makeBtn("⚙ Settings", cx - mainButtonWidth / 2, settingsY, mainButtonWidth, mainButtonHeight, () => {
     unlockAudioAndStart(() => {
       playClickSFX();
@@ -402,7 +675,7 @@ function createMainMenu() {
   });
 
   const exitY = settingsY + mainButtonHeight + mainButtonGap;
-  exitButtonBackground = createBgImg("assets/3-GUI/Button BG.png", cx - mainButtonWidth / 2, exitY, mainButtonWidth, mainButtonHeight);
+  exitButtonBackground = createBgImg("assets/3-GUI/Button_BG.png", cx - mainButtonWidth / 2, exitY, mainButtonWidth, mainButtonHeight);
   btnExit = makeBtn("✖ Exit", cx - mainButtonWidth / 2, exitY, mainButtonWidth, mainButtonHeight, () => {
     unlockAudioAndStart(() => {
       playClickSFX();
@@ -417,6 +690,7 @@ function createMainMenu() {
   applyCurrentTextSize();
 }
 
+// === Visual Helpers ===
 function fadeTo(callback) {
   let fadeOut = true;
   const step = () => {
@@ -432,28 +706,31 @@ function fadeTo(callback) {
   step();
 }
 
+// === Settings UI / Builders ===
 function showSettingsMenu() {
   clearSubSettings();
+  ensureSettingsMenuRoot();
 
   const cx = width / 2;
   const cy = height / 2;
   const panelW = 0.7 * width;
   const panelH = 0.7 * height;
 
-  const leftPanelX = cx - panelW / 2 + 150;
-  const categoryButtonWidth = 0.2 * width;
-  const categoryButtonHeight = 0.07 * height;
-  const categorySpacing = 0.09 * height;
-  const yOffset = -0.10 * height + 120;
+  const panelLeft = cx - panelW / 2;
+  const leftPanelX = panelLeft + panelW * 0.04;
+  const categoryButtonWidth = Math.min(panelW * 0.33, width * 0.35);
+  const categoryButtonHeight = panelH * 0.09;
+  const categorySpacing = categoryButtonHeight + panelH * 0.03;
+  const yOffset = -panelH * 0.08;
   const totalH = (SETTINGS_CATEGORIES.length - 1) * categorySpacing;
-  const yStart = cy - totalH / 2 - 10 + yOffset - 50;
+  const yStart = cy - totalH / 2 + yOffset;
 
   categoryBackgrounds = [];
   categoryButtons = [];
 
   SETTINGS_CATEGORIES.forEach((label, index) => {
     const yPos = yStart + index * categorySpacing;
-    const bg = createBgImg("assets/3-GUI/Button BG.png", leftPanelX, yPos, categoryButtonWidth, categoryButtonHeight);
+    const bg = createBgImg("assets/3-GUI/Button_BG.png", leftPanelX, yPos, categoryButtonWidth, categoryButtonHeight);
     categoryBackgrounds.push(bg);
     const btn = makeBtn(label, leftPanelX, yPos, categoryButtonWidth, categoryButtonHeight, () => {
       playClickSFX();
@@ -466,21 +743,34 @@ function showSettingsMenu() {
   });
 
   const secondaryButtonHeight = categoryButtonHeight * 0.75;
-  const baseBottom = cy + panelH / 2 - secondaryButtonHeight - 80;
+  const baseBottom = cy + panelH / 2 - secondaryButtonHeight - Math.round(panelH * 0.05);
   const leftThird = width / 3;
   const rightThird = (width / 3) * 2;
 
-  saveBackground = createBgImg("assets/3-GUI/Button BG.png", leftThird - categoryButtonWidth * 0.4, baseBottom, categoryButtonWidth * 0.8, secondaryButtonHeight);
-  btnSave = makeSmallBtn("💾 Save", leftThird - categoryButtonWidth * 0.4, baseBottom, categoryButtonWidth * 0.8, secondaryButtonHeight, saveSettings);
+  const bottomButtonW = Math.max(categoryButtonWidth * 0.9, panelW * 0.18);
+  const saveX = leftThird - bottomButtonW / 2;
+  const backX = rightThird - bottomButtonW / 2;
 
-  backMenuBackground = createBgImg("assets/3-GUI/Button BG.png", rightThird - categoryButtonWidth * 0.4, baseBottom, categoryButtonWidth * 0.8, secondaryButtonHeight);
-  btnBackMenu = makeSmallBtn("↩ Back to Menu", rightThird - categoryButtonWidth * 0.4, baseBottom, categoryButtonWidth * 0.8, secondaryButtonHeight, () => {
+  saveBackground = createBgImg("assets/3-GUI/Button_BG.png", saveX, baseBottom, bottomButtonW, secondaryButtonHeight);
+  btnSave = makeSmallBtn("💾 Save", saveX, baseBottom, bottomButtonW, secondaryButtonHeight, saveSettings);
+
+  backMenuBackground = createBgImg("assets/3-GUI/Button_BG.png", backX, baseBottom, bottomButtonW, secondaryButtonHeight);
+  btnBackMenu = makeSmallBtn("↩ Back to Menu", backX, baseBottom, bottomButtonW, secondaryButtonHeight, () => {
       playClickSFX();
       showingSettings = false;
       clearSubSettings();
       hideSettingsMenu();
       showMainMenu();
-    });
+  });
+
+  try {
+    if (btnBackMenu && btnBackMenu.elt) {
+      btnBackMenu.elt.style.whiteSpace = 'nowrap';
+    }
+    if (btnSave && btnSave.elt) {
+      btnSave.elt.style.whiteSpace = 'nowrap';
+    }
+  } catch (e) {}
 
   applyCurrentTextSize();
 }
@@ -503,17 +793,12 @@ function showSubSettings(label) {
   const panelH = 0.7 * height;
   const panelLeft = cx - panelW / 2;
   
-  // --- WIDTH FIX ---
-  // 1. Move the start of the controls further left (0.35 instead of 0.42)
-  const controlX = panelLeft + (panelW * 0.35);
   
-  // 2. FORCE the width to be 55% of the panel. This guarantees they are wide.
-  const controlWidth = panelW * 0.55; 
   
-  // 3. Position the text labels
   const labelX = panelLeft + (panelW * 0.05);
-  
-  const spacingY = panelH * 0.14;
+  const controlX = panelLeft + (panelW * 0.42);
+  const controlWidth = panelW * 0.52;
+  const spacingY = Math.max(panelH * 0.17, 90);
 
   const ctx = createSettingsContext({
     labelX, 
@@ -531,8 +816,8 @@ function showSubSettings(label) {
 
   const backY = cy + panelH / 2 - panelH * 0.12;
   const backWidth = panelW * 0.3;
-  const backBG = createBgImg("assets/3-GUI/Button BG.png", cx - backWidth / 2, backY - BACK_BUTTON_VERTICAL_OFFSET, backWidth, panelH * 0.08, '3');
-  const backBtn = makeSmallBtn("← Back", cx - backWidth / 2, backY - BACK_BUTTON_VERTICAL_OFFSET, backWidth, panelH * 0.08, () => {
+  const backBG = createBgImg("assets/3-GUI/Button_BG.png", cx - backWidth / 2, backY, backWidth, panelH * 0.08, '3');
+  const backBtn = makeSmallBtn("← Back", cx - backWidth / 2, backY, backWidth, panelH * 0.08, () => {
     playClickSFX();
     clearSubSettings();
     showSettingsMenu();
@@ -542,8 +827,10 @@ function showSubSettings(label) {
   applyCurrentTextSize();
 }
 
+// === UI Element Factories ===
 function makeBtn(label, x, y, w, h, cb) {
   const b = createButton(label);
+  b.parent(getMenuDomParent());
   b.size(w, h).position(x, y);
   styleButton(b);
   b.mousePressed(cb);
@@ -552,6 +839,7 @@ function makeBtn(label, x, y, w, h, cb) {
 
 function createBgImg(path, x, y, w, h, zIndex = '9998') {
   const img = createImg(path, '');
+  img.parent(getMenuDomParent());
   img.size(w, h).position(x, y);
   img.style('pointer-events', 'none');
   img.style('z-index', zIndex);
@@ -561,14 +849,16 @@ function createBgImg(path, x, y, w, h, zIndex = '9998') {
 
 function makeSmallBtn(label, x, y, w, h, cb) {
   const b = createButton(label);
+  b.parent(getMenuDomParent());
   b.size(w, h).position(x, y);
   styleSmallButton(b);
   b.mousePressed(cb);
   return b;
 }
 
-function createSettingLabel(txt, x, y, maxWidth = 200) {
+function createSettingLabel(txt, x, y, maxWidth = 200, parentEl = null) {
   const d = createDiv(txt);
+  d.parent(parentEl || getMenuDomParent());
   d.position(x, y);
   d.style("color", "white");
   d.style("font-size", (0.035 * height) + "px");
@@ -581,9 +871,11 @@ function createSettingLabel(txt, x, y, maxWidth = 200) {
   return d;
 }
 
-// --- PASTE THIS BEFORE 'const CATEGORY_BUILDERS' ---
 
+
+// === Settings Context / Row Builders ===
 function createSettingsContext(layout) {
+  const domParent = settingsMenuContent || getMenuDomParent();
   return {
     layout: layout,
     y: layout.startY,
@@ -591,13 +883,18 @@ function createSettingsContext(layout) {
     pushElement(el) { activeSettingElements.push(el); },
 
     addSliderRow(labelText, min, max, currentVal, onChange, opts) {
-      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y));
+      const labelWidth = Math.max(120, Math.min(260, this.layout.controlX - this.layout.labelX - 12));
+      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y, labelWidth, domParent));
 
       const slider = createSlider(min, max, currentVal);
+      slider.parent(domParent);
 
-      slider.position(this.layout.controlX, this.y + 20); 
-      slider.style('width', this.layout.controlWidth + 'px');
+      slider.position(this.layout.controlX, this.y);
+      const sliderWidth = Math.max(200, Math.round(this.layout.controlWidth * 0.82));
+      slider.style('width', sliderWidth + 'px');
+      slider.style('height', '26px');
       slider.style('z-index', '20000');
+      registerZoomAwareSlider(slider, sliderWidth, 26);
       
       if (opts && opts.isAudio) {
         slider.attribute('data-setting', labelText === "Master Volume" ? "masterVol" : 
@@ -611,12 +908,16 @@ function createSettingsContext(layout) {
     },
 
     addCheckboxRow(labelText, isChecked, onChange) {
-      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y));
+      const labelWidth = Math.max(120, Math.min(260, this.layout.controlX - this.layout.labelX - 12));
+      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y, labelWidth, domParent));
 
       const chk = createCheckbox('', isChecked);
+      chk.parent(domParent);
 
-      chk.position(this.layout.controlX, this.y + 10); 
+      const checkboxOffset = Math.round(this.layout.spacingY * 0.05);
+      chk.position(this.layout.controlX, this.y - checkboxOffset);
       chk.style('z-index', '20000');
+      watchZoomNeutralElement(chk);
  
       if(chk.elt) chk.elt.classList.add('setting-checkbox');
 
@@ -628,18 +929,23 @@ function createSettingsContext(layout) {
     },
 
     addSelectRow(labelText, options, config) {
-      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y));
+      const labelWidth = Math.max(120, Math.min(260, this.layout.controlX - this.layout.labelX - 12));
+      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y, labelWidth, domParent));
 
       const sel = createSelect();
-      sel.position(this.layout.controlX, this.y - 5);
-      sel.size(this.layout.controlWidth, 100); 
+      sel.parent(domParent);
+      const selectWidth = Math.min(this.layout.controlWidth * 0.72, 360);
+      const selectHeight = Math.max(42, Math.round(this.layout.spacingY * 0.6));
+      sel.position(this.layout.controlX, this.y);
+      sel.size(selectWidth, selectHeight);
       sel.style('font-size', '24px');
       sel.style('z-index', '20000');
       sel.style('background', '#222');
       sel.style('color', 'white');
       sel.style('border', '2px solid #555');
       sel.style('border-radius', '5px');
-      sel.style('padding-left', '10px');
+      sel.style('padding', '10px 12px');
+      watchZoomNeutralElement(sel);
 
       options.forEach(opt => sel.option(opt));
 
@@ -663,6 +969,7 @@ function createSettingsContext(layout) {
 
 
 
+// === Settings Builders Mapping ===
 const CATEGORY_BUILDERS = {
   Audio: buildAudioSettings,
   Gameplay: buildGameplaySettings,
@@ -708,16 +1015,18 @@ function buildControlsSettings(ctx) {
 }
 
 function buildAccessibilitySettings(ctx) {
-  // 1. Color Mode
+  
   ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
   
-  // 2. Custom Buttons
+  
   const { labelX, controlX, controlWidth, panelH, spacingY } = ctx.layout;
   
   const lbl = createDiv("Text Size");
+  lbl.parent(getMenuDomParent());
   lbl.class('setting-label');
-  lbl.position(labelX - 50, ctx.y + 30);
-  lbl.style('width', '350px');
+  const labelWidth = Math.max(120, controlX - labelX - 20);
+  lbl.position(labelX, ctx.y + TEXTSIZE_BUTTON_Y_OFFSET);
+  lbl.style('width', labelWidth + 'px');
   lbl.style('text-align', 'right');
   lbl.style('color', 'white');
   lbl.style('font-size', (0.035 * height) + 'px');
@@ -731,27 +1040,24 @@ function buildAccessibilitySettings(ctx) {
     { label: "Big", val: 100 }
   ];
   
-  const gap = 15;
+  const gap = Math.max(10, Math.round(panelH * 0.02));
   const btnW = (controlWidth - (gap * (sizes.length - 1))) / sizes.length;
-  
-  // --- MASSIVE BUTTON HEIGHT ---
-  const btnH = 100; 
-  
+  const btnH = Math.max(48, Math.round(panelH * 0.12));
   let currX = controlX;
-  
   sizes.forEach(item => {
       const btn = createButton(item.label);
-      btn.position(currX, ctx.y);
+      btn.parent(getMenuDomParent());
+      btn.position(currX, ctx.y + TEXTSIZE_BUTTON_Y_OFFSET);
       btn.size(btnW, btnH);
-      
+
       styleButton(btn);
       btn.style('background', '#333'); 
       btn.style('border', '4px solid #555'); 
-      btn.style('border-radius', '15px');    
-      btn.style('font-size', '36px');        // Huge Text
-      btn.style('font-weight', 'bold');      
+      btn.style('border-radius', '15px');
+      btn.style('font-size', Math.max(16, Math.round(btnH * 0.35)) + 'px');
+      btn.style('font-weight', 'bold');
       btn.style('z-index', '20005');
-      
+
       btn.attribute('data-text-size-val', item.val);
 
       btn.mousePressed(() => { 
@@ -760,19 +1066,20 @@ function buildAccessibilitySettings(ctx) {
         applyCurrentTextSize();
         saveAllSettings();
       });
-      
+
       ctx.pushElement(btn);
       currX += btnW + gap;
   });
-  
+
   setTimeout(updateTextSizeButtonStyles, 50);
-  ctx.y += spacingY + 50; 
+  ctx.y += spacingY + btnH * 0.6; 
 }
 
 function buildLanguageSettings(ctx) {
   ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
 }
 
+// === Settings Helpers ===
 function updateTextSizeButtonStyles() {
   const buttons = selectAll('button[data-text-size-val]');
   buttons.forEach(btn => {
@@ -803,11 +1110,19 @@ function syncSlidersToSettings() {
   });
 }
 
+// === Settings Cleanup ===
 function clearSubSettings() {
-  activeSettingElements.forEach(e => e && e.remove());
+  activeSettingElements.forEach(e => {
+    unwatchZoomNeutralElement(e);
+    if (e && e.elt && e.elt.tagName === 'INPUT' && e.elt.type === 'range') {
+      unregisterZoomAwareSlider(e);
+    }
+    e && e.remove();
+  });
   activeSettingElements = [];
 }
 
+// === Menu Visibility ===
 function hideMainMenu() {
   [playButtonBackground, btnPlay, settingsButtonBackground, btnSettings, exitButtonBackground, btnExit]
     .forEach(e => e && e.hide());
@@ -822,13 +1137,17 @@ function showMainMenu() {
     .forEach(e => e && e.show());
 }
 
+// === Settings Teardown ===
 function hideSettingsMenu() {
+  clearSubSettings();
   [...categoryBackgrounds, ...categoryButtons, saveBackground, btnSave, backMenuBackground, btnBackMenu]
     .forEach(e => e && e.remove());
   categoryBackgrounds = [];
   categoryButtons = [];
+  releaseSettingsMenuRoot();
 }
 
+// === Audio Controls ===
 function applyVolumes() {
   if (bgMusic?.isPlaying()) bgMusic.setVolume(musicVol * masterVol);
 }
@@ -840,6 +1159,7 @@ function playClickSFX() {
   }
 }
 
+// === Audio Unlock / Start ===
 function unlockAudioAndStart(cb) {
   if (audioUnlocked) {
     cb && cb();
@@ -882,6 +1202,7 @@ function unlockAudioAndStart(cb) {
   } catch (e) { audioUnlocked = true; cb && cb(); }
 }
 
+// === Music Control ===
 function startMenuMusicIfNeeded() {
   if (!bgMusic) {
     console.warn('[startMenuMusicIfNeeded] bgMusic not loaded yet');
@@ -907,6 +1228,7 @@ function startMenuMusicIfNeeded() {
   }
 }
 
+// === Styling / Helpers ===
 function styleButton(btn) {
   btn.style("background", "transparent");
   btn.style("border", "none");
@@ -933,6 +1255,7 @@ function styleSmallButton(btn) {
   }
 }
 
+// === Video / Background ===
 function ensureLoopFallbackBuffer() {
   if (!loopFallbackBuffer || loopFallbackBuffer.width !== width || loopFallbackBuffer.height !== height) {
     loopFallbackBuffer = createGraphics(width, height);
@@ -945,6 +1268,69 @@ function captureLoopFallbackFrame() {
   loopFallbackBuffer.clear();
   loopFallbackBuffer.image(bgVideo, 0, 0, width, height);
   fallbackFrameReady = true;
+}
+ 
+function disposeMenuBackgroundVideo() {
+  if (!bgVideo) return;
+  try {
+    if (typeof bgVideo.pause === 'function') bgVideo.pause();
+    bgVideo.remove();
+  } catch (e) {}
+  bgVideo = null;
+  fallbackFrameReady = false;
+  videoLoopPending = false;
+  wasInVideoFadeWindow = false;
+  videoOpacity = 0;
+  fallbackOpacity = 0;
+  if (videoBuffer) {
+    try { videoBuffer.remove(); } catch (e) {}
+  }
+  videoBuffer = null;
+  if (loopFallbackBuffer) {
+    try { loopFallbackBuffer.remove(); } catch (e) {}
+  }
+  loopFallbackBuffer = null;
+}
+
+function initializeMenuBackgroundVideo(videoElement) {
+  if (!videoElement) return;
+  bgVideo = videoElement;
+  try {
+    bgVideo.hide();
+    if (bgVideo.elt) {
+      bgVideo.elt.muted = true;
+      bgVideo.elt.loop = false;
+      bgVideo.elt.addEventListener('loadeddata', () => {
+        captureLoopFallbackFrame();
+      }, { once: true });
+    }
+  } catch (e) {}
+  videoOpacity = 255;
+  fallbackOpacity = 0;
+  fallbackFrameReady = false;
+  wasInVideoFadeWindow = false;
+  videoLoopPending = false;
+  bgVideo.onended(() => { videoLoopPending = true; });
+  try { bgVideo.loop(); bgVideo.play(); } catch (e) {}
+}
+
+function disableMenuBackgroundVideo() {
+  if (inGame) return;
+  inGame = true;
+  disposeMenuBackgroundVideo();
+}
+
+function enableMenuBackgroundVideo() {
+  if (document.getElementById('game-overlay')) {
+    return;
+  }
+  inGame = false;
+  if (bgVideo) {
+    try { bgVideo.loop(); bgVideo.play(); } catch (e) {}
+    return;
+  }
+  videoBuffer = videoBuffer || createGraphics(width, height);
+  initializeMenuBackgroundVideo(createVideo(MENU_VIDEO_PATH));
 }
 
 function updateBackgroundVideo() {
@@ -981,6 +1367,7 @@ function updateBackgroundVideo() {
   }
 }
 
+// === Persistence / Settings Storage ===
 function saveSettings() {
   playClickSFX();
   saveAllSettings();
@@ -1046,10 +1433,12 @@ function clearSavedSettings() {
   console.log("🗑️ Cleared saved settings.");
 }
 
+// === Draw / Render Loop ===
 function draw() {
   if (inGame) return;
 
   updateBackgroundVideo();
+  
   videoBuffer.clear();
   videoBuffer.image(bgVideo, 0, 0, width, height);
   imageMode(CORNER);
@@ -1089,9 +1478,12 @@ function draw() {
   }
 }
 
+// === Window / Resize Handling ===
 function windowResized() {
   try { clearTimeout(_menuResizeTimer); } catch (e) {}
   _menuLastSize = { w: window.innerWidth, h: window.innerHeight };
+  const vv = window.visualViewport;
+  _menuResizeInitialScale = vv ? (vv.scale || 1) : 1;
   _menuResizeTimer = setTimeout(() => {
     try {
       
@@ -1112,19 +1504,26 @@ function windowResized() {
     }
 
     
-    if (_menuLastSize.w === window.innerWidth && _menuLastSize.h === window.innerHeight) {
+    const vvNow = window.visualViewport;
+    const currentScale = vvNow ? (vvNow.scale || 1) : 1;
+    const matchesSize = (_menuLastSize.w === window.innerWidth && _menuLastSize.h === window.innerHeight);
+    if (matchesSize) {
+      if (Math.abs(currentScale - _menuResizeInitialScale) > 0.01) {
+        console.log('[menu] resize ignored because only zoom/viewport scale changed', { oldScale: _menuResizeInitialScale, newScale: currentScale });
+        return;
+      }
       try {
         location.reload();
       } catch (e) {
         console.warn('[menu] failed to reload after resize', e);
       }
     } else {
-     
       windowResized();
     }
   }, 200);
 }
 
+// === Text / Accessibility ===
 function adjustTextSize(sizeValue) {
   if (typeof sizeValue !== 'number' || !isFinite(sizeValue)) {
     sizeValue = DEFAULT_SETTINGS.textSize;
@@ -1161,6 +1560,7 @@ function saveAccessibilitySettings() {
   applyCurrentTextSize();
 }
 
+// === Custom Styles Injection ===
 function injectCustomStyles() {
   const existingStyle = document.getElementById('custom-menu-styles');
   if (existingStyle) existingStyle.remove();
@@ -1174,10 +1574,7 @@ function injectCustomStyles() {
       font-family: "MyFont", sans-serif !important;
       box-sizing: border-box;
     }
-
-    /* ============================
-       1. MASSIVE SLIDER HANDLE
-       ============================ */
+      
     input[type="range"] {
       -webkit-appearance: none; 
       width: 100%;
@@ -1188,7 +1585,7 @@ function injectCustomStyles() {
     /* The Track */
     input[type="range"]::-webkit-slider-runnable-track {
       width: 100%;
-      height: 30px !important;    /* Thicker Track */
+      height: 26px !important;
       cursor: pointer;
       background: #222;
       border: 3px solid #555;
@@ -1198,8 +1595,8 @@ function injectCustomStyles() {
     /* The Handle (Thumb) - THE BUTTON YOU DRAG */
     input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none;
-      height: 55px !important;    /* GIANT HEIGHT */
-      width: 55px !important;     /* GIANT WIDTH */
+      height: 38px !important;
+      width: 38px !important;
       background: #ffcc00;        
       border: 4px solid white;
       border-radius: 10px;        /* Slightly rounded square */
@@ -1210,20 +1607,20 @@ function injectCustomStyles() {
       position: relative;
     }
 
-    /* ============================
-       2. CHECKBOX
-       ============================ */
     input[type="checkbox"] {
       appearance: none;
       -webkit-appearance: none;
-      width: 60px !important;   /* Made even bigger (60px) */
-      height: 60px !important;
+      width: 38px !important;
+      height: 38px !important;
       background-color: #333;
-      border: 4px solid #888;
-      border-radius: 10px;
+      border: 3px solid #888;
+      border-radius: 8px;
       cursor: pointer;
-      display: inline-block;
+      position: relative;
       vertical-align: middle;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
 
     input[type="checkbox"]:checked {
@@ -1233,7 +1630,7 @@ function injectCustomStyles() {
 
     input[type="checkbox"]:checked::after {
       content: '✔';
-      font-size: 45px;
+      font-size: 28px;
       color: black;
       font-weight: bold;
       position: absolute;
@@ -1243,12 +1640,17 @@ function injectCustomStyles() {
       line-height: 1;
     }
 
+    .setting-checkbox {
+      margin-left: 12px;
+    }
+
     /* Button Hover */
     button:hover {
       transform: scale(1.05);
       color: #ffea80 !important;
     }
   `);
+
   style.id = 'custom-menu-styles';
   style.parent(document.head);
 }
