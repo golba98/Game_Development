@@ -647,13 +647,31 @@ function createFullWindowCanvas() {
   pixelDensity(1);
 }
 
+function startPlayerAttack() {
+  if (isAttacking) return;
+  isAttacking = true;
+  playerAttackTimer = 0;
+  playerAttackFrame = 0;
+}
+
 function mousePressed() {
   if (isGameOver) return;
+  
+  // Ignore clicks if interacting with DOM UI
   try {
-    
+    if (typeof event !== 'undefined' && event.target) {
+        const el = event.target;
+        if (el.tagName === 'BUTTON' || el.closest('button') || el.closest('.gd-settings-overlay')) return;
+    }
+  } catch(e) {}
+
+  try {
     const mx = mouseX / gameScale;
     const my = mouseY / gameScale;
 
+    if (mouseButton === LEFT) {
+        startPlayerAttack();
+    }
     
   } catch (e) {}
 }
@@ -2944,6 +2962,62 @@ function _drawPlayerInternal() {
   }
   const clipFactor = inWater ? 0.75 : 1.0; // Show only top 75% if in water
 
+  // --- ATTACK ANIMATION ---
+  if (isAttacking) {
+    playerAttackTimer += gameDelta;
+    if (playerAttackTimer > 80) { // Speed of attack animation
+      playerAttackTimer = 0;
+      playerAttackFrame++;
+    }
+    
+    // Check if animation done
+    const maxAttackFrames = 5; 
+    if (playerAttackFrame >= maxAttackFrames) {
+      isAttacking = false;
+      playerAttackFrame = 0;
+    } else {
+        // Draw Attack
+        let dir = lastDirection || 'S';
+        let sheet = attackSheets[dir];
+        let flip = false;
+        
+        // Fallback for East if null (Flip West)
+        if (!sheet && dir === 'E') {
+            sheet = attackSheets['W'];
+            flip = true;
+        }
+
+        if (sheet) {
+            const cols = maxAttackFrames; 
+            const fw = sheet.width / cols;
+            const fh = sheet.height;
+            const sx = playerAttackFrame * fw;
+            const sy = 0;
+            
+            const desiredHeight = cellSize * 1.5; 
+            const scale = desiredHeight / fh;
+            const drawW = fw * scale;
+            const drawH = (fh * scale); 
+            
+            const finalDrawH = drawH * clipFactor;
+            const drawX = destX + (cellSize / 2) - (drawW / 2);
+            const drawY = destY + cellSize - (fh * scale);
+
+            push(); noSmooth();
+            if (flip) {
+                // Flip horizontally: translate to center, scale, translate back
+                translate(drawX + drawW/2, drawY + finalDrawH/2);
+                scale(-1, 1);
+                image(sheet, -drawW/2, -finalDrawH/2, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+            } else {
+                image(sheet, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+            }
+            pop();
+            return; // Skip other animations
+        }
+    }
+  }
+
   if (isJumping) {
     const jumpProgress = (jumpTimer % JUMP_DURATION) / JUMP_DURATION;
     const jumpHeight = Math.sin(jumpProgress * Math.PI) * cellSize * 1.5; 
@@ -4925,6 +4999,18 @@ const JUMP_SHEET_PATHS = {
     NW: 'assets/2-Characters/4-Jumping/jump_sheet_northwest.png'
 };
 let jumpSheets = { N:null, NE:null, E:null, SE:null, S:null, SW:null, W:null, NW:null };
+const ATTACK_SHEET_PATHS = {
+    N:  'assets/2-Characters/6-Attack/attack_north.png',
+    NE: 'assets/2-Characters/6-Attack/attack_north_east.png',
+    E:  null, 
+    SE: 'assets/2-Characters/6-Attack/attack_south_east.png',
+    S:  'assets/2-Characters/6-Attack/attack_south.png',
+    SW: 'assets/2-Characters/6-Attack/attack_south_west.png',
+    W:  'assets/2-Characters/6-Attack/attack_west.png',
+    NW: 'assets/2-Characters/6-Attack/attack_north_west.png'
+};
+let attackSheets = { N:null, NE:null, E:null, SE:null, S:null, SW:null, W:null, NW:null };
+
 function scheduleDeferredCharacterAssets() {
   if (scheduleDeferredCharacterAssets._queued) return;
   scheduleDeferredCharacterAssets._queued = true;
@@ -4968,6 +5054,7 @@ function scheduleDeferredCharacterAssets() {
     loadDirectionalSheets(WALK_SHEET_PATHS, walkSheets, 'walk_sheet');
     loadDirectionalSheets(RUN_SHEET_PATHS, runSheets, 'run_sheet');
     loadDirectionalSheets(JUMP_SHEET_PATHS, jumpSheets, 'jump_sheet');
+    loadDirectionalSheets(ATTACK_SHEET_PATHS, attackSheets, 'attack_sheet');
     loadCloudTextures();
     try { logAssetTrackerStatus('after deferred character assets'); } catch (e) {}
   };
@@ -4983,6 +5070,9 @@ function scheduleDeferredCharacterAssets() {
 let isJumping = false;
 let jumpTimer = 0;
 let jumpFrame = 0;
+let isAttacking = false;
+let playerAttackTimer = 0;
+let playerAttackFrame = 0;
 
 const JUMP_FRAME_COUNT = 5;
 const JUMP_ANIM_SPEED = 100; 
