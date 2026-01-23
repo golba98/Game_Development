@@ -75,6 +75,8 @@ const LOADING_PROGRESS_RATE = 35;
 let inGameMenuVisible = false;
 let isTerminalOpen = false;
 let terminalEl = null;
+let terminalHistory = [];
+let terminalHistoryIndex = -1;
 let inGameMenuButtonRects = [];
 let inGameMenuHovered = null;
 let inGameMenuHoverScales = {};
@@ -776,15 +778,20 @@ function togglePauseMenuFromEscape() {
 }
 
 function toggleTerminal() {
+    if (!terminalEl) createTerminalUI();
+    
     if (isTerminalOpen) {
-        if (terminalEl) terminalEl.style.display = 'none';
+        terminalEl.classList.remove('open');
+        setTimeout(() => { if (!isTerminalOpen) terminalEl.style.display = 'none'; }, 300);
         isTerminalOpen = false;
     } else {
-        if (!terminalEl) createTerminalUI();
         terminalEl.style.display = 'flex';
+        // Trigger reflow for animation
+        terminalEl.offsetHeight;
+        terminalEl.classList.add('open');
         isTerminalOpen = true;
         const input = document.getElementById('terminal-input');
-        if (input) setTimeout(() => input.focus(), 10);
+        if (input) setTimeout(() => input.focus(), 50);
     }
 }
 
@@ -793,11 +800,13 @@ function createTerminalUI() {
     terminalEl.id = 'game-terminal';
     terminalEl.innerHTML = `
         <div id="terminal-history">
-            <div class="terminal-log">Game Console Initialized. Welcome, Admin.</div>
-            <div class="terminal-log">Type /help for commands.</div>
+            <div class="terminal-log">CORE OS [Version 1.0.42]</div>
+            <div class="terminal-log">Initializing secure connection... OK.</div>
+            <div class="terminal-log">Welcome back, Administrator.</div>
+            <div class="terminal-log terminal-hint">Tip: Use Up/Down arrows to cycle history. Press ESC to close.</div>
         </div>
         <div id="terminal-input-row">
-            <span id="terminal-prompt">admin@game:~$</span>
+            <span id="terminal-prompt">SYS_ADMIN@GAME:~$</span>
             <input type="text" id="terminal-input" spellcheck="false" autocomplete="off">
         </div>
     `;
@@ -809,8 +818,30 @@ function createTerminalUI() {
             const cmd = input.value.trim();
             if (cmd) {
                 processTerminalCommand(cmd);
+                terminalHistory.push(cmd);
+                terminalHistoryIndex = -1;
                 input.value = '';
             }
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (terminalHistory.length > 0) {
+                if (terminalHistoryIndex === -1) terminalHistoryIndex = terminalHistory.length - 1;
+                else terminalHistoryIndex = Math.max(0, terminalHistoryIndex - 1);
+                input.value = terminalHistory[terminalHistoryIndex];
+            }
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (terminalHistoryIndex !== -1) {
+                terminalHistoryIndex++;
+                if (terminalHistoryIndex >= terminalHistory.length) {
+                    terminalHistoryIndex = -1;
+                    input.value = '';
+                } else {
+                    input.value = terminalHistory[terminalHistoryIndex];
+                }
+            }
+        } else if (e.key === 'Escape') {
+            toggleTerminal();
         } else if (e.key === "'" && e.ctrlKey) {
             e.preventDefault();
             toggleTerminal();
@@ -823,12 +854,12 @@ function processTerminalCommand(cmd) {
     const log = (msg, type = '') => {
         const div = document.createElement('div');
         div.className = 'terminal-log ' + type;
-        div.innerText = msg;
+        div.innerHTML = msg; // Use innerHTML for richer formatting if needed
         history.appendChild(div);
         history.scrollTop = history.scrollHeight;
     };
 
-    log(`> ${cmd}`);
+    log(`<span style="opacity:0.5">> ${cmd}</span>`);
 
     const parts = cmd.split(' ');
     const base = parts[0].toLowerCase();
@@ -837,19 +868,22 @@ function processTerminalCommand(cmd) {
         if (enemies && enemies.length > 0) {
             const count = enemies.length;
             enemies = [];
-            log(`Success: ${count} entities purged.`, 'terminal-success');
+            log(`SUCCESS: ${count} neural signatures purged from local grid.`, 'terminal-success');
             if (typeof triggerVictory === 'function') triggerVictory();
         } else {
-            log('Notice: No entities detected.', 'terminal-log');
+            log('NOTICE: Scan complete. No enemy signatures detected.', 'terminal-log');
         }
     } else if (base === '/help') {
-        log('Available commands:');
-        log('  /kill all - Purge all entities from the map.');
-        log('  /clear    - Clear terminal history.');
+        log('SYSTEM COMMANDS:');
+        log('  <span style="color:#fff">/kill all</span> - Wipe all enemies and force victory.');
+        log('  <span style="color:#fff">/clear</span>    - Wipe terminal log history.');
+        log('  <span style="color:#fff">/exit</span>     - Disconnect from console.');
     } else if (base === '/clear') {
-        history.innerHTML = '';
+        history.innerHTML = '<div class="terminal-log">History cleared.</div>';
+    } else if (base === '/exit') {
+        toggleTerminal();
     } else {
-        log(`Unknown command: ${base}`, 'terminal-error');
+        log(`ERROR: Unknown command sequence "${base}".`, 'terminal-error');
     }
 }
 
@@ -1005,23 +1039,42 @@ function generateMap_Part2() {
   playerPosition = { x: spawn.spawnX, y: spawn.spawnY };
   initialSpawnPosition = { x: spawn.spawnX, y: spawn.spawnY };
   
-  // Spawn Portal
+  // Spawn Portal roughly in the middle
   portalPos = null;
   isPortalActive = false;
   victoryShown = false;
-  let attempts = 0;
-  while (!portalPos && attempts < 500) { // Increased attempts
-      const px = Math.floor(random(logicalW));
-      const py = Math.floor(random(logicalH));
-      const d = dist(px, py, spawn.spawnX, spawn.spawnY);
-      // Ensure it's on grass and at least 15 tiles away
-      if (mapStates[py * logicalW + px] === TILE_TYPES.GRASS && d > 15) {
-          portalPos = { x: px, y: py };
-          verboseLog('[game] Portal placed at:', px, py);
+  
+  const midX = Math.floor(logicalW / 2);
+  const midY = Math.floor(logicalH / 2);
+  
+  // Search in expanding squares from the middle to find the nearest grass tile
+  let foundMid = false;
+  for (let r = 0; r < Math.max(logicalW, logicalH); r++) {
+      for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+              if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // Only check the perimeter of the current square
+              
+              const px = midX + dx;
+              const py = midY + dy;
+              
+              if (px >= 0 && px < logicalW && py >= 0 && py < logicalH) {
+                  if (mapStates[py * logicalW + px] === TILE_TYPES.GRASS) {
+                      portalPos = { x: px, y: py };
+                      foundMid = true;
+                      break;
+                  }
+              }
+          }
+          if (foundMid) break;
       }
-      attempts++;
+      if (foundMid) break;
   }
-  if (!portalPos) console.warn('[game] Could not find a valid spot for Portal!');
+
+  if (portalPos) {
+      console.log(`%c[PORTAL] Spawned in Middle at: ${portalPos.x}, ${portalPos.y}`, "color: #00ff00; font-weight: bold;");
+  } else {
+      console.error("[PORTAL] Failed to spawn portal! No grass found.");
+  }
 
   renderX = playerPosition.x; renderY = playerPosition.y;
   renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY;
@@ -1632,6 +1685,15 @@ function applyLoadedMap(obj) {
     treeObjects = Array.isArray(obj.treeObjects) ? obj.treeObjects.slice() : [];
     
     if (obj.portalPos) portalPos = obj.portalPos;
+    else {
+        // Generate portal if missing from old save
+        for (let i = 0; i < mapStates.length; i++) {
+            if (mapStates[i] === TILE_TYPES.GRASS) {
+                portalPos = { x: i % logicalW, y: Math.floor(i / logicalW) };
+                break;
+            }
+        }
+    }
     if (typeof obj.isPortalActive === 'boolean') isPortalActive = obj.isPortalActive;
 
     enemies = [];
@@ -1737,6 +1799,15 @@ function loadMapFromStorage() {
     treeObjects = Array.isArray(obj.treeObjects) ? obj.treeObjects.slice() : [];
     
     if (obj.portalPos) portalPos = obj.portalPos;
+    else {
+        // Generate portal if missing from old save
+        for (let i = 0; i < mapStates.length; i++) {
+            if (mapStates[i] === TILE_TYPES.GRASS) {
+                portalPos = { x: i % logicalW, y: Math.floor(i / logicalW) };
+                break;
+            }
+        }
+    }
     if (typeof obj.isPortalActive === 'boolean') isPortalActive = obj.isPortalActive;
 
     enemies = [];
@@ -4189,6 +4260,15 @@ function triggerVictory() {
   if (victoryShown) return;
   victoryShown = true;
   isPortalActive = true;
+
+  // Immediately kill any player movement inputs
+  isMoving = false;
+  queuedMove = null;
+  prevKeyA = prevKeyD = prevKeyW = prevKeyS = false;
+  if (holdState) {
+      holdState.A.start = holdState.D.start = holdState.W.start = holdState.S.start = 0;
+  }
+
   showVictoryScreen();
 }
 
@@ -5596,56 +5676,78 @@ function injectCustomStyles() {
       /* Game Terminal */
       #game-terminal {
         position: fixed;
-        top: 0;
+        top: -35%; /* Start hidden for animation */
         left: 0;
         width: 100%;
-        height: 30%;
-        background: rgba(10, 15, 10, 0.95);
-        border-bottom: 3px solid #00ff00;
+        height: 35%;
+        background: rgba(5, 15, 5, 0.85);
+        backdrop-filter: blur(8px);
+        border-bottom: 2px solid #00ff41;
         z-index: 200000;
         display: none;
         flex-direction: column;
-        padding: 10px;
-        color: #00ff00;
+        padding: 15px;
+        color: #00ff41;
         font-family: 'Courier New', Courier, monospace;
         font-size: 16px;
-        box-shadow: 0 5px 25px rgba(0, 255, 0, 0.2);
+        box-shadow: 0 10px 30px rgba(0, 255, 65, 0.2);
         overflow: hidden;
+        transition: top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+      }
+      #game-terminal.open {
+        top: 0;
+        display: flex;
+      }
+      #game-terminal::after {
+        content: " ";
+        position: absolute;
+        top: 0; left: 0; bottom: 0; right: 0;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+        z-index: 200001;
+        background-size: 100% 3px, 3px 100%;
+        pointer-events: none;
       }
       #terminal-history {
         flex: 1;
         overflow-y: auto;
         margin-bottom: 10px;
-        padding-right: 10px;
+        padding-right: 15px;
+        scrollbar-width: thin;
+        scrollbar-color: #00ff41 transparent;
       }
+      #terminal-history::-webkit-scrollbar { width: 6px; }
+      #terminal-history::-webkit-scrollbar-thumb { background: #00ff41; border-radius: 3px; }
       #terminal-input-row {
         display: flex;
         align-items: center;
+        border-top: 1px solid rgba(0, 255, 65, 0.2);
+        padding-top: 10px;
       }
       #terminal-prompt {
-        margin-right: 10px;
+        margin-right: 12px;
         white-space: nowrap;
-        color: #00ff00;
+        color: #00ff41;
         font-weight: bold;
+        opacity: 0.8;
       }
       #terminal-input {
         flex: 1;
         background: transparent;
         border: none;
         outline: none;
-        color: #00ff00;
+        color: #00ff41;
         font-family: inherit;
-        font-size: 16px;
+        font-size: 18px;
+        text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
       }
       .terminal-log {
-        margin: 2px 0;
+        margin: 4px 0;
+        line-height: 1.4;
       }
-      .terminal-error {
-        color: #ff0000;
-      }
-      .terminal-success {
-        color: #00ff00;
-      }
+      .terminal-error { color: #ff3333; text-shadow: 0 0 5px rgba(255, 51, 51, 0.5); }
+      .terminal-success { color: #33ff33; text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); }
+      .terminal-hint { color: #888; font-style: italic; font-size: 12px; }
     `));
     document.head.appendChild(style);
   } catch (e) { console.warn('[game] injectCustomStyles failed', e); }
@@ -6504,8 +6606,9 @@ function draw() {
       } else if (d.type === 'portal') {
         const sheet = isPortalActive ? portalActiveSheet : portalInactiveSheet;
         if (sheet && sheet.width > 0) {
-            const frame = Math.floor(millis() / 150) % 4;
-            const fw = sheet.width / 4;
+            const frameCount = 6; // Updated to 6 frames
+            const frame = Math.floor(millis() / 150) % frameCount;
+            const fw = sheet.width / frameCount;
             const fh = sheet.height;
             const drawSize = cellSize * 2.0; 
             image(sheet, d.x * cellSize + (cellSize - drawSize) / 2, d.y * cellSize + (cellSize - drawSize), drawSize, drawSize, frame * fw, 0, fw, fh);
