@@ -8,6 +8,10 @@ let mantisAttackSprite = null;
 let maggotWalkSprite = null;
 let maggotSpitSprite = null;
 let acidBlobSprite = null;
+let acidSplatSprite = null;
+let eggsplosionSprite = null;
+let powerupSprite = null;
+let vfx = [];
 let playerHealth = 7;
 let maxHealth = 7;
 let heartImage = null;
@@ -18,6 +22,9 @@ let gameOverOverlay = null;
 let gameOverTimer = 0;
 let minimapImage = null;
 let gameDelta = 0;
+let screenShakeTimer = 0;
+let screenShakeAmount = 0;
+let rippleTimer = 0;
 
 if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
   const canvasProto = HTMLCanvasElement.prototype;
@@ -413,6 +420,21 @@ function preload() {
       (img) => { heartImage = img; verboseLog('[game] loaded Heart.png'); },
       (err) => { console.warn('[game] failed to load Heart.png', err); }
     );
+
+    trackLoadImage('acid_splat', 'assets/2-Characters/5-Enemies/AcidSplat.png',
+      (img) => { acidSplatSprite = img; verboseLog('[game] loaded AcidSplat.png'); },
+      (err) => { console.warn('[game] failed to load AcidSplat.png', err); }
+    );
+
+    trackLoadImage('eggsplosion', 'assets/2-Characters/5-Enemies/Eggsplosion.png',
+      (img) => { eggsplosionSprite = img; verboseLog('[game] loaded Eggsplosion.png'); },
+      (err) => { console.warn('[game] failed to load Eggsplosion.png', err); }
+    );
+
+    trackLoadImage('powerup_sprite', 'assets/2-Characters/5-Enemies/EggCluster.png',
+      (img) => { powerupSprite = img; verboseLog('[game] loaded EggCluster.png'); },
+      (err) => { console.warn('[game] failed to load EggCluster.png', err); }
+    );
   } catch (e) {}
 }
 
@@ -648,10 +670,44 @@ function createFullWindowCanvas() {
 }
 
 function startPlayerAttack() {
-  if (isAttacking) return;
+  if (isAttacking || playerAttackCooldownTimer > 0 || isDashing) return;
+  
+  // Check stamina
+  if (typeof sprintRemainingMs === 'number') {
+      const staminaCostMs = (PLAYER_ATTACK_STAMINA_COST / 100) * SPRINT_MAX_DURATION_MS;
+      if (sprintRemainingMs < staminaCostMs) {
+          verboseLog('[game] Not enough stamina to attack');
+          return;
+      }
+      sprintRemainingMs -= staminaCostMs;
+  }
+
+  const now = millis();
+  // Combo window: 800ms
+  if (now - lastAttackTime < 800) {
+      playerComboCount = (playerComboCount + 1) % 3;
+  } else {
+      playerComboCount = 0;
+  }
+  lastAttackTime = now;
+
+  verboseLog('[game] startPlayerAttack triggered. Combo=', playerComboCount, 'Dir=', lastDirection);
+  
+  // Debug check for assets
+  const dir = lastDirection || 'S';
+  const sheet = attackSheets[dir];
+  if (!sheet && dir !== 'E') {
+      console.warn('[game] Missing attack sheet for', dir, attackSheets);
+  } else if (dir === 'E' && !attackSheets['W']) {
+      console.warn('[game] Missing attack sheet for E (fallback W) in', attackSheets);
+  }
+
   isAttacking = true;
   playerAttackTimer = 0;
   playerAttackFrame = 0;
+  hasDealtPlayerDamage = false;
+  isAttackingEnvironmentalTriggered = false;
+  playerAttackCooldownTimer = PLAYER_ATTACK_COOLDOWN_MS;
 }
 
 function mousePressed() {
@@ -1618,6 +1674,52 @@ function showFilePickerToLoadActiveMap() {
   } catch (e) { console.warn('[game] showFilePicker failed', e); }
 }
 
+function drawTileToMap(lx, ly) {
+  if (!mapImage || !logicalW || !logicalH) return;
+  
+  const tileState = getTileState(lx, ly);
+  const px = lx * cellSize;
+  const py = ly * cellSize;
+  
+  // Clear the tile area in the map buffer
+  mapImage.push();
+  mapImage.noStroke();
+  // Assume background grass color or draw tile_1 first
+  const baseTileImg = (TILE_IMAGES && TILE_IMAGES['tile_1']) ? TILE_IMAGES['tile_1'] : null;
+  if (baseTileImg) {
+      mapImage.image(baseTileImg, px, py, cellSize, cellSize);
+  } else {
+      const grassColor = getColorForState(TILE_TYPES.GRASS);
+      mapImage.fill(grassColor[0], grassColor[1], grassColor[2]);
+      mapImage.rect(px, py, cellSize, cellSize);
+  }
+
+  let img = null;
+  let imgDestW = cellSize;
+  let imgDestH = cellSize;
+
+  if (tileState === TILE_TYPES.HEALTH && heartImage) {
+    img = heartImage;
+    imgDestW = cellSize * 0.7;
+    imgDestH = cellSize * 0.7;
+  } else if (tileState === TILE_TYPES.POWERUP && powerupSprite) {
+    img = powerupSprite;
+    imgDestW = cellSize * 0.8;
+    imgDestH = cellSize * 0.8;
+  } else if (TILE_IMAGES[tileState]) {
+    img = TILE_IMAGES[tileState];
+    imgDestW = img.width;
+    imgDestH = img.height;
+  }
+
+  if (img) {
+    const drawX = px + Math.floor((cellSize - imgDestW) / 2);
+    const drawY = py + (cellSize - imgDestH);
+    mapImage.image(img, drawX, drawY, imgDestW, imgDestH);
+  }
+  mapImage.pop();
+}
+
 function createMapImage() {
   if (!logicalW || !logicalH) {
     console.warn('[createMapImage] aborted: logical size not set yet');
@@ -1682,6 +1784,14 @@ function createMapImage() {
         img = TILE_IMAGES['bridge_1'] || TILE_IMAGES[TILE_TYPES.RAMP] || TILE_IMAGES[TILE_TYPES.LOG];
         imgDestW = cellSize;
         imgDestH = cellSize;
+      } else if (tileState === TILE_TYPES.HEALTH && heartImage) {
+        img = heartImage;
+        imgDestW = cellSize * 0.7;
+        imgDestH = cellSize * 0.7;
+      } else if (tileState === TILE_TYPES.POWERUP && powerupSprite) {
+        img = powerupSprite;
+        imgDestW = cellSize * 0.8;
+        imgDestH = cellSize * 0.8;
       } else if (TILE_IMAGES[tileState]) {
         img = TILE_IMAGES[tileState];
         imgDestW = img.width;
@@ -2057,6 +2167,7 @@ function spawnDecorativeObjects() {
   if (!logicalW || !logicalH || !mapStates) return;
   decorativeObjects = [];
   decorativeObstacleTiles = new Set();
+  decorativeBehindObstacleTiles = new Set();
   const grassTiles = [];
   for (let y = 0; y < logicalH; y++) {
     for (let x = 0; x < logicalW; x++) {
@@ -2079,7 +2190,10 @@ function spawnDecorativeObjects() {
     decorativeObjects.push({ id: name, type, tileX: tile.x, tileY: tile.y });
     const idx = tile.y * logicalW + tile.x;
     occupied.add(idx);
-    if (type === 'obstacle') decorativeObstacleTiles.add(idx);
+    
+    if (type === 'obstacle') {
+        decorativeObstacleTiles.add(idx);
+    }
     return true;
   };
 
@@ -2136,6 +2250,11 @@ function createMantis(startX, startY) {
     type: 'mantis',
     x: startX,
     y: startY,
+    health: 3,
+    maxHealth: 3,
+    hurtTimer: 0,
+    panicTimer: 0,
+    isPanicking: false,
     renderX: startX,
     renderY: startY,
     direction: 'S', // S, E, W, N
@@ -2170,7 +2289,7 @@ function createMantis(startX, startY) {
                          playerHealth = Math.max(0, playerHealth - 1);
                          this.hasDealtDamage = true;
                          playerHurtTimer = 500; // Flash red for 500ms
-                         // try { showToast('Took damage!', 'warn', 1000); } catch(e) {}
+                         spawnDamageText("-1", playerPosition.x, playerPosition.y, [255, 0, 0]);
                      }
                  }
              }
@@ -2185,6 +2304,16 @@ function createMantis(startX, startY) {
       }
 
       if (this.attackCooldown > 0) this.attackCooldown -= dt;
+      if (this.hurtTimer > 0) this.hurtTimer -= dt;
+      if (this.panicTimer > 0) this.panicTimer -= dt;
+
+      // TRIGGER PANIC
+      if (this.health === 1 && !this.isPanicking && this.panicTimer <= 0) {
+          this.isPanicking = true;
+          this.panicTimer = 4000; 
+          verboseLog('[game] Mantis is panicking!');
+      }
+      if (this.panicTimer <= 0) this.isPanicking = false;
 
       // --- MOVEMENT & AGGRO ---
       this.animTimer += dt;
@@ -2213,31 +2342,56 @@ function createMantis(startX, startY) {
       if (playerPosition) {
           const dist = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
           
-          // Trigger Attack if close and cooldown ready
-          if (dist < 1.5 && this.attackCooldown <= 0) {
-              this.attacking = true;
-              this.attackFrame = 0;
-              this.attackTimer = 0;
-              this.hasDealtDamage = false;
-              // Face player before attacking
-              const dx = playerPosition.x - this.x;
-              const dy = playerPosition.y - this.y;
-              if (Math.abs(dx) > Math.abs(dy)) {
-                  this.direction = dx > 0 ? 'E' : 'W';
-              } else {
-                  this.direction = dy > 0 ? 'S' : 'N';
+          if (this.isPanicking) {
+              isAggro = true;
+              targetX = this.x + (this.x - playerPosition.x);
+              targetY = this.y + (this.y - playerPosition.y);
+          } else {
+              // Trigger Attack if close and cooldown ready
+              if (dist < 1.5 && this.attackCooldown <= 0) {
+                  this.attacking = true;
+                  this.attackFrame = 0;
+                  this.attackTimer = 0;
+                  this.hasDealtDamage = false;
+                  // Face player before attacking
+                  const dx = playerPosition.x - this.x;
+                  const dy = playerPosition.y - this.y;
+                  if (Math.abs(dx) > Math.abs(dy)) {
+                      this.direction = dx > 0 ? 'E' : 'W';
+                  } else {
+                      this.direction = dy > 0 ? 'S' : 'N';
+                  }
+                  return;
               }
-              return;
-          }
 
-          if (dist < 8) { // Aggro range
-             isAggro = true;
-             targetX = playerPosition.x;
-             targetY = playerPosition.y;
+              if (dist < 8) { // Aggro range
+                 isAggro = true;
+                 targetX = playerPosition.x;
+                 targetY = playerPosition.y;
+              }
           }
       }
 
       if (isAggro) {
+          const nextStep = findNextStep(this.x, this.y, targetX, targetY);
+          
+          if (nextStep) {
+              const dx = nextStep.x - this.x;
+              const dy = nextStep.y - this.y;
+              let newDir = this.direction;
+              if (dx > 0) newDir = 'E';
+              else if (dx < 0) newDir = 'W';
+              else if (dy > 0) newDir = 'S';
+              else if (dy < 0) newDir = 'N';
+              
+              this.x = nextStep.x;
+              this.y = nextStep.y;
+              this.direction = newDir;
+              this.moveTimer = 400; // Faster movement when aggro
+              return;
+          }
+
+          // Fallback to basic movement if pathfinding fails or is out of range
           const dx = targetX - this.x;
           const dy = targetY - this.y;
           
@@ -2342,6 +2496,12 @@ function createMantis(startX, startY) {
         const destX = this.renderX * cellSize;
         const destY = this.renderY * cellSize;
         
+        let tx = 0, ty = 0;
+        if (this.attacking && this.attackFrame < 4) {
+            tx = random(-2, 2);
+            ty = random(-2, 2);
+        }
+
         // Draw slightly larger than cell
         const drawH = cellSize * 1.2;
         const drawW = drawH * (fw / fh);
@@ -2349,7 +2509,22 @@ function createMantis(startX, startY) {
         const drawX = destX + (cellSize - drawW) / 2;
         const drawY = destY + (cellSize - drawH); // anchor bottom
         
-        image(sprite, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+        if (this.hurtTimer > 0) tint(255, 0, 0);
+        image(sprite, drawX + tx, drawY + ty, drawW, drawH, sx, sy, fw, fh);
+        if (this.hurtTimer > 0) noTint();
+
+        // Draw Health Bar if damaged
+        if (this.health < this.maxHealth) {
+            const barW = cellSize * 0.8;
+            const barH = 4;
+            const barX = destX + (cellSize - barW) / 2;
+            const barY = drawY - 8;
+            
+            fill(0, 150); noStroke();
+            rect(barX, barY, barW, barH);
+            fill(255, 0, 0);
+            rect(barX, barY, barW * (this.health / this.maxHealth), barH);
+        }
     }
   };
 }
@@ -2359,6 +2534,11 @@ function createMaggot(startX, startY) {
     type: 'maggot',
     x: startX,
     y: startY,
+    health: 2,
+    maxHealth: 2,
+    hurtTimer: 0,
+    panicTimer: 0,
+    isPanicking: false,
     renderX: startX,
     renderY: startY,
     direction: 'S', // S, W, E, N (Row 0, 1, 2, 3)
@@ -2402,6 +2582,16 @@ function createMaggot(startX, startY) {
       }
 
       if (this.attackCooldown > 0) this.attackCooldown -= dt;
+      if (this.hurtTimer > 0) this.hurtTimer -= dt;
+      if (this.panicTimer > 0) this.panicTimer -= dt;
+
+      // TRIGGER PANIC
+      if (this.health === 1 && !this.isPanicking && this.panicTimer <= 0) {
+          this.isPanicking = true;
+          this.panicTimer = 4000;
+          verboseLog('[game] Maggot is panicking!');
+      }
+      if (this.panicTimer <= 0) this.isPanicking = false;
 
       // --- MOVEMENT & AGGRO ---
       this.animTimer += dt;
@@ -2426,19 +2616,47 @@ function createMaggot(startX, startY) {
       if (playerPosition) {
           const dist = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
           
-          // Trigger Attack if in range and cooldown ready
-          if (dist < 6 && this.attackCooldown <= 0) {
-              this.attacking = true;
-              this.attackFrame = 0;
-              this.attackTimer = 0;
-              this.hasSpawnedProjectile = false;
-              // Face player before attacking (but keep current direction as requested?)
-              // The user said: "it keeps it currenty keeps that direction uses MaggotSpit"
-              // I will interpret this as: don't change direction specifically for the attack if already facing somewhat that way,
-              // but if it "notices" them maybe it should face them? 
-              // "When it attacks when it notices a user it keeps it currenty keeps that direction"
-              // I'll leave direction as is.
-              return;
+          if (this.isPanicking) {
+              const nextStep = findNextStep(this.x, this.y, this.x + (this.x - playerPosition.x), this.y + (this.y - playerPosition.y));
+              if (nextStep) {
+                  const dx = nextStep.x - this.x;
+                  const dy = nextStep.y - this.y;
+                  if (dx > 0) this.direction = 'E';
+                  else if (dx < 0) this.direction = 'W';
+                  else if (dy > 0) this.direction = 'S';
+                  else if (dy < 0) this.direction = 'N';
+                  this.x = nextStep.x;
+                  this.y = nextStep.y;
+                  this.moveTimer = 600;
+                  return;
+              }
+          } else {
+              // Trigger Attack if in range and cooldown ready
+              if (dist < 6 && this.attackCooldown <= 0) {
+                  this.attacking = true;
+                  this.attackFrame = 0;
+                  this.attackTimer = 0;
+                  this.hasSpawnedProjectile = false;
+                  return;
+              }
+
+              // Move closer if noticed but out of range
+              if (dist < 10 && dist >= 6) {
+                  const nextStep = findNextStep(this.x, this.y, playerPosition.x, playerPosition.y);
+                  if (nextStep) {
+                      const dx = nextStep.x - this.x;
+                      const dy = nextStep.y - this.y;
+                      if (dx > 0) this.direction = 'E';
+                      else if (dx < 0) this.direction = 'W';
+                      else if (dy > 0) this.direction = 'S';
+                      else if (dy < 0) this.direction = 'N';
+                      
+                      this.x = nextStep.x;
+                      this.y = nextStep.y;
+                      this.moveTimer = 600;
+                      return;
+                  }
+              }
           }
       }
 
@@ -2494,13 +2712,34 @@ function createMaggot(startX, startY) {
         const destX = this.renderX * cellSize;
         const destY = this.renderY * cellSize;
         
+        let tx = 0, ty = 0;
+        if (this.attacking && this.attackFrame < 4) {
+            tx = random(-2, 2);
+            ty = random(-2, 2);
+        }
+
         const drawH = cellSize * 1.0;
         const drawW = drawH * (fw / fh);
         
         const drawX = destX + (cellSize - drawW) / 2;
         const drawY = destY + (cellSize - drawH);
         
-        image(sprite, drawX, drawY, drawW, drawH, sx, sy, fw, fh);
+        if (this.hurtTimer > 0) tint(255, 0, 0);
+        image(sprite, drawX + tx, drawY + ty, drawW, drawH, sx, sy, fw, fh);
+        if (this.hurtTimer > 0) noTint();
+
+        // Draw Health Bar if damaged
+        if (this.health < this.maxHealth) {
+            const barW = cellSize * 0.8;
+            const barH = 4;
+            const barX = destX + (cellSize - barW) / 2;
+            const barY = drawY - 8;
+            
+            fill(0, 150); noStroke();
+            rect(barX, barY, barW, barH);
+            fill(255, 0, 0);
+            rect(barX, barY, barW * (this.health / this.maxHealth), barH);
+        }
     }
   };
 }
@@ -2583,6 +2822,107 @@ function updateProjectiles() {
     }
 }
 
+function spawnDamageText(val, x, y, color = [255, 255, 255]) {
+    vfx.push({
+        type: 'text',
+        text: val,
+        x: x,
+        y: y,
+        vx: random(-0.02, 0.02),
+        vy: -0.05,
+        alpha: 255,
+        life: 1000,
+        maxLife: 1000,
+        color: color,
+        update: function(dt) {
+            this.x += this.vx * (dt / 16.67);
+            this.y += this.vy * (dt / 16.67);
+            this.life -= dt;
+            this.alpha = (this.life / this.maxLife) * 255;
+            return this.life <= 0;
+        },
+        draw: function() {
+            push();
+            const px = this.x * cellSize + cellSize/2;
+            const py = this.y * cellSize;
+            textAlign(CENTER);
+            fill(this.color[0], this.color[1], this.color[2], this.alpha);
+            stroke(0, this.alpha);
+            strokeWeight(2);
+            gTextSize(20);
+            text(this.text, px, py);
+            pop();
+        }
+    });
+}
+
+function spawnSplat(x, y, type = 'acid') {
+    const sprite = type === 'egg' ? eggsplosionSprite : acidSplatSprite;
+    if (!sprite) return;
+    vfx.push({
+        type: 'sprite',
+        sprite: sprite,
+        x: x,
+        y: y,
+        alpha: 255,
+        life: 1500,
+        maxLife: 1500,
+        scale: random(0.6, 1.0),
+        update: function(dt) {
+            this.life -= dt;
+            this.alpha = (this.life / this.maxLife) * 255;
+            return this.life <= 0;
+        },
+        draw: function() {
+            push();
+            const drawSize = cellSize * this.scale;
+            const px = this.x * cellSize + (cellSize - drawSize) / 2;
+            const py = this.y * cellSize + (cellSize - drawSize) / 2;
+            tint(255, this.alpha);
+            image(this.sprite, px, py, drawSize, drawSize);
+            noTint();
+            pop();
+        }
+    });
+}
+
+function spawnRipple(x, y) {
+    vfx.push({
+        type: 'ripple',
+        x: x,
+        y: y,
+        alpha: 150,
+        life: 800,
+        maxLife: 800,
+        size: 5,
+        update: function(dt) {
+            this.life -= dt;
+            this.size += (dt / 16.67) * 0.8;
+            this.alpha = (this.life / this.maxLife) * 150;
+            return this.life <= 0;
+        },
+        draw: function() {
+            push();
+            noFill();
+            stroke(255, this.alpha);
+            strokeWeight(1.5);
+            const px = this.x * cellSize + cellSize/2;
+            const py = this.y * cellSize + cellSize/2;
+            ellipse(px, py, this.size, this.size * 0.6); // Perspective ripple
+            pop();
+        }
+    });
+}
+
+function updateVFX() {
+    const dt = gameDelta;
+    for (let i = vfx.length - 1; i >= 0; i--) {
+        if (vfx[i].update(dt)) {
+            vfx.splice(i, 1);
+        }
+    }
+}
+
 function updateEnemies() {
   if (!enemies) return;
   for (const e of enemies) {
@@ -2611,12 +2951,28 @@ function updateEnemies() {
 // neighbors(x, y)
 function handleMovement() {
   updateSprintState();
+  if (dashCooldown > 0) dashCooldown -= gameDelta;
+  if (isDashing) {
+      dashTimer -= gameDelta;
+      if (dashTimer <= 0) isDashing = false;
+  }
+
   if (isJumping || (isMoving && (millis() - lastMoveTime < getActiveMoveCooldownMs()))) return;
   const nowA = keyIsDown(65);
   const nowD = keyIsDown(68);
   const nowW = keyIsDown(87);
   const nowS = keyIsDown(83);
+  const shiftHeld = keyIsDown(16);
   const now = millis();
+
+  // Dash trigger
+  if (shiftHeld && !isDashing && dashCooldown <= 0 && (nowA || nowD || nowW || nowS)) {
+      isDashing = true;
+      dashTimer = DASH_DURATION;
+      dashCooldown = DASH_COOLDOWN;
+      verboseLog('[game] DASH!');
+  }
+
   let moved = false;
   let targetX = playerPosition.x;
   let targetY = playerPosition.y;
@@ -2719,16 +3075,26 @@ function handleItemInteraction(targetX, targetY) {
   verboseLog(`Player interacted with ${item.label}`);
   switch (tileState) {
     case TILE_TYPES.CHEST:
+      spawnDamageText("EMPTY", targetX, targetY, [200, 200, 200]);
       break;
     case TILE_TYPES.HEALTH:
+      if (playerHealth < maxHealth) {
+          playerHealth = Math.min(maxHealth, playerHealth + 1);
+          spawnDamageText("+1", targetX, targetY, [0, 255, 0]);
+      } else {
+          spawnDamageText("FULL", targetX, targetY, [200, 200, 200]);
+      }
       break;
     case TILE_TYPES.POWERUP:
+      spawnDamageText("BOOST!", targetX, targetY, [255, 215, 0]);
+      if (typeof sprintRemainingMs === 'number') {
+          sprintRemainingMs = Math.min(SPRINT_MAX_DURATION_MS, sprintRemainingMs + 1500);
+      }
       break;
   }
   const underlyingTerrain = terrainLayer[tileIdx] || TILE_TYPES.GRASS;
   mapStates[tileIdx] = underlyingTerrain;
-  const useSprites = showTextures && spritesheet;
-  drawTile(mapImage, targetX, targetY, underlyingTerrain, useSprites);
+  drawTileToMap(targetX, targetY); // Optimized update
 }
 
 function canMoveTo(fromX, fromY, toX, toY) {
@@ -2912,6 +3278,7 @@ function updateSprintState() {
 }
 
 function getActiveMoveDurationMs() {
+  if (isDashing) return 50; // Very fast dash
   const base = sprintActive ? SPRINT_MOVE_DURATION_MS : BASE_MOVE_DURATION_MS;
   let multiplier = 1.0;
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
@@ -2962,6 +3329,21 @@ function _drawPlayerInternal() {
   }
   const clipFactor = inWater ? 0.75 : 1.0; // Show only top 75% if in water
 
+  // --- WATER RIPPLES ---
+  if (inWater && (isMoving || isJumping || inputWalking)) {
+      rippleTimer -= gameDelta;
+      if (rippleTimer <= 0) {
+          spawnRipple(drawTileX, drawTileY);
+          rippleTimer = 300; // Spawn every 300ms
+      }
+  }
+
+  // --- UNIFIED SCALING ---
+  // We use a fixed scale factor for all animations to ensure pixel consistency.
+  // 20px is the reference character height for low-res sprites.
+  const SPRITE_SCALE = (cellSize * 1.25) / 20; 
+  const ATTACK_SCALE = SPRITE_SCALE * 0.17; // Matches character body size across resolutions
+
   // --- ATTACK ANIMATION ---
   if (isAttacking) {
     playerAttackTimer += gameDelta;
@@ -2971,37 +3353,149 @@ function _drawPlayerInternal() {
     }
     
     // Check if animation done
-    const maxAttackFrames = 5; 
+    const maxAttackFrames = 4; 
     if (playerAttackFrame >= maxAttackFrames) {
       isAttacking = false;
       playerAttackFrame = 0;
     } else {
+        // HIT DETECTION (Damage frames 1 or 2)
+        if ((playerAttackFrame === 1 || playerAttackFrame === 2) && !hasDealtPlayerDamage) {
+            const attackRange = 1.8; // Increased range
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i];
+                const dist = Math.hypot(e.x - playerPosition.x, e.y - playerPosition.y);
+                
+                if (dist < attackRange) {
+                    const dx = e.x - playerPosition.x;
+                    const dy = e.y - playerPosition.y;
+                    const dir = lastDirection || 'S';
+                    let angleMatches = false;
+                    
+                    // Wider tolerance (1.2 instead of 1.0) for better "feel"
+                    if (dist < 0.7) angleMatches = true; // Always hit if extremely close
+                    else if (dir === 'N' && dy < 0 && Math.abs(dx) < 1.2) angleMatches = true;
+                    else if (dir === 'S' && dy > 0 && Math.abs(dx) < 1.2) angleMatches = true;
+                    else if (dir === 'W' && dx < 0 && Math.abs(dy) < 1.2) angleMatches = true;
+                    else if (dir === 'E' && dx > 0 && Math.abs(dy) < 1.2) angleMatches = true;
+                    else if (dir === 'NE' && dx > 0 && dy < 0) angleMatches = true;
+                    else if (dir === 'NW' && dx < 0 && dy < 0) angleMatches = true;
+                    else if (dir === 'SE' && dx > 0 && dy > 0) angleMatches = true;
+                    else if (dir === 'SW' && dx < 0 && dy > 0) angleMatches = true;
+                    
+                    if (angleMatches) {
+                        // Combo Damage (3rd hit deals double)
+                        let damage = 1;
+                        if (playerComboCount === 2) {
+                            damage = 2;
+                            verboseLog('[game] CRITICAL HIT! Combo step 3');
+                        }
+                        
+                        e.health = (e.health || 1) - damage;
+                        e.hurtTimer = 250; 
+                        screenShakeTimer = 120; 
+                        screenShakeAmount = playerComboCount === 2 ? 8 : 5;  
+                        
+                        // VFX: Damage Text
+                        spawnDamageText(`-${damage}`, e.x, e.y, damage === 2 ? [255, 200, 0] : [255, 255, 255]);
+                        
+                        // Knockback logic
+                        const dir = lastDirection || 'S';
+                        const kbDist = 0.6;
+                        let kdx = 0, kdy = 0;
+                        if (dir.includes('N')) kdy = -kbDist;
+                        if (dir.includes('S')) kdy = kbDist;
+                        if (dir.includes('W')) kdx = -kbDist;
+                        if (dir.includes('E')) kdx = kbDist;
+                        
+                        const targetX = e.x + kdx;
+                        const targetY = e.y + kdy;
+                        
+                        if (targetX >= 0 && targetX < logicalW && targetY >= 0 && targetY < logicalH) {
+                            const ts = getTileState(Math.floor(targetX), Math.floor(targetY));
+                            if (!isSolid(ts) && ts !== TILE_TYPES.RIVER) {
+                                e.x = targetX;
+                                e.y = targetY;
+                            }
+                        }
+
+                                                    if (e.health <= 0) {
+                                                        spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
+                                                        
+                                                        // Loot Drop Logic
+                                                        if (random() < 0.3) { // 30% drop chance
+                                                            const dropType = random() < 0.8 ? TILE_TYPES.HEALTH : TILE_TYPES.POWERUP;
+                                                            const idx = Math.floor(e.y) * logicalW + Math.floor(e.x);
+                                                            // Only drop if on grass or similar
+                                                            const currentTile = mapStates[idx];
+                                                                                                if (currentTile === TILE_TYPES.GRASS || currentTile === TILE_TYPES.FLOWERS) {
+                                                                                                    mapStates[idx] = dropType;
+                                                                                                    spawnDamageText("★", e.x, e.y, [255, 255, 0]);
+                                                                                                    drawTileToMap(Math.floor(e.x), Math.floor(e.y)); // Optimized update
+                                                                                                }                                                        }
+                        
+                                                        enemies.splice(i, 1);
+                                                        verboseLog('[game] Enemy defeated!');
+                                                    } else {                            verboseLog('[game] Enemy hit! Health remaining:', e.health);
+                        }
+                        hasDealtPlayerDamage = true; // Deal damage only once per click
+                    }
+                }
+            }
+        }
+
+        // --- ENVIRONMENTAL INTERACTION (Cut grass/flowers) ---
+        if ((playerAttackFrame === 1 || playerAttackFrame === 2) && !isAttackingEnvironmentalTriggered) {
+            const punchDist = 1.2;
+            const punchDir = lastDirection || 'S';
+            const pd = directionToDelta(punchDir);
+            const cutX = Math.floor(playerPosition.x + pd.dx * punchDist);
+            const cutY = Math.floor(playerPosition.y + pd.dy * punchDist);
+            
+            if (cutX >= 0 && cutX < logicalW && cutY >= 0 && cutY < logicalH) {
+                const idx = cutY * logicalW + cutX;
+                const tile = mapStates[idx];
+                if (tile === TILE_TYPES.FLOWERS) {
+                    mapStates[idx] = TILE_TYPES.GRASS;
+                    spawnDamageText("✂", cutX, cutY, [100, 255, 100]);
+                    drawTileToMap(cutX, cutY); // Optimized update
+                }
+            }
+            isAttackingEnvironmentalTriggered = true;
+        }
+
         // Draw Attack
         let dir = lastDirection || 'S';
         let sheet = attackSheets[dir];
         let flip = false;
         
-        // Fallback for East if null (Flip West)
-        if (!sheet && dir === 'E') {
-            sheet = attackSheets['W'];
-            flip = true;
+        // FIX: attack_west.png appears to be East-facing (Right).
+        // If attacking West, we must FLIP it to face Left.
+        if (dir === 'W') {
+             flip = true;
         }
 
-        if (sheet) {
-            const cols = maxAttackFrames; 
+        // Fallback for East if null: Use attack_west.png (which is East-facing), so DO NOT flip.
+        if (!sheet && dir === 'E') {
+            sheet = attackSheets['W'];
+            flip = false; 
+        }
+
+        if (sheet && sheet.width > 0 && sheet.height > 0) {
+            const cols = 4; // User specified 4 frames
             const fw = sheet.width / cols;
             const fh = sheet.height;
             const sx = playerAttackFrame * fw;
             const sy = 0;
             
-            const desiredHeight = cellSize * 1.5; 
-            const scale = desiredHeight / fh;
-            const drawW = fw * scale;
-            const drawH = (fh * scale); 
+            const drawW = fw * ATTACK_SCALE;
+            const drawH = fh * ATTACK_SCALE;
             
+            if (!Number.isFinite(drawW) || !Number.isFinite(drawH)) return;
+
             const finalDrawH = drawH * clipFactor;
+            // Center horizontally, align bottom
             const drawX = destX + (cellSize / 2) - (drawW / 2);
-            const drawY = destY + cellSize - (fh * scale);
+            const drawY = destY + cellSize - drawH; // Align sprite bottom with tile bottom (unclipped height)
 
             push(); noSmooth();
             if (flip) {
@@ -3038,14 +3532,13 @@ function _drawPlayerInternal() {
         const fh = sheet.height;
         const sx = jumpFrame * fw;
         const sy = 0;
-        const desiredHeight = cellSize * 1.25;
-        const scale = desiredHeight / fh;
-        const drawW = fw * scale;
-        const drawH = (fh * scale) * clipFactor;
+        const drawW = fw * SPRITE_SCALE;
+        const drawH = fh * SPRITE_SCALE;
+        const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - (fh * scale); // Top stays same
+        const drawY = destY + cellSize - drawH; // Top stays same
         push(); noSmooth();
-        image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
+        image(sheet, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
         pop();
         return; 
     }
@@ -3082,14 +3575,13 @@ function _drawPlayerInternal() {
       if (frameImgWalk) {
         const fw = frameImgWalk.width;
         const fh = frameImgWalk.height;
-        const desiredHeight = cellSize * 1.25;
-        const scale = desiredHeight / fh;
-        const drawW = fw * scale;
-        const drawH = (fh * scale) * clipFactor;
+        const drawW = fw * SPRITE_SCALE;
+        const drawH = fh * SPRITE_SCALE;
+        const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - (fh * scale);
+        const drawY = destY + cellSize - drawH;
         push(); noSmooth(); 
-        image(frameImgWalk, drawX, drawY, drawW, drawH, 0, 0, fw, fh * clipFactor); 
+        image(frameImgWalk, drawX, drawY, drawW, finalDrawH, 0, 0, fw, fh * clipFactor); 
         pop();
         return;
       }
@@ -3100,15 +3592,14 @@ function _drawPlayerInternal() {
         const fh = sheet.height;
         const sx = colIndex * fw;
         const sy = 0;
-        const desiredHeight = cellSize * 1.25;
-        const scale = desiredHeight / fh;
-        const drawW = fw * scale;
-        const drawH = (fh * scale) * clipFactor;
+        const drawW = fw * SPRITE_SCALE;
+        const drawH = fh * SPRITE_SCALE;
+        const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - (fh * scale);
+        const drawY = destY + cellSize - drawH;
         push(); noSmooth();
-        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
-        else image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
+        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+        else image(sheet, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
         pop();
         return;
       }
@@ -3117,15 +3608,14 @@ function _drawPlayerInternal() {
         const fh = spritesheetWalk.height;
         const sx = colIndex * fw;
         const sy = 0;
-        const desiredHeight = cellSize * 1.25;
-        const scale = desiredHeight / fh;
-        const drawW = fw * scale;
-        const drawH = (fh * scale) * clipFactor;
+        const drawW = fw * SPRITE_SCALE;
+        const drawH = fh * SPRITE_SCALE;
+        const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - (fh * scale);
+        const drawY = destY + cellSize - drawH;
         push(); noSmooth();
-        if (facing === 'left') image(spritesheetWalk, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
-        else image(spritesheetWalk, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
+        if (facing === 'left') image(spritesheetWalk, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+        else image(spritesheetWalk, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
         pop();
         return;
       }
@@ -3134,13 +3624,12 @@ function _drawPlayerInternal() {
       if (frameImgRun) {
         const fw = frameImgRun.width;
         const fh = frameImgRun.height;
-        const desiredHeight = cellSize * 1.25;
-        const scale = desiredHeight / fh;
-        const drawW = fw * scale;
-        const drawH = (fh * scale) * clipFactor;
+        const drawW = fw * SPRITE_SCALE;
+        const drawH = fh * SPRITE_SCALE;
+        const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - (fh * scale);
-        push(); noSmooth(); image(frameImgRun, drawX, drawY, drawW, drawH, 0, 0, fw, fh * clipFactor); pop();
+        const drawY = destY + cellSize - drawH;
+        push(); noSmooth(); image(frameImgRun, drawX, drawY, drawW, finalDrawH, 0, 0, fw, fh * clipFactor); pop();
         return;
       }
       const dirSheetRun = runSheets[dir] || null;
@@ -3150,15 +3639,14 @@ function _drawPlayerInternal() {
         const fh = sheet.height;
         const sx = colIndex * fw;
         const sy = 0;
-        const desiredHeight = cellSize * 1.25;
-        const scale = desiredHeight / fh;
-        const drawW = fw * scale;
-        const drawH = (fh * scale) * clipFactor;
+        const drawW = fw * SPRITE_SCALE;
+        const drawH = fh * SPRITE_SCALE;
+        const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - (fh * scale);
+        const drawY = destY + cellSize - drawH;
         push(); noSmooth();
-        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
-        else image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
+        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+        else image(sheet, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
         pop();
         return;
       }
@@ -3167,15 +3655,14 @@ function _drawPlayerInternal() {
         const fh = spritesheetRun.height;
         const sx = colIndex * fw;
         const sy = 0;
-        const desiredHeight = cellSize * 1.25;
-        const scale = desiredHeight / fh;
-        const drawW = fw * scale;
-        const drawH = (fh * scale) * clipFactor;
+        const drawW = fw * SPRITE_SCALE;
+        const drawH = fh * SPRITE_SCALE;
+        const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - (fh * scale);
+        const drawY = destY + cellSize - drawH;
         push(); noSmooth();
-        if (facing === 'left') image(spritesheetRun, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
-        else image(spritesheetRun, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
+        if (facing === 'left') image(spritesheetRun, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+        else image(spritesheetRun, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
         pop();
         return;
       }
@@ -3185,13 +3672,12 @@ function _drawPlayerInternal() {
   if (frameImg) {
     const fw = frameImg.width;
     const fh = frameImg.height;
-    const desiredHeight = cellSize * 1.25;
-    const scale = desiredHeight / fh;
-    const drawW = fw * scale;
-    const drawH = (fh * scale) * clipFactor;
+    const drawW = fw * SPRITE_SCALE;
+    const drawH = fh * SPRITE_SCALE;
+    const finalDrawH = drawH * clipFactor;
     const drawX = destX + (cellSize / 2) - (drawW / 2);
-    const drawY = destY + cellSize - (fh * scale);
-    push(); noSmooth(); image(frameImg, drawX, drawY, drawW, drawH, 0, 0, fw, fh * clipFactor); pop();
+    const drawY = destY + cellSize - drawH;
+    push(); noSmooth(); image(frameImg, drawX, drawY, drawW, finalDrawH, 0, 0, fw, fh * clipFactor); pop();
     return;
   }
   const dirSheet = idleSheets[dir] || null;
@@ -3201,15 +3687,14 @@ function _drawPlayerInternal() {
     const fh = sheet.height;
     const sx = colIndex * fw;
     const sy = 0;
-    const desiredHeight = cellSize * 1.25;
-    const scale = desiredHeight / fh;
-    const drawW = fw * scale;
-    const drawH = (fh * scale) * clipFactor;
+    const drawW = fw * SPRITE_SCALE;
+    const drawH = fh * SPRITE_SCALE;
+    const finalDrawH = drawH * clipFactor;
     const drawX = destX + (cellSize / 2) - (drawW / 2);
-    const drawY = destY + cellSize - (fh * scale);
+    const drawY = destY + cellSize - drawH;
     push(); noSmooth();
-    if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
-    else image(sheet, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
+    if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+    else image(sheet, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
     pop();
     return;
   }
@@ -3234,15 +3719,14 @@ function _drawPlayerInternal() {
     else if (dir.includes('E')) facing = 'right';
     const sx = colIndex * fw;
     const sy = rowIndex * fh;
-    const desiredHeight = cellSize * 1.25;
-    const scale = desiredHeight / fh;
-    const drawW = fw * scale;
-    const drawH = (fh * scale) * clipFactor;
+    const drawW = fw * SPRITE_SCALE;
+    const drawH = fh * SPRITE_SCALE;
+    const finalDrawH = drawH * clipFactor;
     const drawX = destX + (cellSize / 2) - (drawW / 2);
-    const drawY = destY + cellSize - (fh * scale);
+    const drawY = destY + cellSize - drawH;
     push(); noSmooth();
-    if (flip || facing === 'left') image(spritesheetIdle, drawX + drawW, drawY, -drawW, drawH, sx, sy, fw, fh * clipFactor);
-    else image(spritesheetIdle, drawX, drawY, drawW, drawH, sx, sy, fw, fh * clipFactor);
+    if (flip || facing === 'left') image(spritesheetIdle, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+    else image(spritesheetIdle, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
     pop();
     return;
   }
@@ -3285,6 +3769,45 @@ function neighbors(x, y) {
   if (y > 0) out.push({ x, y: y - 1 });
   if (y < logicalH - 1) out.push({ x, y: y + 1 });
   return out;
+}
+
+function findNextStep(startX, startY, targetX, targetY) {
+    if (startX === targetX && startY === targetY) return null;
+    
+    const dist = Math.hypot(startX - targetX, startY - targetY);
+    if (dist > 12) return null; // Performance limit: only pathfind if close
+
+    const q = [{ x: targetX, y: targetY }];
+    const cameFrom = new Map();
+    const key = (x, y) => `${x},${y}`;
+    cameFrom.set(key(targetX, targetY), null);
+    
+    let head = 0;
+    while (head < q.length) {
+        const curr = q[head++];
+        
+        // Check if we reached a neighbor of start
+        if (Math.abs(curr.x - startX) + Math.abs(curr.y - startY) === 1) {
+            return { x: curr.x, y: curr.y };
+        }
+
+        const nexts = neighbors(curr.x, curr.y);
+        for (const n of nexts) {
+            const k = key(n.x, n.y);
+            if (!cameFrom.has(k)) {
+                const ts = getTileState(n.x, n.y);
+                const isWater = ts === TILE_TYPES.RIVER;
+                const isObstacle = decorativeObstacleTiles.has(n.y * logicalW + n.x);
+                
+                if (!isSolid(ts) && !isWater && !isObstacle) {
+                    cameFrom.set(k, curr);
+                    q.push(n);
+                }
+            }
+        }
+        if (q.length > 250) break; // Safety break for performance
+    }
+    return null;
 }
 
 
@@ -3607,26 +4130,66 @@ function exitToMenu() {
 
 function drawHealthBar() {
   if (!heartImage) return;
-  const startX = 20;
-  const startY = 20;
-  const heartSpacing = 35;
-  const heartSize = 32;
+  const startX = 30;
+  const startY = 30;
+  const heartSpacing = 38;
+  const heartSize = 34;
   
+  const containerW = (maxHealth * heartSpacing) + 25;
+  const containerH = 55;
+
   push();
+  // Themed Background
+  if (BUTTON_BG) {
+      image(BUTTON_BG, startX - 15, startY - 12, containerW, containerH);
+  } else {
+      stroke(0); strokeWeight(4); fill(20, 20, 20, 180);
+      rect(startX - 15, startY - 12, containerW, containerH, 4);
+  }
+  
+  // Gold Inner Border
+  stroke(MENU_GOLD_BORDER);
+  strokeWeight(2); noFill();
+  rect(startX - 12, startY - 10, containerW - 6, containerH - 4, 2);
+
   for (let i = 0; i < maxHealth; i++) {
     const x = startX + (i * heartSpacing);
     if (i < playerHealth) {
-       // Full heart
        tint(255, 255);
-       image(heartImage, x, startY, heartSize, heartSize);
+       image(heartImage, x, startY - 2, heartSize, heartSize);
     } else {
-       // Empty/Lost heart (dimmed)
-       tint(100, 100); 
-       image(heartImage, x, startY, heartSize, heartSize);
+       // Empty/Lost heart (silhouette)
+       tint(0, 150); 
+       image(heartImage, x, startY - 2, heartSize, heartSize);
     }
   }
   noTint();
   pop();
+}
+
+function drawVignette() {
+    push();
+    const vW = virtualW || (width / gameScale);
+    const vH = virtualH || (height / gameScale);
+    
+    // Use a large radial gradient via native canvas context for performance
+    const ctx = drawingContext;
+    const centerX = vW / 2;
+    const centerY = vH / 2;
+    const outerRadius = Math.max(vW, vH) * 0.9;
+    const innerRadius = Math.min(vW, vH) * 0.2;
+
+    const grad = ctx.createRadialGradient(
+        centerX * gameScale, centerY * gameScale, innerRadius * gameScale,
+        centerX * gameScale, centerY * gameScale, outerRadius * gameScale
+    );
+    
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.45)'); // Subtle dark edges
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, height);
+    pop();
 }
 
 function drawInGameMenu() { return; }
@@ -4974,14 +5537,14 @@ const RUN_SHEET_PATHS = {
   NW: 'assets/2-Characters/3-Running/run_sheet_north_west.png'
 };
 const IDLE_SHEET_PATHS = {
-    N:  'assets/2-Characters/2-Walking/walk_sheet_north.png',
-    NE: 'assets/2-Characters/2-Walking/walk_sheet_northeast.png',
-    E:  'assets/2-Characters/2-Walking/walk_sheet_east.png',
-    SE: 'assets/2-Characters/2-Walking/walk_sheet_southeast.png',
-    S:  'assets/2-Characters/2-Walking/walk_sheet_south.png',
-    SW: 'assets/2-Characters/2-Walking/walk_sheet_southwest.png',
-    W:  'assets/2-Characters/2-Walking/walk_sheet_west.png',
-    NW: 'assets/2-Characters/2-Walking/walk_sheet_northwest.png'
+    N:  'assets/2-Characters/1-Idle/idle_sheet_north.png',
+    NE: 'assets/2-Characters/1-Idle/idle_sheet_northeast.png',
+    E:  'assets/2-Characters/1-Idle/idle_sheet_east.png',
+    SE: 'assets/2-Characters/1-Idle/idle_sheet_southeast.png',
+    S:  'assets/2-Characters/1-Idle/idle_sheet_south.png',
+    SW: 'assets/2-Characters/1-Idle/idle_sheet_southwest.png',
+    W:  'assets/2-Characters/1-Idle/idle_sheet_west.png',
+    NW: 'assets/2-Characters/1-Idle/idle_sheet_northwest.png'
 };
 
 let idleSheets = { N:null, NE:null, E:null, SE:null, S:null, SW:null, W:null, NW:null };
@@ -5073,6 +5636,20 @@ let jumpFrame = 0;
 let isAttacking = false;
 let playerAttackTimer = 0;
 let playerAttackFrame = 0;
+let hasDealtPlayerDamage = false;
+let isAttackingEnvironmentalTriggered = false;
+let playerAttackCooldownTimer = 0;
+const PLAYER_ATTACK_COOLDOWN_MS = 450;
+const PLAYER_ATTACK_STAMINA_COST = 12;
+
+// Combo and Dash globals
+let playerComboCount = 0;
+let lastAttackTime = 0;
+let isDashing = false;
+let dashTimer = 0;
+let dashCooldown = 0;
+const DASH_DURATION = 200;
+const DASH_COOLDOWN = 1000;
 
 const JUMP_FRAME_COUNT = 5;
 const JUMP_ANIM_SPEED = 100; 
@@ -5211,8 +5788,8 @@ const DECORATIVE_OBSTACLE_NAMES = Object.freeze([
 const DECOR_SPECIAL_NAMES = Object.freeze(['hole_1']);
 const DECOR_ASSET_IMAGES = {};
 
-let decorativeObjects = [];
 let decorativeObstacleTiles = new Set();
+let decorativeObjects = [];
 let decorObjectsDirty = true;
 
 const SPRITES = {
@@ -5533,7 +6110,16 @@ function draw() {
 
   // START WORLD TRANSFORM
   push();
-  translate(-drawCamX, -drawCamY);
+  
+  let shakeX = 0;
+  let shakeY = 0;
+  if (screenShakeTimer > 0) {
+      shakeX = random(-screenShakeAmount, screenShakeAmount);
+      shakeY = random(-screenShakeAmount, screenShakeAmount);
+      screenShakeTimer -= gameDelta;
+  }
+  
+  translate(-drawCamX + shakeX, -drawCamY + shakeY);
   
   if (mapImage) image(mapImage, 0, 0);
 
@@ -5554,6 +6140,11 @@ function draw() {
       updateMovementInterpolation();
       updateEnemies();
       updateProjectiles();
+      updateVFX();
+      
+      if (playerAttackCooldownTimer > 0) {
+          playerAttackCooldownTimer -= gameDelta;
+      }
     }
   }
 
@@ -5599,13 +6190,44 @@ function draw() {
            drawables.push({ type: 'projectile', entity: p, baseY });
       }
     }
+    if (vfx && vfx.length) {
+      for (const effect of vfx) {
+           const baseY = (effect.y * cellSize) + cellSize;
+           drawables.push({ type: 'vfx', entity: effect, baseY });
+      }
+    }
     drawables.sort((a, b) => (a.baseY - b.baseY));
     
+    // Calculate player bounding box for fading
+    let pRect = null;
+    if (playerPosition) {
+        const pX = isMoving ? renderX : playerPosition.x;
+        const pY = isMoving ? renderY : playerPosition.y;
+        const pW = cellSize; 
+        const pH = cellSize * 1.25;
+        pRect = {
+            x: pX * cellSize + (cellSize/2) - (pW/2),
+            y: pY * cellSize + cellSize - pH,
+            w: pW,
+            h: pH
+        };
+    }
+
     for (const d of drawables) {
       if (d.type === 'overlay') {
         const o = d.o;
+        let alpha = 255;
+        // Fade tree if player is visually behind it
+        if (pRect && d.baseY > pRect.y + pRect.h * 0.5) {
+            if (pRect.x < d.drawX + o.destW && pRect.x + pRect.w > d.drawX &&
+                pRect.y < d.drawY + o.destH && pRect.y + pRect.h > d.drawY) {
+                alpha = 140; 
+            }
+        }
+        if (alpha < 255) tint(255, alpha);
         if (o.imgType === 'image' && o.img) image(o.img, d.drawX, d.drawY, o.destW, o.destH);
         else if (o.imgType === 'sheet' && o.s) image(spritesheet, d.drawX, d.drawY, o.destW, o.destH, o.s.x, o.s.y, o.s.w, o.s.h);
+        if (alpha < 255) noTint();
       } else if (d.type === 'decor') {
         try { if (d.img) image(d.img, d.drawX, d.drawY, d.destW, d.destH); } catch (e) {}
       } else if (d.type === 'player') {
@@ -5613,6 +6235,8 @@ function draw() {
       } else if (d.type === 'enemy') {
         try { d.entity.draw(); } catch (e) {}
       } else if (d.type === 'projectile') {
+        try { d.entity.draw(); } catch (e) {}
+      } else if (d.type === 'vfx') {
         try { d.entity.draw(); } catch (e) {}
       }
     }
@@ -5724,6 +6348,7 @@ function draw() {
   drawDifficultyBadge();
   drawHealthBar();
   drawSprintMeter();
+  drawCompass();
 
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
@@ -5731,6 +6356,7 @@ function draw() {
   
   if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
 
+  drawVignette();
   pop(); 
 }
 
@@ -6202,12 +6828,21 @@ function drawDifficultyBadge() {
   pop();
 }
 
+function findGoalPosition() {
+    if (!decorativeObjects) return null;
+    for (const obj of decorativeObjects) {
+        if (obj.type === 'special' && obj.id === 'hole_1') {
+            return { x: obj.tileX, y: obj.tileY };
+        }
+    }
+    return null;
+}
+
 function drawSprintMeter() {
   const vW = virtualW || (width / gameScale);
   const vH = virtualH || (height / gameScale);
   const now = millis();
   
-  // Visibility Logic: Fade out if full
   const pct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
   
   let targetAlpha = 0;
@@ -6215,47 +6850,33 @@ function drawSprintMeter() {
     targetAlpha = 255;
   }
   
-  // Simple linear interpolation for fade (optional, could rely on CSS or complex state, but simple is good here)
-  // For now, we'll just snap to visible/invisible or use a global if we wanted smooth fade, 
-  // but let's stick to immediate visibility for responsiveness, or a simple check.
-  if (targetAlpha === 0) return; // Don't draw if full and not cooling down
+  if (targetAlpha === 0) return;
 
-  const barW = 200;
-  const barH = 10;
+  const barW = 240;
+  const barH = 22;
   const cx = vW / 2;
-  const y = vH - 40;
+  const y = vH - 60;
   const x = cx - barW / 2;
 
   push();
   
-  // Icon (Lightning Bolt)
-  const iconSize = 18;
-  const ix = x - iconSize - 8;
-  const iy = y + barH / 2;
+  // Themed Background
+  if (BUTTON_BG) {
+      tint(255, targetAlpha);
+      image(BUTTON_BG, x - 10, y - 8, barW + 20, barH + 16);
+  } else {
+      stroke(0); strokeWeight(4); fill(20, 20, 20, 180 * (targetAlpha / 255));
+      rect(x - 10, y - 8, barW + 20, barH + 16, 4);
+  }
   
-  noStroke();
-  fill(255, 215, 0, targetAlpha); // Gold
-  beginShape();
-  vertex(ix, iy - 6);
-  vertex(ix + 6, iy - 6);
-  vertex(ix - 2, iy + 1);
-  vertex(ix + 4, iy + 1);
-  vertex(ix - 4, iy + 9);
-  vertex(ix, iy + 1);
-  vertex(ix - 6, iy + 1);
-  endShape(CLOSE);
-
-  // Bar Background
-  fill(0, 0, 0, 150 * (targetAlpha / 255));
+  // Gold Inner Border
   stroke(MENU_GOLD_BORDER);
-  strokeWeight(2);
-  rect(x, y, barW, barH, 4);
+  strokeWeight(2); noFill();
+  rect(x - 7, y - 6, barW + 14, barH + 12, 2);
 
   // Bar Fill
   if (pct > 0) {
     noStroke();
-    // Gradient Color based on percentage
-    // High = Cyan/Green, Low = Red
     let r, g, b;
     if (pct > 0.5) {
        r = map(pct, 0.5, 1, 255, 0);
@@ -6267,19 +6888,164 @@ function drawSprintMeter() {
        b = 0;
     }
     fill(r, g, b, targetAlpha);
-    
-    // Scissor or just width rect
-    rect(x + 2, y + 2, (barW - 4) * pct, barH - 4, 2);
+    rect(x, y, barW * pct, barH, 1);
   }
 
-  // Cooldown Overlay
+  // Cooldown Overlay (stamina flashing)
   if (typeof sprintCooldownUntil === 'number' && now < sprintCooldownUntil) {
-    const cdPct = Math.max(0, Math.min(1, (sprintCooldownUntil - now) / SPRINT_COOLDOWN_MS));
-    fill(200, 200, 200, 100 * (targetAlpha / 255));
-    rect(x + 2, y + 2, (barW - 4) * cdPct, barH - 4, 2);
+    if (Math.floor(now / 200) % 2 === 0) {
+        fill(255, 0, 0, 80);
+        rect(x, y, barW, barH, 1);
+    }
   }
+
+  // Icon (Lightning Bolt)
+  const ix = x - 35;
+  const iy = y + barH / 2;
+  noStroke();
+  fill(255, 215, 0, targetAlpha);
+  beginShape();
+  vertex(ix, iy - 8); vertex(ix + 8, iy - 8); vertex(ix - 3, iy + 1); vertex(ix + 5, iy + 1); vertex(ix - 5, iy + 12); vertex(ix, iy + 1); vertex(ix - 8, iy + 1);
+  endShape(CLOSE);
 
   pop();
+}
+
+function drawCompass() {
+    if (!playerPosition) return;
+    
+    const vW = virtualW || (width / gameScale);
+    const vH = virtualH || (height / gameScale);
+    
+    // Get current camera and player render positions for screen-space math
+    const camX = Math.floor(smoothCamX || 0);
+    const camY = Math.floor(smoothCamY || 0);
+    const pX = isMoving ? renderX : playerPosition.x;
+    const pY = isMoving ? renderY : playerPosition.y;
+    
+    // Player screen position (in virtual pixels)
+    const pScreenX = (pX * cellSize + cellSize / 2) - camX;
+    const pScreenY = (pY * cellSize + cellSize / 2) - camY;
+
+    const drawMarker = (tx, ty, isEnemy) => {
+        // Target screen position
+        const tScreenX = (tx * cellSize + cellSize / 2) - camX;
+        const tScreenY = (ty * cellSize + cellSize / 2) - camY;
+        
+        // VISIBILITY CHECK: If target is on screen, don't show the pointer
+        const padding = 40;
+        if (tScreenX > padding && tScreenX < vW - padding && 
+            tScreenY > padding && tScreenY < vH - padding) {
+            return;
+        }
+
+        const dx = tScreenX - pScreenX;
+        const dy = tScreenY - pScreenY;
+        const distTiles = Math.hypot(dx, dy) / cellSize;
+        const angle = atan2(dy, dx);
+
+        // SCREEN BOUNDARY MAPPING
+        // We find where the line from Player to Target hits the screen edges
+        const margin = 25;
+        const left = margin;
+        const right = vW - margin;
+        const top = margin;
+        const bottom = vH - margin;
+
+        let edgeX, edgeY;
+        
+        // Ray-Box Intersection
+        if (dx === 0 && dy === 0) return;
+
+        let tMin = Infinity;
+
+        if (dx > 0) tMin = Math.min(tMin, (right - pScreenX) / dx);
+        if (dx < 0) tMin = Math.min(tMin, (left - pScreenX) / dx);
+        if (dy > 0) tMin = Math.min(tMin, (bottom - pScreenY) / dy);
+        if (dy < 0) tMin = Math.min(tMin, (top - pScreenY) / dy);
+
+        edgeX = pScreenX + dx * tMin;
+        edgeY = pScreenY + dy * tMin;
+
+        // Ensure clamped to screen (floating point safety)
+        edgeX = constrain(edgeX, left, right);
+        edgeY = constrain(edgeY, top, bottom);
+
+        // COLOR & STYLE LOGIC
+        let markerColor;
+        let pulseSpeed = 200;
+        let baseSize = 1.0;
+
+        if (isEnemy) {
+            if (distTiles > 20) {
+                markerColor = color(180, 0, 0); // Deep Red
+                pulseSpeed = 500;
+            } else if (distTiles > 8) {
+                const t = map(distTiles, 8, 20, 0, 1);
+                markerColor = lerpColor(color(255, 100, 0), color(180, 0, 0), t); 
+                pulseSpeed = 300;
+            } else {
+                markerColor = color(255, 255, 255); // White/Alert
+                pulseSpeed = 150;
+                baseSize = 1.2;
+            }
+        } else {
+            markerColor = color(255, 215, 0); // Goal
+            pulseSpeed = 300;
+        }
+
+        const alpha = map(sin(millis() / pulseSpeed), -1, 1, 180, 255);
+        
+        push();
+        translate(edgeX, edgeY);
+        rotate(angle);
+        
+        // Draw Shadow
+        fill(0, 100); noStroke();
+        beginShape();
+        vertex(20 * baseSize + 2, 2); vertex(-10 * baseSize + 2, -14 * baseSize + 2); vertex(2, 2); vertex(-10 * baseSize + 2, 14 * baseSize + 2);
+        endShape(CLOSE);
+
+        // Draw Arrow
+        fill(markerColor.levels[0], markerColor.levels[1], markerColor.levels[2], alpha);
+        stroke(0, alpha * 0.8);
+        strokeWeight(2);
+        
+        const s = baseSize;
+        beginShape();
+        vertex(20 * s, 0); 
+        vertex(-10 * s, -14 * s); 
+        vertex(0, 0); 
+        vertex(-10 * s, 14 * s);
+        endShape(CLOSE);
+        
+        // Label
+        rotate(-angle);
+        noStroke();
+        fill(255);
+        if (uiFont) textFont(uiFont);
+        gTextSize(12);
+        textAlign(CENTER);
+        text(Math.round(distTiles) + "m", 0, 32);
+        pop();
+    };
+
+    // 1. Enemy Marker
+    if (enemies && enemies.length > 0) {
+        let nearestE = null;
+        let minDistE = Infinity;
+        for (const e of enemies) {
+            const d = Math.hypot(e.x - pX, e.y - pY);
+            if (d < minDistE) { minDistE = d; nearestE = e; }
+        }
+        if (nearestE) drawMarker(nearestE.x, nearestE.y, true);
+    }
+
+    // 2. Goal Marker
+    const goal = findGoalPosition();
+    if (goal) {
+        drawMarker(goal.x, goal.y, false);
+    }
 }
 
 function hideCategoryButtons() {
