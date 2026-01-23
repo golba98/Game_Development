@@ -11,6 +11,11 @@ let acidBlobSprite = null;
 let acidSplatSprite = null;
 let eggsplosionSprite = null;
 let powerupSprite = null;
+let portalActiveSheet = null;
+let portalInactiveSheet = null;
+let portalPos = null;
+let isPortalActive = false;
+let victoryShown = false;
 let vfx = [];
 let playerHealth = 7;
 let maxHealth = 7;
@@ -19,6 +24,7 @@ let playerHurtTimer = 0;
 let isGameOver = false;
 let initialSpawnPosition = { x: 0, y: 0 };
 let gameOverOverlay = null;
+let victoryOverlay = null;
 let gameOverTimer = 0;
 let minimapImage = null;
 let gameDelta = 0;
@@ -67,6 +73,10 @@ let overlayProgressLastUpdate = 0;
 const LOADING_PROGRESS_RATE = 35;
 
 let inGameMenuVisible = false;
+let isTerminalOpen = false;
+let terminalEl = null;
+let terminalHistory = [];
+let terminalHistoryIndex = -1;
 let inGameMenuButtonRects = [];
 let inGameMenuHovered = null;
 let inGameMenuHoverScales = {};
@@ -435,6 +445,16 @@ function preload() {
       (img) => { powerupSprite = img; verboseLog('[game] loaded EggCluster.png'); },
       (err) => { console.warn('[game] failed to load EggCluster.png', err); }
     );
+
+    trackLoadImage('portal_active', 'assets/5-Objects/2-Portal/portal_active_sheet.png',
+      (img) => { portalActiveSheet = img; },
+      (err) => { console.warn('[game] failed to load portal_active_sheet.png', err); }
+    );
+
+    trackLoadImage('portal_inactive', 'assets/5-Objects/2-Portal/portal_inactive_sheet.png',
+      (img) => { portalInactiveSheet = img; },
+      (err) => { console.warn('[game] failed to load portal_inactive_sheet.png', err); }
+    );
   } catch (e) {}
 }
 
@@ -711,6 +731,7 @@ function startPlayerAttack() {
 }
 
 function mousePressed() {
+  if (isTerminalOpen) return;
   if (isGameOver) return;
   
   // Ignore clicks if interacting with DOM UI
@@ -756,7 +777,123 @@ function togglePauseMenuFromEscape() {
   } catch (e) { console.warn('[game] toggling inGameMenuVisible failed', e); }
 }
 
+function toggleTerminal() {
+    if (!terminalEl) createTerminalUI();
+    
+    if (isTerminalOpen) {
+        terminalEl.classList.remove('open');
+        setTimeout(() => { if (!isTerminalOpen) terminalEl.style.display = 'none'; }, 300);
+        isTerminalOpen = false;
+    } else {
+        terminalEl.style.display = 'flex';
+        // Trigger reflow for animation
+        terminalEl.offsetHeight;
+        terminalEl.classList.add('open');
+        isTerminalOpen = true;
+        const input = document.getElementById('terminal-input');
+        if (input) setTimeout(() => input.focus(), 50);
+    }
+}
+
+function createTerminalUI() {
+    terminalEl = document.createElement('div');
+    terminalEl.id = 'game-terminal';
+    terminalEl.innerHTML = `
+        <div id="terminal-history">
+            <div class="terminal-log">CORE OS [Version 1.0.42]</div>
+            <div class="terminal-log">Initializing secure connection... OK.</div>
+            <div class="terminal-log">Welcome back, Administrator.</div>
+            <div class="terminal-log terminal-hint">Tip: Use Up/Down arrows to cycle history. Press ESC to close.</div>
+        </div>
+        <div id="terminal-input-row">
+            <span id="terminal-prompt">SYS_ADMIN@GAME:~$</span>
+            <input type="text" id="terminal-input" spellcheck="false" autocomplete="off">
+        </div>
+    `;
+    document.body.appendChild(terminalEl);
+
+    const input = document.getElementById('terminal-input');
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const cmd = input.value.trim();
+            if (cmd) {
+                processTerminalCommand(cmd);
+                terminalHistory.push(cmd);
+                terminalHistoryIndex = -1;
+                input.value = '';
+            }
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (terminalHistory.length > 0) {
+                if (terminalHistoryIndex === -1) terminalHistoryIndex = terminalHistory.length - 1;
+                else terminalHistoryIndex = Math.max(0, terminalHistoryIndex - 1);
+                input.value = terminalHistory[terminalHistoryIndex];
+            }
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (terminalHistoryIndex !== -1) {
+                terminalHistoryIndex++;
+                if (terminalHistoryIndex >= terminalHistory.length) {
+                    terminalHistoryIndex = -1;
+                    input.value = '';
+                } else {
+                    input.value = terminalHistory[terminalHistoryIndex];
+                }
+            }
+        } else if (e.key === 'Escape') {
+            toggleTerminal();
+        } else if (e.key === "'" && e.ctrlKey) {
+            e.preventDefault();
+            toggleTerminal();
+        }
+    });
+}
+
+function processTerminalCommand(cmd) {
+    const history = document.getElementById('terminal-history');
+    const log = (msg, type = '') => {
+        const div = document.createElement('div');
+        div.className = 'terminal-log ' + type;
+        div.innerHTML = msg; // Use innerHTML for richer formatting if needed
+        history.appendChild(div);
+        history.scrollTop = history.scrollHeight;
+    };
+
+    log(`<span style="opacity:0.5">> ${cmd}</span>`);
+
+    const parts = cmd.split(' ');
+    const base = parts[0].toLowerCase();
+
+    if (base === '/kill' && parts[1] === 'all') {
+        if (enemies && enemies.length > 0) {
+            const count = enemies.length;
+            enemies = [];
+            log(`SUCCESS: ${count} neural signatures purged from local grid.`, 'terminal-success');
+            if (typeof triggerVictory === 'function') triggerVictory();
+        } else {
+            log('NOTICE: Scan complete. No enemy signatures detected.', 'terminal-log');
+        }
+    } else if (base === '/help') {
+        log('SYSTEM COMMANDS:');
+        log('  <span style="color:#fff">/kill all</span> - Wipe all enemies and force victory.');
+        log('  <span style="color:#fff">/clear</span>    - Wipe terminal log history.');
+        log('  <span style="color:#fff">/exit</span>     - Disconnect from console.');
+    } else if (base === '/clear') {
+        history.innerHTML = '<div class="terminal-log">History cleared.</div>';
+    } else if (base === '/exit') {
+        toggleTerminal();
+    } else {
+        log(`ERROR: Unknown command sequence "${base}".`, 'terminal-error');
+    }
+}
+
 function keyPressed() {
+  if (key === "'" && keyIsDown(CONTROL)) {
+      toggleTerminal();
+      return false;
+  }
+  if (isTerminalOpen) return; // Disable other inputs while terminal is open
+
   if (isGameOver) return;
   if (key === ' ' && !isJumping && !isMoving) {
     
@@ -901,6 +1038,44 @@ function generateMap_Part2() {
 
   playerPosition = { x: spawn.spawnX, y: spawn.spawnY };
   initialSpawnPosition = { x: spawn.spawnX, y: spawn.spawnY };
+  
+  // Spawn Portal roughly in the middle
+  portalPos = null;
+  isPortalActive = false;
+  victoryShown = false;
+  
+  const midX = Math.floor(logicalW / 2);
+  const midY = Math.floor(logicalH / 2);
+  
+  // Search in expanding squares from the middle to find the nearest grass tile
+  let foundMid = false;
+  for (let r = 0; r < Math.max(logicalW, logicalH); r++) {
+      for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+              if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // Only check the perimeter of the current square
+              
+              const px = midX + dx;
+              const py = midY + dy;
+              
+              if (px >= 0 && px < logicalW && py >= 0 && py < logicalH) {
+                  if (mapStates[py * logicalW + px] === TILE_TYPES.GRASS) {
+                      portalPos = { x: px, y: py };
+                      foundMid = true;
+                      break;
+                  }
+              }
+          }
+          if (foundMid) break;
+      }
+      if (foundMid) break;
+  }
+
+  if (portalPos) {
+      console.log(`%c[PORTAL] Spawned in Middle at: ${portalPos.x}, ${portalPos.y}`, "color: #00ff00; font-weight: bold;");
+  } else {
+      console.error("[PORTAL] Failed to spawn portal! No grass found.");
+  }
+
   renderX = playerPosition.x; renderY = playerPosition.y;
   renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY;
   isMoving = false;
@@ -1329,10 +1504,14 @@ function buildActiveMapPayload() {
       mapStates: Array.from(mapStates),
       terrainLayer: terrainLayer ? Array.from(terrainLayer) : null,
       treeObjects: Array.isArray(treeObjects) ? treeObjects.slice() : [],
+      portalPos: portalPos,
+      isPortalActive: isPortalActive,
       enemies: Array.isArray(enemies) ? enemies.map(e => ({
           type: e.type,
           x: e.x,
           y: e.y,
+          health: e.health,
+          maxHealth: e.maxHealth,
           direction: e.direction,
           moveTimer: e.moveTimer
       })) : []
@@ -1505,6 +1684,18 @@ function applyLoadedMap(obj) {
     }
     treeObjects = Array.isArray(obj.treeObjects) ? obj.treeObjects.slice() : [];
     
+    if (obj.portalPos) portalPos = obj.portalPos;
+    else {
+        // Generate portal if missing from old save
+        for (let i = 0; i < mapStates.length; i++) {
+            if (mapStates[i] === TILE_TYPES.GRASS) {
+                portalPos = { x: i % logicalW, y: Math.floor(i / logicalW) };
+                break;
+            }
+        }
+    }
+    if (typeof obj.isPortalActive === 'boolean') isPortalActive = obj.isPortalActive;
+
     enemies = [];
     if (Array.isArray(obj.enemies)) {
         for (const eData of obj.enemies) {
@@ -1517,6 +1708,8 @@ function applyLoadedMap(obj) {
             if (enemy) {
                 if (eData.direction) enemy.direction = eData.direction;
                 if (eData.moveTimer) enemy.moveTimer = eData.moveTimer;
+                if (eData.health) enemy.health = eData.health;
+                if (eData.maxHealth) enemy.maxHealth = eData.maxHealth;
                 enemies.push(enemy);
             }
         }
@@ -1605,6 +1798,18 @@ function loadMapFromStorage() {
     }
     treeObjects = Array.isArray(obj.treeObjects) ? obj.treeObjects.slice() : [];
     
+    if (obj.portalPos) portalPos = obj.portalPos;
+    else {
+        // Generate portal if missing from old save
+        for (let i = 0; i < mapStates.length; i++) {
+            if (mapStates[i] === TILE_TYPES.GRASS) {
+                portalPos = { x: i % logicalW, y: Math.floor(i / logicalW) };
+                break;
+            }
+        }
+    }
+    if (typeof obj.isPortalActive === 'boolean') isPortalActive = obj.isPortalActive;
+
     enemies = [];
     if (Array.isArray(obj.enemies)) {
         for (const eData of obj.enemies) {
@@ -1617,6 +1822,8 @@ function loadMapFromStorage() {
             if (enemy) {
                 if (eData.direction) enemy.direction = eData.direction;
                 if (eData.moveTimer) enemy.moveTimer = eData.moveTimer;
+                if (eData.health) enemy.health = eData.health;
+                if (eData.maxHealth) enemy.maxHealth = eData.maxHealth;
                 enemies.push(enemy);
             }
         }
@@ -2950,6 +3157,7 @@ function updateEnemies() {
 // floodReachable(options) /
 // neighbors(x, y)
 function handleMovement() {
+  if (isTerminalOpen) return;
   updateSprintState();
   if (dashCooldown > 0) dashCooldown -= gameDelta;
   if (isDashing) {
@@ -4046,6 +4254,67 @@ function triggerGameOver() {
   if (isGameOver) return;
   isGameOver = true;
   showGameOverScreen();
+}
+
+function triggerVictory() {
+  if (victoryShown) return;
+  victoryShown = true;
+  isPortalActive = true;
+
+  // Immediately kill any player movement inputs
+  isMoving = false;
+  queuedMove = null;
+  prevKeyA = prevKeyD = prevKeyW = prevKeyS = false;
+  if (holdState) {
+      holdState.A.start = holdState.D.start = holdState.W.start = holdState.S.start = 0;
+  }
+
+  showVictoryScreen();
+}
+
+function showVictoryScreen() {
+  if (victoryOverlay) {
+    victoryOverlay.close();
+    victoryOverlay = null;
+  }
+  
+  const { container, panel, close } = createZoomStablePanel(420, 320, 'gd-victory-menu');
+  victoryOverlay = { close, container };
+
+  let title = createDiv('VICTORY');
+  title.parent(panel);
+  title.style('position', 'absolute');
+  title.style('width', '100%');
+  title.style('text-align', 'center');
+  title.style('top', '-100px'); 
+  title.style('left', '0');
+  title.style('font-size', '48px');
+  title.style('font-weight', 'bold');
+  title.style('color', '#000');
+  title.style('text-shadow', 'none');
+
+  let msg = createDiv('All threats eliminated.<br>Find the portal to escape.');
+  msg.parent(panel);
+  msg.style('text-align', 'center');
+  msg.style('margin-bottom', '30px');
+  msg.style('font-size', '20px');
+  msg.style('color', '#fff');
+
+  const createMenuBtn = (label, onClick) => {
+    let btn = createButton(label);
+    btn.parent(panel);
+    btn.style('margin-bottom', '20px');
+    applyMenuButtonUI(btn, 260, 48);
+    btn.mousePressed(onClick);
+    return btn;
+  };
+
+  createMenuBtn('CONTINUE', () => {
+    if (victoryOverlay) {
+        victoryOverlay.close();
+        victoryOverlay = null;
+    }
+  });
 }
 
 function showGameOverScreen() {
@@ -5403,6 +5672,82 @@ function injectCustomStyles() {
         transform: translate(-50%, -55%);
         line-height: 1;
       }
+
+      /* Game Terminal */
+      #game-terminal {
+        position: fixed;
+        top: -35%; /* Start hidden for animation */
+        left: 0;
+        width: 100%;
+        height: 35%;
+        background: rgba(5, 15, 5, 0.85);
+        backdrop-filter: blur(8px);
+        border-bottom: 2px solid #00ff41;
+        z-index: 200000;
+        display: none;
+        flex-direction: column;
+        padding: 15px;
+        color: #00ff41;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 16px;
+        box-shadow: 0 10px 30px rgba(0, 255, 65, 0.2);
+        overflow: hidden;
+        transition: top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+      }
+      #game-terminal.open {
+        top: 0;
+        display: flex;
+      }
+      #game-terminal::after {
+        content: " ";
+        position: absolute;
+        top: 0; left: 0; bottom: 0; right: 0;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+        z-index: 200001;
+        background-size: 100% 3px, 3px 100%;
+        pointer-events: none;
+      }
+      #terminal-history {
+        flex: 1;
+        overflow-y: auto;
+        margin-bottom: 10px;
+        padding-right: 15px;
+        scrollbar-width: thin;
+        scrollbar-color: #00ff41 transparent;
+      }
+      #terminal-history::-webkit-scrollbar { width: 6px; }
+      #terminal-history::-webkit-scrollbar-thumb { background: #00ff41; border-radius: 3px; }
+      #terminal-input-row {
+        display: flex;
+        align-items: center;
+        border-top: 1px solid rgba(0, 255, 65, 0.2);
+        padding-top: 10px;
+      }
+      #terminal-prompt {
+        margin-right: 12px;
+        white-space: nowrap;
+        color: #00ff41;
+        font-weight: bold;
+        opacity: 0.8;
+      }
+      #terminal-input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: #00ff41;
+        font-family: inherit;
+        font-size: 18px;
+        text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+      }
+      .terminal-log {
+        margin: 4px 0;
+        line-height: 1.4;
+      }
+      .terminal-error { color: #ff3333; text-shadow: 0 0 5px rgba(255, 51, 51, 0.5); }
+      .terminal-success { color: #33ff33; text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); }
+      .terminal-hint { color: #888; font-style: italic; font-size: 12px; }
     `));
     document.head.appendChild(style);
   } catch (e) { console.warn('[game] injectCustomStyles failed', e); }
@@ -6145,6 +6490,23 @@ function draw() {
       if (playerAttackCooldownTimer > 0) {
           playerAttackCooldownTimer -= gameDelta;
       }
+
+      // VICTORY CHECK
+      if (enemies && enemies.length === 0 && !victoryShown) {
+          triggerVictory();
+      }
+
+      // PORTAL ENTRY
+      if (isPortalActive && portalPos && playerPosition) {
+          const d = dist(playerPosition.x, playerPosition.y, portalPos.x, portalPos.y);
+          if (d < 0.8) {
+              verboseLog('[game] Entered Portal! Generating next map.');
+              isPortalActive = false;
+              victoryShown = false;
+              generateMap(); // Create a whole new world
+              try { showToast('World Cleared! Traveling to next area...', 'info', 3500); } catch(e) {}
+          }
+      }
     }
   }
 
@@ -6196,6 +6558,9 @@ function draw() {
            drawables.push({ type: 'vfx', entity: effect, baseY });
       }
     }
+    if (portalPos) {
+        drawables.push({ type: 'portal', x: portalPos.x, y: portalPos.y, baseY: (portalPos.y * cellSize) + cellSize });
+    }
     drawables.sort((a, b) => (a.baseY - b.baseY));
     
     // Calculate player bounding box for fading
@@ -6238,6 +6603,23 @@ function draw() {
         try { d.entity.draw(); } catch (e) {}
       } else if (d.type === 'vfx') {
         try { d.entity.draw(); } catch (e) {}
+      } else if (d.type === 'portal') {
+        const sheet = isPortalActive ? portalActiveSheet : portalInactiveSheet;
+        if (sheet && sheet.width > 0) {
+            const frameCount = 6; // Updated to 6 frames
+            const frame = Math.floor(millis() / 150) % frameCount;
+            const fw = sheet.width / frameCount;
+            const fh = sheet.height;
+            const drawSize = cellSize * 2.0; 
+            image(sheet, d.x * cellSize + (cellSize - drawSize) / 2, d.y * cellSize + (cellSize - drawSize), drawSize, drawSize, frame * fw, 0, fw, fh);
+        } else {
+            // Visual Fallback
+            fill(isPortalActive ? [255, 215, 0] : [100, 100, 100], 180);
+            stroke(255); strokeWeight(2);
+            rect(d.x * cellSize, d.y * cellSize, cellSize, cellSize, 4);
+            noStroke(); fill(255); textAlign(CENTER); gTextSize(10);
+            text("PORTAL", d.x * cellSize + cellSize/2, d.y * cellSize + cellSize/2 + 4);
+        }
       }
     }
   } catch (e) {}
@@ -6304,6 +6686,17 @@ function draw() {
           const ty = mmY + offY + (pyRel * drawH);
           circle(tx, ty, 4);
        }
+    }
+
+    // Draw Portal on Minimap
+    if (portalPos) {
+       fill(isPortalActive ? [255, 215, 0] : [100, 100, 100]);
+       stroke(0, 150); strokeWeight(1);
+       const pxRel = portalPos.x / logicalW;
+       const pyRel = portalPos.y / logicalH;
+       const tx = mmX + offX + (pxRel * drawW);
+       const ty = mmY + offY + (pyRel * drawH);
+       rect(tx - 3, ty - 3, 6, 6);
     }
 
     // Player marker (Arrow)
@@ -7046,7 +7439,23 @@ function drawCompass() {
     if (goal) {
         drawMarker(goal.x, goal.y, false);
     }
+
+    // 3. Portal Marker
+    if (portalPos) {
+        drawMarker(portalPos.x, portalPos.y, false);
+    }
 }
+
+function locatePortal() {
+    if (portalPos) {
+        console.log(`[debug] Portal is at Tile: ${portalPos.x}, ${portalPos.y}`);
+        return portalPos;
+    } else {
+        console.log("[debug] No portal spawned yet.");
+        return null;
+    }
+}
+window.locatePortal = locatePortal;
 
 function hideCategoryButtons() {
   categoryBackgrounds.forEach(e => e && e.hide());
