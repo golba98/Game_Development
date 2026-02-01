@@ -3132,8 +3132,23 @@ function updateVFX() {
 
 function updateEnemies() {
   if (!enemies) return;
-  for (const e of enemies) {
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
     if (e.update) e.update();
+
+    // Environmental Hazard Check (Glitch into trees/walls)
+    const tx = Math.floor(e.x + 0.5); // Check center of enemy
+    const ty = Math.floor(e.y + 0.5);
+    
+    if (tx >= 0 && tx < logicalW && ty >= 0 && ty < logicalH) {
+         const ts = getTileState(tx, ty);
+         if (isSolid(ts)) {
+             e.health = 0;
+             spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
+             spawnDamageText("CRUSH!", e.x, e.y, [150, 150, 150]);
+             enemies.splice(i, 1);
+         }
+    }
   }
 }
 
@@ -3620,7 +3635,11 @@ function _drawPlayerInternal() {
                         
                         if (targetX >= 0 && targetX < logicalW && targetY >= 0 && targetY < logicalH) {
                             const ts = getTileState(Math.floor(targetX), Math.floor(targetY));
-                            if (!isSolid(ts) && ts !== TILE_TYPES.RIVER) {
+                            if (isSolid(ts)) {
+                                // Knocked into wall -> Instant Death
+                                e.health = 0;
+                                spawnDamageText("SPLAT!", e.x, e.y, [255, 50, 50]);
+                            } else if (ts !== TILE_TYPES.RIVER) {
                                 e.x = targetX;
                                 e.y = targetY;
                             }
@@ -6366,6 +6385,10 @@ function draw() {
   // Clamp deltaTime to prevent huge jumps after lag/tab switch
   gameDelta = (typeof deltaTime !== 'undefined') ? Math.min(deltaTime, 50) : 16.67;
 
+  if (typeof WeatherSystem !== 'undefined') {
+    WeatherSystem.update(gameDelta);
+  }
+
   if (genPhase > 0) {
     if (genPhase === 1) {
       showLoadingOverlay = true;
@@ -6637,6 +6660,28 @@ function draw() {
 
   pop(); // END WORLD TRANSFORM
 
+  if (typeof WeatherSystem !== 'undefined') {
+      const lights = [];
+      if (playerPosition) {
+          const pX = isMoving ? renderX : playerPosition.x;
+          const pY = isMoving ? renderY : playerPosition.y;
+          // Calculate screen coordinates based on camera (defined in draw scope)
+          // We assume drawCamX/Y are available. If not, we recalculate or use globals if available.
+          // Since drawCamX is local to draw(), we might need to recalculate or ensure scope.
+          // Let's rely on drawCamX/Y being in scope as this is inside draw().
+          
+          const screenX = (pX * cellSize + cellSize/2) - drawCamX;
+          const screenY = (pY * cellSize + cellSize/2) - drawCamY;
+          
+          lights.push({
+              x: screenX, 
+              y: screenY, 
+              radius: 300 + Math.sin(millis() / 200) * 10 // Breathing light effect
+          });
+      }
+      WeatherSystem.drawOverlay(width, height, lights);
+  }
+
   // --- MINIMAP ---
   if (showMinimap && mapImage) {
     const mmW = 200;
@@ -6742,6 +6787,10 @@ function draw() {
   drawHealthBar();
   drawSprintMeter();
   drawCompass();
+
+  if (typeof WeatherSystem !== 'undefined') {
+      WeatherSystem.drawClock(width / 2, 40, 25);
+  }
 
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
@@ -8396,9 +8445,16 @@ function drawClouds() {
   
   clouds.sort((a, b) => a.scale - b.scale);
   
+  // Weather tint
+  let tintColor = [255, 255, 255, 255];
+  if (typeof WeatherSystem !== 'undefined') {
+      tintColor = WeatherSystem.getCloudTint();
+  }
+
   for (const cloud of clouds) {
     push();
-    tint(255, cloud.opacity);
+    // Combine cloud's own alpha with weather tint
+    tint(tintColor[0], tintColor[1], tintColor[2], Math.min(tintColor[3], cloud.opacity));
     imageMode(CORNER);
     
     const w = cloud.img.width * cloud.scale;
