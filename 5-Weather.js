@@ -6,10 +6,10 @@ const WeatherSystem = {
   
   // Colors (r, g, b, alpha)
   colors: {
-    night: [5, 5, 12, 230],     // Deep, almost black night (high contrast with torch)
-    dawn: [255, 230, 200, 60],  // Subtle, pale warm glow (realistic morning light)
-    day: [0, 0, 0, 0],          // Clear
-    dusk: [40, 30, 60, 120]     // Desaturated cool violet/grey (fading light)
+    night: [5, 5, 20, 230],      // Deep midnight blue-black
+    dawn: [255, 245, 210, 80],   // Soft, desaturated morning cream/gold
+    day: [0, 0, 0, 0],           // Clear day
+    dusk: [40, 60, 120, 150]     // Cool twilight blue
   },
 
   currentColor: [0, 0, 0, 0],
@@ -25,27 +25,33 @@ const WeatherSystem = {
     let t = this.cycle;
     let lerpT;
 
-    if (t < 0.2) { // Night
+    // Adjusted timings for a 120s cycle:
+    // Transitions are now 10% each (12s) instead of 5% (6s)
+    if (t < 0.15) { // Deep Night
       this.currentColor = [...this.colors.night];
-    } else if (t < 0.3) { // Dawn
+    } else if (t < 0.35) { // Dawn Transition
       if (t < 0.25) {
-         lerpT = (t - 0.2) / 0.05;
+         // Night -> Dawn Glow (12s)
+         lerpT = (t - 0.15) / 0.10;
          this.currentColor = this.lerpColor(this.colors.night, this.colors.dawn, lerpT);
       } else {
-         lerpT = (t - 0.25) / 0.05;
+         // Dawn Glow -> Full Day (12s)
+         lerpT = (t - 0.25) / 0.10;
          this.currentColor = this.lerpColor(this.colors.dawn, this.colors.day, lerpT);
       }
-    } else if (t < 0.7) { // Day
+    } else if (t < 0.65) { // Full Day
       this.currentColor = [...this.colors.day];
-    } else if (t < 0.8) { // Dusk
+    } else if (t < 0.85) { // Dusk Transition
       if (t < 0.75) {
-        lerpT = (t - 0.7) / 0.05;
+        // Day -> Dusk Glow (12s)
+        lerpT = (t - 0.65) / 0.10;
         this.currentColor = this.lerpColor(this.colors.day, this.colors.dusk, lerpT);
       } else {
-        lerpT = (t - 0.75) / 0.05;
+        // Dusk Glow -> Deep Night (12s)
+        lerpT = (t - 0.75) / 0.10;
         this.currentColor = this.lerpColor(this.colors.dusk, this.colors.night, lerpT);
       }
-    } else { // Night
+    } else { // Deep Night
       this.currentColor = [...this.colors.night];
     }
   },
@@ -76,35 +82,44 @@ const WeatherSystem = {
     // 1. Fill with darkness
     lm.background(this.currentColor[0], this.currentColor[1], this.currentColor[2], this.currentColor[3]);
 
-    // 2. Cut out lights
+    // 2. Process Lights
     if (lights && lights.length > 0) {
-       lm.erase();
-       lm.noStroke();
-       
+       // Pass 1: Cut out visibility holes (remove darkness)
+       lm.drawingContext.save();
+       lm.drawingContext.globalCompositeOperation = 'destination-out';
        for (const l of lights) {
-          // Simple gradient cutout
-          // Since erase() doesn't support gradients natively in all p5 modes easily,
-          // we use standard drawing but with "destination-out" logic if we were in raw canvas.
-          // But p5's erase() sets blending mode.
-          // To get soft edges, we can draw concentric circles with decreasing opacity (increasing erase strength)
-          // OR, simpler: just use native canvas API on the buffer.
-          
-          const ctx = lm.drawingContext;
-          ctx.save();
-          ctx.globalCompositeOperation = 'destination-out';
-          
           const rad = l.radius || 100;
-          const grd = ctx.createRadialGradient(l.x, l.y, rad * 0.1, l.x, l.y, rad);
-          grd.addColorStop(0, `rgba(0,0,0,1)`);   // Cut completely center
-          grd.addColorStop(1, `rgba(0,0,0,0)`);   // Fade to darkness edge
-          
-          ctx.fillStyle = grd;
-          ctx.beginPath();
-          ctx.arc(l.x, l.y, rad, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
+          const grd = lm.drawingContext.createRadialGradient(l.x, l.y, rad * 0.1, l.x, l.y, rad);
+          grd.addColorStop(0, `rgba(0,0,0,1)`);   
+          grd.addColorStop(1, `rgba(0,0,0,0)`);   
+          lm.drawingContext.fillStyle = grd;
+          lm.drawingContext.beginPath();
+          lm.drawingContext.arc(l.x, l.y, rad, 0, Math.PI * 2);
+          lm.drawingContext.fill();
        }
-       lm.noErase();
+       lm.drawingContext.restore();
+       
+       // Pass 2: Add Color Tints
+       lm.drawingContext.save();
+       lm.drawingContext.globalCompositeOperation = 'source-over';
+       for (const l of lights) {
+           if (l.color) {
+              const rad = l.radius || 100;
+              const [r, g, b] = l.color;
+              const intensity = l.intensity !== undefined ? l.intensity : 0.3; // Default tint intensity
+              
+              const grd = lm.drawingContext.createRadialGradient(l.x, l.y, 0, l.x, l.y, rad);
+              // Center is colored, fading out
+              grd.addColorStop(0, `rgba(${r},${g},${b},${intensity})`);
+              grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+              
+              lm.drawingContext.fillStyle = grd;
+              lm.drawingContext.beginPath();
+              lm.drawingContext.arc(l.x, l.y, rad, 0, Math.PI * 2);
+              lm.drawingContext.fill();
+           }
+       }
+       lm.drawingContext.restore();
     }
     
     // Draw the lightmap onto the main canvas

@@ -19,6 +19,7 @@ let victoryShown = false;
 let vfx = [];
 let playerHealth = 7;
 let maxHealth = 7;
+let playerInventory = { 'potion': 0, 'speed': 0 };
 let heartImage = null;
 let playerHurtTimer = 0;
 let isGameOver = false;
@@ -978,6 +979,33 @@ function keyPressed() {
       inGameMenuVisible = true;
     } catch (e) { console.warn('[game] debug O failed', e); }
     return;
+  }
+  
+  // INVENTORY USAGE
+  if (key === '1') {
+      if (playerInventory && playerInventory['potion'] > 0) {
+          if (playerHealth < maxHealth) {
+              playerInventory['potion']--;
+              playerHealth = Math.min(maxHealth, playerHealth + 2); // Potions heal 2
+              spawnDamageText("+2 HP", playerPosition.x, playerPosition.y, [0, 255, 0]);
+              try { playClickSFX(); } catch(e) {}
+          } else {
+              spawnDamageText("FULL HP", playerPosition.x, playerPosition.y, [200, 200, 200]);
+          }
+      }
+      return;
+  }
+  if (key === '2') {
+      if (playerInventory && playerInventory['speed'] > 0) {
+          playerInventory['speed']--;
+          if (typeof sprintRemainingMs === 'number') {
+             sprintRemainingMs = SPRINT_MAX_DURATION_MS;
+             sprintActive = true; 
+          }
+          spawnDamageText("SPEED UP!", playerPosition.x, playerPosition.y, [255, 215, 0]);
+          try { playClickSFX(); } catch(e) {}
+      }
+      return;
   }
 }
 
@@ -3296,28 +3324,40 @@ function handleItemInteraction(targetX, targetY) {
   if (!ITEM_DATA.hasOwnProperty(tileState)) return;
   const item = ITEM_DATA[tileState];
   verboseLog(`Player interacted with ${item.label}`);
+  let consumed = false;
+
   switch (tileState) {
     case TILE_TYPES.CHEST:
       spawnDamageText("EMPTY", targetX, targetY, [200, 200, 200]);
+      consumed = true;
       break;
     case TILE_TYPES.HEALTH:
       if (playerHealth < maxHealth) {
           playerHealth = Math.min(maxHealth, playerHealth + 1);
-          spawnDamageText("+1", targetX, targetY, [0, 255, 0]);
+          spawnDamageText("+1 HP", targetX, targetY, [0, 255, 0]);
+          consumed = true;
       } else {
-          spawnDamageText("FULL", targetX, targetY, [200, 200, 200]);
+          // Inventory
+          if (!playerInventory) playerInventory = { 'potion': 0, 'speed': 0 };
+          playerInventory['potion'] = (playerInventory['potion'] || 0) + 1;
+          spawnDamageText("GOT POTION", targetX, targetY, [100, 255, 255]);
+          consumed = true;
       }
       break;
     case TILE_TYPES.POWERUP:
-      spawnDamageText("BOOST!", targetX, targetY, [255, 215, 0]);
-      if (typeof sprintRemainingMs === 'number') {
-          sprintRemainingMs = Math.min(SPRINT_MAX_DURATION_MS, sprintRemainingMs + 1500);
-      }
+      // Inventory
+      if (!playerInventory) playerInventory = { 'potion': 0, 'speed': 0 };
+      playerInventory['speed'] = (playerInventory['speed'] || 0) + 1;
+      spawnDamageText("GOT BOOST", targetX, targetY, [255, 215, 0]);
+      consumed = true;
       break;
   }
-  const underlyingTerrain = terrainLayer[tileIdx] || TILE_TYPES.GRASS;
-  mapStates[tileIdx] = underlyingTerrain;
-  drawTileToMap(targetX, targetY); // Optimized update
+  
+  if (consumed) {
+      const underlyingTerrain = terrainLayer[tileIdx] || TILE_TYPES.GRASS;
+      mapStates[tileIdx] = underlyingTerrain;
+      drawTileToMap(targetX, targetY); // Optimized update
+  }
 }
 
 function canMoveTo(fromX, fromY, toX, toY) {
@@ -4453,6 +4493,97 @@ function drawHealthBar() {
   }
   noTint();
   pop();
+}
+
+function drawInventory() {
+    if (!playerInventory) return;
+    
+    const slotSize = 44;
+    const padding = 8;
+    const items = [
+        { key: '1', id: 'potion', label: 'HP', color: [255, 80, 80] },
+        { key: '2', id: 'speed', label: 'SPD', color: [255, 215, 0] }
+    ];
+    
+    const totalW = items.length * slotSize + (items.length - 1) * padding + 20; 
+    const bgH = slotSize + 20;
+    
+    // Position at bottom center
+    const vw = virtualW || (width / (gameScale || 1));
+    const vh = virtualH || (height / (gameScale || 1));
+    
+    const startX = (vw - totalW) / 2;
+    const startY = vh - bgH - 20;
+    
+    push();
+    // Background Panel
+    if (BUTTON_BG) {
+         tint(50, 50, 60, 220);
+         image(BUTTON_BG, startX, startY, totalW, bgH);
+         noTint();
+    } else {
+         fill(20, 20, 20, 200);
+         stroke(MENU_GOLD_BORDER);
+         strokeWeight(2);
+         rect(startX, startY, totalW, bgH, 4);
+    }
+    
+    // Slots
+    const slotsStartX = startX + 10;
+    const slotsStartY = startY + 10;
+    
+    items.forEach((item, index) => {
+        const x = slotsStartX + index * (slotSize + padding);
+        const count = playerInventory[item.id] || 0;
+        
+        // Slot
+        noStroke();
+        fill(0, 100);
+        rect(x, slotsStartY, slotSize, slotSize, 4);
+        
+        // Icon
+        if (count > 0) {
+            if (item.id === 'potion') {
+                fill(item.color);
+                circle(x + slotSize/2, slotsStartY + slotSize/2, slotSize * 0.6);
+            } else {
+                fill(item.color);
+                push();
+                translate(x + slotSize/2, slotsStartY + slotSize/2);
+                rotate(QUARTER_PI);
+                rect(-slotSize*0.25, -slotSize*0.25, slotSize*0.5, slotSize*0.5);
+                pop();
+            }
+        } else {
+             fill(255, 20);
+             circle(x + slotSize/2, slotsStartY + slotSize/2, slotSize * 0.4);
+        }
+        
+        // Border
+        stroke(MENU_GOLD_BORDER);
+        strokeWeight(1);
+        noFill();
+        rect(x, slotsStartY, slotSize, slotSize, 4);
+        
+        // Count Badge
+        if (count > 0) {
+            noStroke();
+            fill(255);
+            textAlign(RIGHT, BOTTOM);
+            textSize(14);
+            textStyle(BOLD);
+            text(count, x + slotSize - 2, slotsStartY + slotSize - 2);
+        }
+        
+        // Key Hint
+        fill(180);
+        textAlign(LEFT, TOP);
+        textSize(10);
+        textStyle(NORMAL);
+        text(item.key, x + 2, slotsStartY + 2);
+    });
+    
+    pop();
 }
 
 function drawVignette() {
@@ -6662,23 +6793,63 @@ function draw() {
 
   if (typeof WeatherSystem !== 'undefined') {
       const lights = [];
+      const camX = drawCamX || 0;
+      const camY = drawCamY || 0;
+
+      // Helper to add light
+      const addLight = (worldX, worldY, radius, color, intensity) => {
+          const sx = (worldX * cellSize + cellSize/2) - camX;
+          const sy = (worldY * cellSize + cellSize/2) - camY;
+          // Cull off-screen lights to save performance
+          if (sx < -radius || sx > width + radius || sy < -radius || sy > height + radius) return;
+          
+          lights.push({ x: sx, y: sy, radius, color, intensity });
+      };
+
       if (playerPosition) {
           const pX = isMoving ? renderX : playerPosition.x;
           const pY = isMoving ? renderY : playerPosition.y;
-          // Calculate screen coordinates based on camera (defined in draw scope)
-          // We assume drawCamX/Y are available. If not, we recalculate or use globals if available.
-          // Since drawCamX is local to draw(), we might need to recalculate or ensure scope.
-          // Let's rely on drawCamX/Y being in scope as this is inside draw().
           
-          const screenX = (pX * cellSize + cellSize/2) - drawCamX;
-          const screenY = (pY * cellSize + cellSize/2) - drawCamY;
-          
-          lights.push({
-              x: screenX, 
-              y: screenY, 
-              radius: 300 + Math.sin(millis() / 200) * 10 // Breathing light effect
-          });
+          // Player Torch (Warm Orange)
+          addLight(pX, pY, 320 + Math.sin(millis() / 200) * 10, [255, 160, 60], 0.25);
       }
+      
+      // Portal Light
+      if (portalPos) {
+           const isActive = isPortalActive;
+           const color = isActive ? [100, 200, 255] : [100, 100, 100]; // Blue if active, Gray if not
+           const rad = isActive ? 220 + Math.sin(millis()/300)*20 : 100;
+           addLight(portalPos.x, portalPos.y, rad, color, isActive ? 0.4 : 0.1);
+      }
+      
+      // Projectile Lights
+      if (projectiles) {
+        for (const p of projectiles) {
+            if (p.type === 'acid_blob') {
+                addLight(p.x, p.y, 140, [50, 255, 50], 0.5); // Toxic Green
+            }
+        }
+      }
+      
+      // Enemy Lights
+      if (enemies) {
+        for (const e of enemies) {
+            if (e.type === 'mantis') {
+                if (e.attacking) {
+                    addLight(e.renderX, e.renderY, 160, [255, 50, 50], 0.5); // Angry Red Flash
+                } else if (e.isPanicking) {
+                    addLight(e.renderX, e.renderY, 120, [255, 100, 100], 0.3); // Panic Red
+                }
+            } else if (e.type === 'maggot') {
+                // Maggots glow faintly green
+                addLight(e.renderX, e.renderY, 90, [100, 255, 100], 0.15);
+                if (e.attacking) {
+                     addLight(e.renderX, e.renderY, 130, [150, 255, 50], 0.4); // Bright spit charge
+                }
+            }
+        }
+      }
+
       WeatherSystem.drawOverlay(width, height, lights);
   }
 
@@ -6786,6 +6957,7 @@ function draw() {
   drawDifficultyBadge();
   drawHealthBar();
   drawSprintMeter();
+  drawInventory();
   drawCompass();
 
   if (typeof WeatherSystem !== 'undefined') {
