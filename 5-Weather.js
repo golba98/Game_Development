@@ -2,14 +2,12 @@
 const WeatherSystem = {
   // Config
   dayDurationSeconds: 120, // Reduced from 300 to 120 for faster cycle
-  cycle: 0.25, // Start at dawn/day transition for better first impression
+  cycle: 0.5, // Start at Noon for pure bright daylight
   
   // Colors (r, g, b, alpha)
   colors: {
-    night: [5, 5, 20, 230],      // Deep midnight blue-black
-    dawn: [255, 245, 210, 80],   // Soft, desaturated morning cream/gold
-    day: [0, 0, 0, 0],           // Clear day
-    dusk: [40, 60, 120, 150]     // Cool twilight blue
+    night: [10, 15, 30, 230],      // Clean, deep midnight blue-black
+    day: [0, 0, 0, 0]              // Pure clear day
   },
 
   currentColor: [0, 0, 0, 0],
@@ -25,33 +23,24 @@ const WeatherSystem = {
     let t = this.cycle;
     let lerpT;
 
-    // Adjusted timings for a 120s cycle:
-    // Transitions are now 10% each (12s) instead of 5% (6s)
-    if (t < 0.15) { // Deep Night
+    // Direct, progressive fade logic:
+    // 0.0 - 0.2: Full Night
+    // 0.2 - 0.4: Fading into Day
+    // 0.4 - 0.7: Full Day
+    // 0.7 - 0.9: Fading into Night
+    // 0.9 - 1.0: Full Night
+
+    if (t < 0.2) { 
       this.currentColor = [...this.colors.night];
-    } else if (t < 0.35) { // Dawn Transition
-      if (t < 0.25) {
-         // Night -> Dawn Glow (12s)
-         lerpT = (t - 0.15) / 0.10;
-         this.currentColor = this.lerpColor(this.colors.night, this.colors.dawn, lerpT);
-      } else {
-         // Dawn Glow -> Full Day (12s)
-         lerpT = (t - 0.25) / 0.10;
-         this.currentColor = this.lerpColor(this.colors.dawn, this.colors.day, lerpT);
-      }
-    } else if (t < 0.65) { // Full Day
+    } else if (t < 0.4) { // Morning Fade
+      lerpT = (t - 0.2) / 0.2;
+      this.currentColor = this.lerpColor(this.colors.night, this.colors.day, lerpT);
+    } else if (t < 0.7) { // Full Day
       this.currentColor = [...this.colors.day];
-    } else if (t < 0.85) { // Dusk Transition
-      if (t < 0.75) {
-        // Day -> Dusk Glow (12s)
-        lerpT = (t - 0.65) / 0.10;
-        this.currentColor = this.lerpColor(this.colors.day, this.colors.dusk, lerpT);
-      } else {
-        // Dusk Glow -> Deep Night (12s)
-        lerpT = (t - 0.75) / 0.10;
-        this.currentColor = this.lerpColor(this.colors.dusk, this.colors.night, lerpT);
-      }
-    } else { // Deep Night
+    } else if (t < 0.9) { // Evening Fade
+      lerpT = (t - 0.7) / 0.2;
+      this.currentColor = this.lerpColor(this.colors.day, this.colors.night, lerpT);
+    } else { 
       this.currentColor = [...this.colors.night];
     }
   },
@@ -143,71 +132,63 @@ const WeatherSystem = {
      push();
      translate(x, y);
      
-     // Background
-     noStroke();
-     fill(0, 0, 0, 150);
-     circle(0, 0, radius * 2);
-     stroke(255, 215, 0, 100);
-     strokeWeight(2);
+     // 1. Pixelly Outer Ring (Blocky Border)
      noFill();
-     circle(0, 0, radius * 2);
+     strokeWeight(2);
+     stroke(0, 150);
+     // Use a square with slightly clipped corners for a 'pixel-circle' look
+     rect(-radius, -radius, radius*2, radius*2, 4); 
+     
+     stroke(255, 215, 0, 150);
+     rect(-radius+2, -radius+2, radius*2-4, radius*2-4, 2);
 
-     // Cycle indicator
-     // 0.0 = Midnight (Bottom)
-     // 0.25 = Dawn (Left) - Wait, usually Sun rises East/Right? 
-     // Let's standardise: 
-     // 0.0 (Midnight) -> Bottom (-PI/2 ? No, PI/2)
-     // 0.5 (Noon) -> Top (-PI/2)
-     
-     // Rotate so 0.5 is up (-90 deg)
-     // 0.0 should be down (90 deg)
-     // Map cycle 0..1 to 0..TWO_PI, plus offset
+     // 2. Background (Dark glass)
+     noStroke();
+     fill(10, 10, 25, 180);
+     rect(-radius+3, -radius+3, radius*2-6, radius*2-6);
+
+     // 3. Horizon Line (Sharp)
+     stroke(255, 40);
+     strokeWeight(1);
+     line(-radius+4, 0, radius-4, 0);
+
+     // 4. Moving Elements (Sun/Moon)
+     // Rotate the 'sky' based on cycle
+     // 0.0 = Midnight (Bottom), 0.5 = Noon (Top)
      const angle = map(this.cycle, 0, 1, 0, TWO_PI) + HALF_PI;
-     
      rotate(angle);
      
-     // Sun/Moon position (on the ring)
-     const iconDist = radius - 8;
+     const iconDist = radius - 12;
      
-     // Sun (at 0.5 cycle, which is PI from 0.0) -> Opposite to "Current Time"?
-     // Wait, if I rotate the whole sky, the pointer is static? 
-     // Let's rotate the 'sky' so the icons move.
-     
-     // Sun is at Noon (0.5). So at cycle 0.5, Sun should be at Top.
-     // Current rotation puts 0.0 at Bottom.
-     // So Noon (0.5) is at Bottom + PI = Top. Correct.
-     
-     // Draw Moon (at 0.0)
+     // --- PIXEL MOON (at 0.0) ---
      push();
-     translate(0, iconDist); // Bottom
-     fill(200, 200, 255); noStroke();
-     circle(0, 0, 10); // Moon shape
-     fill(0, 0, 0, 150);
-     circle(3, -2, 8); // Crater/Crescent cut
+     translate(0, iconDist); 
+     noStroke();
+     fill(200, 210, 255);
+     // Hand-drawn pixel moon (3x3 blocky)
+     rect(-4, -4, 8, 8);
+     // Craters / Shade
+     fill(100, 110, 180, 150);
+     rect(0, 0, 3, 3);
+     rect(-3, -2, 2, 2);
      pop();
 
-     // Draw Sun (at 0.5)
+     // --- PIXEL SUN (at 0.5) ---
      push();
      rotate(PI);
      translate(0, iconDist);
-     fill(255, 200, 0); noStroke();
-     circle(0, 0, 12);
-     // Rays
-     stroke(255, 200, 0, 100); strokeWeight(2);
-     for(let i=0; i<8; i++) {
-        line(0, 0, 0, 18);
-        rotate(PI/4);
-     }
+     noStroke();
+     // Bright core
+     fill(255, 255, 150);
+     rect(-5, -5, 10, 10);
+     // Rays (Pixel style)
+     fill(255, 200, 0, 200);
+     rect(-1, -9, 2, 3);  // Top
+     rect(-1, 6, 2, 3);   // Bottom
+     rect(-9, -1, 3, 2);  // Left
+     rect(6, -1, 3, 2);   // Right
      pop();
      
-     // Horizon Line (Visual candy)
-     // Reset Rotation to draw static elements
      pop(); 
-     
-     push();
-     translate(x, y);
-     stroke(255, 50);
-     line(-radius, 0, radius, 0); // Horizon
-     pop();
   }
 };

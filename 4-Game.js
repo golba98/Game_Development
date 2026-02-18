@@ -3149,6 +3149,55 @@ function spawnRipple(x, y) {
     });
 }
 
+function spawnFirefly() {
+    const camX = smoothCamX || 0;
+    const camY = smoothCamY || 0;
+    // Spawn within viewport range
+    const spawnRX = (random(virtualW) - virtualW/2) + camX;
+    const spawnRY = (random(virtualH) - virtualH/2) + camY;
+    
+    vfx.push({
+        type: 'firefly',
+        x: spawnRX / cellSize,
+        y: spawnRY / cellSize,
+        vx: random(-0.02, 0.02),
+        vy: random(-0.02, 0.02),
+        alpha: 0,
+        targetAlpha: random(100, 255),
+        life: random(4000, 8000),
+        maxLife: 8000,
+        phase: random(Math.PI * 2),
+        update: function(dt) {
+            this.life -= dt;
+            this.x += this.vx * (dt / 16.67);
+            this.y += this.vy * (dt / 16.67);
+            this.vx += random(-0.002, 0.002);
+            this.vy += random(-0.002, 0.002);
+            // Pulse alpha
+            this.alpha = map(Math.sin(millis() / 600 + this.phase), -1, 1, 20, this.targetAlpha);
+            return this.life <= 0;
+        },
+        draw: function() {
+            const px = this.x * cellSize;
+            const py = this.y * cellSize;
+            noStroke();
+            fill(200, 255, 100, this.alpha);
+            circle(px, py, 2);
+            fill(200, 255, 100, this.alpha * 0.2);
+            circle(px, py, 6);
+        },
+        getLight: function() {
+            return {
+                worldX: this.x * cellSize,
+                worldY: this.y * cellSize,
+                radius: 40,
+                color: [180, 255, 80],
+                intensity: (this.alpha / 255) * 0.15
+            };
+        }
+    });
+}
+
 function updateVFX() {
     const dt = gameDelta;
     for (let i = vfx.length - 1; i >= 0; i--) {
@@ -4512,7 +4561,8 @@ function drawInventory() {
     const vw = virtualW || (width / (gameScale || 1));
     const vh = virtualH || (height / (gameScale || 1));
     
-    const startX = (vw - totalW) / 2;
+    // Move to Bottom-Right
+    const startX = vw - totalW - 20;
     const startY = vh - bgH - 20;
     
     push();
@@ -4545,18 +4595,22 @@ function drawInventory() {
         if (count > 0) {
             if (item.id === 'potion') {
                 fill(item.color);
-                circle(x + slotSize/2, slotsStartY + slotSize/2, slotSize * 0.6);
+                // Pixel-art Potion (Blocky)
+                rect(x + slotSize*0.3, slotsStartY + slotSize*0.4, slotSize * 0.4, slotSize * 0.4);
+                rect(x + slotSize*0.4, slotsStartY + slotSize*0.25, slotSize * 0.2, slotSize * 0.15);
             } else {
                 fill(item.color);
                 push();
                 translate(x + slotSize/2, slotsStartY + slotSize/2);
                 rotate(QUARTER_PI);
+                // Diamond shape
                 rect(-slotSize*0.25, -slotSize*0.25, slotSize*0.5, slotSize*0.5);
                 pop();
             }
         } else {
              fill(255, 20);
-             circle(x + slotSize/2, slotsStartY + slotSize/2, slotSize * 0.4);
+             // Empty slot indicator (small dot)
+             rect(x + slotSize*0.45, slotsStartY + slotSize*0.45, slotSize * 0.1, slotSize * 0.1);
         }
         
         // Border
@@ -6791,6 +6845,13 @@ function draw() {
 
   pop(); // END WORLD TRANSFORM
 
+  // Night Ambience: Fireflies
+  if (typeof WeatherSystem !== 'undefined' && (WeatherSystem.cycle < 0.3 || WeatherSystem.cycle > 0.7)) {
+      if (random(1) < 0.03) { 
+          spawnFirefly();
+      }
+  }
+
   if (typeof WeatherSystem !== 'undefined') {
       const lights = [];
       const camX = drawCamX || 0;
@@ -6810,8 +6871,9 @@ function draw() {
           const pX = isMoving ? renderX : playerPosition.x;
           const pY = isMoving ? renderY : playerPosition.y;
           
-          // Player Torch (Warm Orange)
-          addLight(pX, pY, 320 + Math.sin(millis() / 200) * 10, [255, 160, 60], 0.25);
+          // Player Light - Natural Lantern
+          const flicker = (Math.sin(millis() / 200) * 5) + (Math.random() * 5);
+          addLight(pX, pY, 340 + flicker, [255, 230, 200], 0.25);
       }
       
       // Portal Light
@@ -6848,6 +6910,16 @@ function draw() {
                 }
             }
         }
+      }
+
+      // VFX Lights (Fireflies, etc)
+      if (vfx) {
+          for (const effect of vfx) {
+              if (effect.getLight && typeof effect.getLight === 'function') {
+                  const l = effect.getLight();
+                  addLight(effect.x, effect.y, l.radius, l.color, l.intensity);
+              }
+          }
       }
 
       WeatherSystem.drawOverlay(width, height, lights);
@@ -6960,10 +7032,11 @@ function draw() {
   drawInventory();
   drawCompass();
 
-  if (typeof WeatherSystem !== 'undefined') {
-      WeatherSystem.drawClock(width / 2, 40, 25);
-  }
-
+      if (typeof WeatherSystem !== 'undefined') {
+         const vW = virtualW || (width / gameScale);
+         // Aligned vertically with health bar (y=45) and moved further left (vW - 240)
+         WeatherSystem.drawClock(vW - 240, 45, 25);
+      }
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
   } catch (e) {}
@@ -7384,10 +7457,10 @@ try {
 
 function drawDifficultyBadge() {
   const vW = virtualW || (width / gameScale);
-  const margin = 20;
+  const margin = 120; // Increased margin from 20 to 120 to move away from the corner
   const badgeSize = 32;
   const x = vW - margin - badgeSize;
-  const y = margin;
+  const y = 30; // Slightly lower for better visibility
   
   // Determine color based on difficulty
   let badgeColor;
@@ -7468,9 +7541,9 @@ function drawSprintMeter() {
 
   const barW = 240;
   const barH = 22;
-  const cx = vW / 2;
-  const y = vH - 60;
-  const x = cx - barW / 2;
+  // Move to Bottom-Left
+  const x = 55; // Leave space for the lightning bolt icon at x=20
+  const y = vH - 45; 
 
   push();
   
