@@ -17,6 +17,61 @@ let portalPos = null;
 let isPortalActive = false;
 let victoryShown = false;
 let vfx = [];
+let vfxPool = []; // Object Pool for VFX
+
+// --- SPATIAL HASH FOR PERFORMANCE ---
+const SpatialHash = {
+    gridSize: 4, // 4x4 tile buckets
+    buckets: new Map(),
+
+    clear: function() {
+        this.buckets.clear();
+    },
+
+    hash: function(x, y) {
+        const gx = Math.floor(x / this.gridSize);
+        const gy = Math.floor(y / this.gridSize);
+        return `${gx},${gy}`;
+    },
+
+    insert: function(obj) {
+        const key = this.hash(obj.x, obj.y);
+        if (!this.buckets.has(key)) this.buckets.set(key, []);
+        this.buckets.get(key).push(obj);
+    },
+
+    getNearby: function(x, y, radius = 1) {
+        const results = [];
+        const startX = Math.floor((x - radius) / this.gridSize);
+        const endX   = Math.floor((x + radius) / this.gridSize);
+        const startY = Math.floor((y - radius) / this.gridSize);
+        const endY   = Math.floor((y + radius) / this.gridSize);
+
+        for (let gx = startX; gx <= endX; gx++) {
+            for (let gy = startY; gy <= endY; gy++) {
+                const key = `${gx},${gy}`;
+                const bucket = this.buckets.get(key);
+                if (bucket) {
+                    for (const obj of bucket) {
+                        results.push(obj);
+                    }
+                }
+            }
+        }
+        return results;
+    }
+};
+
+// --- VFX POOLING HELPER ---
+function getVfxFromPool(type) {
+    for (let i = 0; i < vfxPool.length; i++) {
+        if (vfxPool[i].type === type) {
+            return vfxPool.splice(i, 1)[0];
+        }
+    }
+    return null;
+}
+
 let playerHealth = 7;
 let maxHealth = 7;
 let playerInventory = { 'potion': 0, 'speed': 0 };
@@ -32,6 +87,11 @@ let gameDelta = 0;
 let screenShakeTimer = 0;
 let screenShakeAmount = 0;
 let rippleTimer = 0;
+
+let hitStopTimer = 0;
+let playerInvulnTimer = 0;
+let playerVX = 0;
+let playerVY = 0;
 
 if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
   const canvasProto = HTMLCanvasElement.prototype;
@@ -711,6 +771,33 @@ function startPlayerAttack() {
       playerComboCount = 0;
   }
   lastAttackTime = now;
+
+  // --- SMART TARGETING (Auto-Face nearest enemy) ---
+  let nearestEnemy = null;
+  let minDist = 2.0; 
+  const pX = (typeof renderX === 'number' && !isNaN(renderX)) ? renderX : playerPosition.x;
+  const pY = (typeof renderY === 'number' && !isNaN(renderY)) ? renderY : playerPosition.y;
+
+  // Use Spatial Hash for optimized proximity search
+  const candidates = SpatialHash.getNearby(pX, pY, 3);
+  for (const e of candidates) {
+      if (e.type !== 'mantis' && e.type !== 'maggot') continue; 
+      const ex = (typeof e.renderX === 'number') ? e.renderX : e.x;
+      const ey = (typeof e.renderY === 'number') ? e.renderY : e.y;
+      const d = Math.hypot(ex - pX, ey - pY);
+      if (d < minDist) {
+          minDist = d;
+          nearestEnemy = e;
+      }
+  }
+  if (nearestEnemy) {
+      const ex = (typeof nearestEnemy.renderX === 'number') ? nearestEnemy.renderX : nearestEnemy.x;
+      const ey = (typeof nearestEnemy.renderY === 'number') ? nearestEnemy.renderY : nearestEnemy.y;
+      const dx = ex - pX;
+      const dy = ey - pY;
+      lastDirection = deltaToDirection(dx, dy);
+      verboseLog('[game] Auto-targeting nearest enemy for attack. Dir=', lastDirection);
+  }
 
   verboseLog('[game] startPlayerAttack triggered. Combo=', playerComboCount, 'Dir=', lastDirection);
   
@@ -2487,6 +2574,8 @@ function createMantis(startX, startY) {
     y: startY,
     health: 3,
     maxHealth: 3,
+    vx: 0,
+    vy: 0,
     hurtTimer: 0,
     panicTimer: 0,
     isPanicking: false,
@@ -2771,6 +2860,8 @@ function createMaggot(startX, startY) {
     y: startY,
     health: 2,
     maxHealth: 2,
+    vx: 0,
+    vy: 0,
     hurtTimer: 0,
     panicTimer: 0,
     isPanicking: false,
@@ -3058,151 +3149,154 @@ function updateProjectiles() {
 }
 
 function spawnDamageText(val, x, y, color = [255, 255, 255]) {
-    vfx.push({
-        type: 'text',
-        text: val,
-        x: x,
-        y: y,
-        vx: random(-0.02, 0.02),
-        vy: -0.05,
-        alpha: 255,
-        life: 1000,
-        maxLife: 1000,
-        color: color,
-        update: function(dt) {
-            this.x += this.vx * (dt / 16.67);
-            this.y += this.vy * (dt / 16.67);
-            this.life -= dt;
-            this.alpha = (this.life / this.maxLife) * 255;
-            return this.life <= 0;
-        },
-        draw: function() {
-            push();
-            const px = this.x * cellSize + cellSize/2;
-            const py = this.y * cellSize;
-            textAlign(CENTER);
-            fill(this.color[0], this.color[1], this.color[2], this.alpha);
-            stroke(0, this.alpha);
-            strokeWeight(2);
-            gTextSize(20);
-            text(this.text, px, py);
-            pop();
-        }
-    });
+    let obj = getVfxFromPool('text');
+    if (obj) {
+        obj.text = val; obj.x = x; obj.y = y; obj.color = color;
+        obj.vx = random(-0.02, 0.02); obj.vy = -0.05;
+        obj.alpha = 255; obj.life = 1000; obj.maxLife = 1000;
+    } else {
+        obj = {
+            type: 'text', text: val, x: x, y: y, vx: random(-0.02, 0.02), vy: -0.05,
+            alpha: 255, life: 1000, maxLife: 1000, color: color,
+            update: function(dt) {
+                this.x += this.vx * (dt / 16.67);
+                this.y += this.vy * (dt / 16.67);
+                this.life -= dt;
+                this.alpha = (this.life / this.maxLife) * 255;
+                return this.life <= 0;
+            },
+            draw: function() {
+                push();
+                const px = this.x * cellSize + cellSize/2;
+                const py = this.y * cellSize;
+                textAlign(CENTER);
+                fill(this.color[0], this.color[1], this.color[2], this.alpha);
+                stroke(0, this.alpha);
+                strokeWeight(2);
+                gTextSize(20);
+                text(this.text, px, py);
+                pop();
+            }
+        };
+    }
+    vfx.push(obj);
 }
 
 function spawnSplat(x, y, type = 'acid') {
     const sprite = type === 'egg' ? eggsplosionSprite : acidSplatSprite;
     if (!sprite) return;
-    vfx.push({
-        type: 'sprite',
-        sprite: sprite,
-        x: x,
-        y: y,
-        alpha: 255,
-        life: 1500,
-        maxLife: 1500,
-        scale: random(0.6, 1.0),
-        update: function(dt) {
-            this.life -= dt;
-            this.alpha = (this.life / this.maxLife) * 255;
-            return this.life <= 0;
-        },
-        draw: function() {
-            push();
-            const drawSize = cellSize * this.scale;
-            const px = this.x * cellSize + (cellSize - drawSize) / 2;
-            const py = this.y * cellSize + (cellSize - drawSize) / 2;
-            tint(255, this.alpha);
-            image(this.sprite, px, py, drawSize, drawSize);
-            noTint();
-            pop();
-        }
-    });
+    
+    let obj = getVfxFromPool('sprite');
+    if (obj) {
+        obj.sprite = sprite; obj.x = x; obj.y = y;
+        obj.alpha = 255; obj.life = 1500; obj.maxLife = 1500;
+        obj.scale = random(0.6, 1.0);
+    } else {
+        obj = {
+            type: 'sprite', sprite: sprite, x: x, y: y,
+            alpha: 255, life: 1500, maxLife: 1500, scale: random(0.6, 1.0),
+            update: function(dt) {
+                this.life -= dt;
+                this.alpha = (this.life / this.maxLife) * 255;
+                return this.life <= 0;
+            },
+            draw: function() {
+                push();
+                const drawSize = cellSize * this.scale;
+                const px = this.x * cellSize + (cellSize - drawSize) / 2;
+                const py = this.y * cellSize + (cellSize - drawSize) / 2;
+                tint(255, this.alpha);
+                image(this.sprite, px, py, drawSize, drawSize);
+                noTint();
+                pop();
+            }
+        };
+    }
+    vfx.push(obj);
 }
 
 function spawnRipple(x, y) {
-    vfx.push({
-        type: 'ripple',
-        x: x,
-        y: y,
-        alpha: 150,
-        life: 800,
-        maxLife: 800,
-        size: 5,
-        update: function(dt) {
-            this.life -= dt;
-            this.size += (dt / 16.67) * 0.8;
-            this.alpha = (this.life / this.maxLife) * 150;
-            return this.life <= 0;
-        },
-        draw: function() {
-            push();
-            noFill();
-            stroke(255, this.alpha);
-            strokeWeight(1.5);
-            const px = this.x * cellSize + cellSize/2;
-            const py = this.y * cellSize + cellSize/2;
-            ellipse(px, py, this.size, this.size * 0.6); // Perspective ripple
-            pop();
-        }
-    });
+    let obj = getVfxFromPool('ripple');
+    if (obj) {
+        obj.x = x; obj.y = y; obj.alpha = 150;
+        obj.life = 800; obj.maxLife = 800; obj.size = 5;
+    } else {
+        obj = {
+            type: 'ripple', x: x, y: y, alpha: 150, life: 800, maxLife: 800, size: 5,
+            update: function(dt) {
+                this.life -= dt;
+                this.size += (dt / 16.67) * 0.8;
+                this.alpha = (this.life / this.maxLife) * 150;
+                return this.life <= 0;
+            },
+            draw: function() {
+                push();
+                noFill();
+                stroke(255, this.alpha);
+                strokeWeight(1.5);
+                const px = this.x * cellSize + cellSize/2;
+                const py = this.y * cellSize + cellSize/2;
+                ellipse(px, py, this.size, this.size * 0.6); // Perspective ripple
+                pop();
+            }
+        };
+    }
+    vfx.push(obj);
 }
 
 function spawnFirefly() {
     const camX = smoothCamX || 0;
     const camY = smoothCamY || 0;
-    // Spawn within viewport range
     const spawnRX = (random(virtualW) - virtualW/2) + camX;
     const spawnRY = (random(virtualH) - virtualH/2) + camY;
     
-    vfx.push({
-        type: 'firefly',
-        x: spawnRX / cellSize,
-        y: spawnRY / cellSize,
-        vx: random(-0.02, 0.02),
-        vy: random(-0.02, 0.02),
-        alpha: 0,
-        targetAlpha: random(100, 255),
-        life: random(4000, 8000),
-        maxLife: 8000,
-        phase: random(Math.PI * 2),
-        update: function(dt) {
-            this.life -= dt;
-            this.x += this.vx * (dt / 16.67);
-            this.y += this.vy * (dt / 16.67);
-            this.vx += random(-0.002, 0.002);
-            this.vy += random(-0.002, 0.002);
-            // Pulse alpha
-            this.alpha = map(Math.sin(millis() / 600 + this.phase), -1, 1, 20, this.targetAlpha);
-            return this.life <= 0;
-        },
-        draw: function() {
-            const px = this.x * cellSize;
-            const py = this.y * cellSize;
-            noStroke();
-            fill(200, 255, 100, this.alpha);
-            circle(px, py, 2);
-            fill(200, 255, 100, this.alpha * 0.2);
-            circle(px, py, 6);
-        },
-        getLight: function() {
-            return {
-                worldX: this.x * cellSize,
-                worldY: this.y * cellSize,
-                radius: 40,
-                color: [180, 255, 80],
-                intensity: (this.alpha / 255) * 0.15
-            };
-        }
-    });
+    let obj = getVfxFromPool('firefly');
+    if (obj) {
+        obj.x = spawnRX / cellSize; obj.y = spawnRY / cellSize;
+        obj.vx = random(-0.02, 0.02); obj.vy = random(-0.02, 0.02);
+        obj.alpha = 0; obj.targetAlpha = random(100, 255);
+        obj.life = random(4000, 8000); obj.maxLife = 8000;
+        obj.phase = random(Math.PI * 2);
+    } else {
+        obj = {
+            type: 'firefly', x: spawnRX / cellSize, y: spawnRY / cellSize,
+            vx: random(-0.02, 0.02), vy: random(-0.02, 0.02),
+            alpha: 0, targetAlpha: random(100, 255),
+            life: random(4000, 8000), maxLife: 8000, phase: random(Math.PI * 2),
+            update: function(dt) {
+                this.life -= dt;
+                this.x += this.vx * (dt / 16.67);
+                this.y += this.vy * (dt / 16.67);
+                this.vx += random(-0.002, 0.002);
+                this.vy += random(-0.002, 0.002);
+                this.alpha = map(Math.sin(millis() / 600 + this.phase), -1, 1, 20, this.targetAlpha);
+                return this.life <= 0;
+            },
+            draw: function() {
+                const px = this.x * cellSize;
+                const py = this.y * cellSize;
+                noStroke();
+                fill(200, 255, 100, this.alpha);
+                circle(px, py, 2);
+                fill(200, 255, 100, this.alpha * 0.2);
+                circle(px, py, 6);
+            },
+            getLight: function() {
+                return {
+                    worldX: this.x * cellSize, worldY: this.y * cellSize,
+                    radius: 40, color: [180, 255, 80], intensity: (this.alpha / 255) * 0.15
+                };
+            }
+        };
+    }
+    vfx.push(obj);
 }
 
 function updateVFX() {
     const dt = gameDelta;
     for (let i = vfx.length - 1; i >= 0; i--) {
         if (vfx[i].update(dt)) {
-            vfx.splice(i, 1);
+            vfxPool.push(vfx.splice(i, 1)[0]);
         }
     }
 }
@@ -3420,8 +3514,6 @@ function canMoveTo(fromX, fromY, toX, toY) {
   const cliffTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.CLIFF : 6;
   const isToHill = (toState >= hillMin && toState <= hillMax) || (toState === cliffTile);
   const isFromHill = (fromState >= hillMin && fromState <= hillMax) || (fromState === cliffTile);
-  const isToLog = (typeof TILE_TYPES !== 'undefined') && toState === TILE_TYPES.LOG;
-  const isFromLog = (typeof TILE_TYPES !== 'undefined') && fromState === TILE_TYPES.LOG;
   const isToObstacle = decorativeObstacleTiles.has(targetIdx);
   const isFromObstacle = decorativeObstacleTiles.has(currentIdx);
 
@@ -3435,13 +3527,6 @@ function canMoveTo(fromX, fromY, toX, toY) {
   if (isToHill) {
     // Can move to a hill if jumping OR if already on a hill
     if (isJumping || isFromHill) return true;
-    return false;
-  }
-
-  // 3. Logs (Tiles)
-  if (isToLog) {
-    // Can move to a log if jumping OR if already on a log
-    if (isJumping || isFromLog) return true;
     return false;
   }
 
@@ -3500,7 +3585,7 @@ function deltaToDirection(dx, dy) {
   if (dx > eps && dy > eps) return 'SE';
   if (dx > eps && Math.abs(dy) <= eps) return 'E';
   if (dx > eps && dy < -eps) return 'NE';
-  return 'S';
+  return lastDirection || 'S';
 }
 
 function directionToDelta(dir) {
@@ -3672,27 +3757,33 @@ function _drawPlayerInternal() {
     } else {
         // HIT DETECTION (Damage frames 1 or 2)
         if ((playerAttackFrame === 1 || playerAttackFrame === 2) && !hasDealtPlayerDamage) {
-            const attackRange = 1.8; // Increased range
+            const attackRange = 2.0; // Slightly increased range for better feel
+            const pX = (typeof renderX === 'number' && !isNaN(renderX)) ? renderX : playerPosition.x;
+            const pY = (typeof renderY === 'number' && !isNaN(renderY)) ? renderY : playerPosition.y;
+
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const e = enemies[i];
-                const dist = Math.hypot(e.x - playerPosition.x, e.y - playerPosition.y);
+                const ex = (typeof e.renderX === 'number' && !isNaN(e.renderX)) ? e.renderX : e.x;
+                const ey = (typeof e.renderY === 'number' && !isNaN(e.renderY)) ? e.renderY : e.y;
+                const dist = Math.hypot(ex - pX, ey - pY);
                 
                 if (dist < attackRange) {
-                    const dx = e.x - playerPosition.x;
-                    const dy = e.y - playerPosition.y;
+                    const dx = ex - pX;
+                    const dy = ey - pY;
                     const dir = lastDirection || 'S';
                     let angleMatches = false;
                     
-                    // Wider tolerance (1.2 instead of 1.0) for better "feel"
-                    if (dist < 0.7) angleMatches = true; // Always hit if extremely close
-                    else if (dir === 'N' && dy < 0 && Math.abs(dx) < 1.2) angleMatches = true;
-                    else if (dir === 'S' && dy > 0 && Math.abs(dx) < 1.2) angleMatches = true;
-                    else if (dir === 'W' && dx < 0 && Math.abs(dy) < 1.2) angleMatches = true;
-                    else if (dir === 'E' && dx > 0 && Math.abs(dy) < 1.2) angleMatches = true;
-                    else if (dir === 'NE' && dx > 0 && dy < 0) angleMatches = true;
-                    else if (dir === 'NW' && dx < 0 && dy < 0) angleMatches = true;
-                    else if (dir === 'SE' && dx > 0 && dy > 0) angleMatches = true;
-                    else if (dir === 'SW' && dx < 0 && dy > 0) angleMatches = true;
+                    // Leniency: dist < 1.1 tiles covers overlapping or immediately adjacent enemies.
+                    // Directional checks now use a wider tolerance (1.4) and overlap (0.3) for a generous arc.
+                    if (dist < 1.1) angleMatches = true; 
+                    else if (dir === 'N'  && dy < 0.3  && Math.abs(dx) < 1.4) angleMatches = true;
+                    else if (dir === 'S'  && dy > -0.3 && Math.abs(dx) < 1.4) angleMatches = true;
+                    else if (dir === 'W'  && dx < 0.3  && Math.abs(dy) < 1.4) angleMatches = true;
+                    else if (dir === 'E'  && dx > -0.3 && Math.abs(dy) < 1.4) angleMatches = true;
+                    else if (dir === 'NE' && dx > -0.3 && dy < 0.3)  angleMatches = true;
+                    else if (dir === 'NW' && dx < 0.3  && dy < 0.3)  angleMatches = true;
+                    else if (dir === 'SE' && dx > -0.3 && dy > -0.3) angleMatches = true;
+                    else if (dir === 'SW' && dx < 0.3  && dy > -0.3) angleMatches = true;
                     
                     if (angleMatches) {
                         // Combo Damage (3rd hit deals double)
@@ -6020,7 +6111,7 @@ const RUN_SHEET_COMBINED = WALK_SHEET_COMBINED;
 
 let playerAnimFrame = 0;
 let playerAnimTimer = 0;
-let playerAnimSpeed = 150;
+let playerAnimSpeed = 120;
 
 const IDLE_DIRS = ['N','NE','E','SE','S','SW','W','NW'];
 
@@ -6222,10 +6313,10 @@ let terrainLayer;
 
 let playerPosition = null;
 
-const BASE_MOVE_DURATION_MS = 100;
-const BASE_MOVE_COOLDOWN_MS = 160;
-const SPRINT_MOVE_DURATION_MS = 75;
-const SPRINT_MOVE_COOLDOWN_MS = 150;
+const BASE_MOVE_DURATION_MS = 80;
+const BASE_MOVE_COOLDOWN_MS = 100;
+const SPRINT_MOVE_DURATION_MS = 60;
+const SPRINT_MOVE_COOLDOWN_MS = 80;
 const SPRINT_MAX_DURATION_MS = 3000;
 const SPRINT_COOLDOWN_MS = 4000;
 
@@ -6249,8 +6340,8 @@ let holdState = {
   S: { start: 0, last: 0 }
 };
 
-const HOLD_INITIAL_DELAY_MS = 120;
-const HOLD_REPEAT_INTERVAL_MS = 70;
+const HOLD_INITIAL_DELAY_MS = 100;
+const HOLD_REPEAT_INTERVAL_MS = 50;
 let moveStartMillis = 0;
 let lastMoveDurationMs = BASE_MOVE_DURATION_MS;
 
@@ -6295,7 +6386,7 @@ const TILE_TYPES = Object.freeze({
 });
 
 const WALKABLE_TILES = new Set([
-  TILE_TYPES.GRASS, TILE_TYPES.FLOWERS, TILE_TYPES.RAMP, TILE_TYPES.RIVER
+  TILE_TYPES.GRASS, TILE_TYPES.FLOWERS, TILE_TYPES.RAMP, TILE_TYPES.RIVER, TILE_TYPES.LOG
 ]);
 
 const ITEM_DATA = Object.freeze({
@@ -6659,6 +6750,14 @@ function draw() {
   const drawCamX = Math.floor(smoothCamX);
   const drawCamY = Math.floor(smoothCamY);
 
+  // --- RENDERING CULLING BOUNDS ---
+  // Buffer of 2 tiles to ensure smooth entry/exit
+  const buffer = 2.0;
+  const vLeft   = (drawCamX / cellSize) - buffer;
+  const vTop    = (drawCamY / cellSize) - buffer;
+  const vRight  = (drawCamX + virtualW) / cellSize + buffer;
+  const vBottom = (drawCamY + virtualH) / cellSize + buffer;
+
   background(34, 139, 34);
 
   // START WORLD TRANSFORM
@@ -6689,6 +6788,15 @@ function draw() {
     }
   
     if (!settingsOverlayDiv && !inGameMenuVisible && !isGameOver) {
+      // --- SPATIAL HASH UPDATE ---
+      SpatialHash.clear();
+      if (enemies) {
+          for (const e of enemies) SpatialHash.insert(e);
+      }
+      if (projectiles) {
+          for (const p of projectiles) SpatialHash.insert(p);
+      }
+
       handleMovement();
       updateMovementInterpolation();
       updateEnemies();
@@ -6724,6 +6832,11 @@ function draw() {
     if (Array.isArray(mapOverlays)) {
       for (const o of mapOverlays) {
           if (!o) continue;
+          const ox = o.px / cellSize;
+          const oy = o.py / cellSize;
+          // CULLING
+          if (ox < vLeft || ox > vRight || oy < vTop || oy > vBottom) continue;
+
           const drawX = o.px + Math.floor((cellSize - o.destW) / 2);
           const drawY = o.py + (cellSize - o.destH);
           const baseY = o.py + cellSize;
@@ -6732,6 +6845,9 @@ function draw() {
     }
     if (Array.isArray(decorativeObjects) && decorativeObjects.length) {
       for (const deco of decorativeObjects) {
+        // CULLING
+        if (deco.tileX < vLeft || deco.tileX > vRight || deco.tileY < vTop || deco.tileY > vBottom) continue;
+
         const img = DECOR_ASSET_IMAGES[deco.id];
         if (!img) continue;
         const destW = img.width || cellSize;
@@ -6750,24 +6866,38 @@ function draw() {
     }
     if (enemies && enemies.length) {
       for (const e of enemies) {
-           const baseY = (e.renderY * cellSize) + cellSize; 
+           // CULLING
+           const ex = (typeof e.renderX === 'number') ? e.renderX : e.x;
+           const ey = (typeof e.renderY === 'number') ? e.renderY : e.y;
+           if (ex < vLeft || ex > vRight || ey < vTop || ey > vBottom) continue;
+
+           const baseY = (ey * cellSize) + cellSize; 
            drawables.push({ type: 'enemy', entity: e, baseY });
       }
     }
     if (projectiles && projectiles.length) {
       for (const p of projectiles) {
+           // CULLING
+           if (p.x < vLeft || p.x > vRight || p.y < vTop || p.y > vBottom) continue;
+
            const baseY = (p.y * cellSize) + cellSize;
            drawables.push({ type: 'projectile', entity: p, baseY });
       }
     }
     if (vfx && vfx.length) {
       for (const effect of vfx) {
+           // CULLING
+           if (effect.x < vLeft || effect.x > vRight || effect.y < vTop || effect.y > vBottom) continue;
+
            const baseY = (effect.y * cellSize) + cellSize;
            drawables.push({ type: 'vfx', entity: effect, baseY });
       }
     }
     if (portalPos) {
-        drawables.push({ type: 'portal', x: portalPos.x, y: portalPos.y, baseY: (portalPos.y * cellSize) + cellSize });
+        // CULLING
+        if (portalPos.x >= vLeft && portalPos.x <= vRight && portalPos.y >= vTop && portalPos.y <= vBottom) {
+            drawables.push({ type: 'portal', x: portalPos.x, y: portalPos.y, baseY: (portalPos.y * cellSize) + cellSize });
+        }
     }
     drawables.sort((a, b) => (a.baseY - b.baseY));
     
