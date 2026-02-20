@@ -20,7 +20,7 @@ const WeatherSystem = {
   starsGenerated: false,
   STAR_COUNT: 500,
   STAR_FIELD_SIZE: 4000,
-  PARALLAX_FACTOR: 0.15,
+  PARALLAX_FACTOR: 0,   // Stars fixed in sky, independent of player movement
   starTime: 0,
 
   // Star color palette for natural variety
