@@ -14,10 +14,83 @@ const WeatherSystem = {
 
   currentColor: [0, 0, 0, 0],
   lightMap: null,
+
+  // --- Star System ---
+  stars: [],
+  starsGenerated: false,
+  STAR_COUNT: 200,
+  starTime: 0, // For twinkling animation
+
+  _seededRandom: function(seed) {
+    // Simple seeded PRNG for consistent star placement
+    let s = seed;
+    return function() {
+      s = (s * 16807 + 0) % 2147483647;
+      return (s - 1) / 2147483646;
+    };
+  },
+
+  generateStars: function(w, h) {
+    this.stars = [];
+    const rng = this._seededRandom(12345);
+    
+    // Divide screen into a grid for even distribution
+    const cols = Math.ceil(Math.sqrt(this.STAR_COUNT * (w / h)));
+    const rows = Math.ceil(this.STAR_COUNT / cols);
+    const cellW = w / cols;
+    const cellH = h / rows;
+    
+    let count = 0;
+    for (let row = 0; row < rows && count < this.STAR_COUNT; row++) {
+      for (let col = 0; col < cols && count < this.STAR_COUNT; col++) {
+        // Random position within grid cell (jittered grid)
+        const x = (col + rng()) * cellW;
+        const y = (row + rng()) * cellH;
+        
+        // Variety: size (1-3px for pixel art), brightness, twinkle speed
+        const sizeRoll = rng();
+        const size = sizeRoll < 0.7 ? 1 : (sizeRoll < 0.92 ? 2 : 3);
+        const baseBrightness = 150 + Math.floor(rng() * 105); // 150-255
+        const twinkleSpeed = 0.5 + rng() * 2.5;  // Varied twinkle rates
+        const twinkleOffset = rng() * Math.PI * 2; // Phase offset
+        
+        this.stars.push({ x, y, size, baseBrightness, twinkleSpeed, twinkleOffset });
+        count++;
+      }
+    }
+    this.starsGenerated = true;
+  },
+
+  drawStars: function(ctx, w, h, darknessAlpha) {
+    // Stars only visible when darkness alpha > 80 (getting dark)
+    if (darknessAlpha < 80) return;
+    
+    // Regenerate if screen size changed
+    if (!this.starsGenerated) {
+      this.generateStars(w, h);
+    }
+    
+    // Star visibility scales with darkness (fully visible at alpha 200+)
+    const starOpacity = Math.min(1.0, (darknessAlpha - 80) / 120);
+    const time = this.starTime;
+    
+    ctx.save();
+    for (const star of this.stars) {
+      // Twinkle: oscillate brightness
+      const twinkle = 0.5 + 0.5 * Math.sin(time * star.twinkleSpeed + star.twinkleOffset);
+      const brightness = Math.floor(star.baseBrightness * (0.4 + 0.6 * twinkle));
+      const alpha = Math.floor(starOpacity * 255 * (0.3 + 0.7 * twinkle));
+      
+      ctx.fillStyle = `rgba(${brightness}, ${brightness}, ${Math.min(255, brightness + 30)}, ${alpha / 255})`;
+      ctx.fillRect(Math.floor(star.x), Math.floor(star.y), star.size, star.size);
+    }
+    ctx.restore();
+  },
   
   update: function(dt) {
     const increment = dt / 1000 / this.dayDurationSeconds;
     this.cycle = (this.cycle + increment) % 1.0;
+    this.starTime += dt / 1000;
     this.calculateColor();
   },
 
@@ -86,15 +159,24 @@ const WeatherSystem = {
     if (!this.lightMap || this.lightMap.width !== w || this.lightMap.height !== h) {
        if (this.lightMap) this.lightMap.remove();
        this.lightMap = createGraphics(w, h);
+       this.starsGenerated = false; // Regenerate stars for new size
     }
 
     const lm = this.lightMap;
     lm.clear();
-    
-    // 1. Fill with darkness
-    lm.background(this.currentColor[0], this.currentColor[1], this.currentColor[2], this.currentColor[3]);
 
-    // 2. Process Lights
+    // 1. Draw stars BEFORE the darkness fill (they sit behind the overlay)
+    this.drawStars(lm.drawingContext, w, h, this.currentColor[3]);
+    
+    // 2. Fill with darkness (drawn on top of stars using source-over,
+    //    so stars peek through where the overlay is semi-transparent)
+    lm.drawingContext.save();
+    lm.drawingContext.globalCompositeOperation = 'source-over';
+    lm.drawingContext.fillStyle = `rgba(${this.currentColor[0]},${this.currentColor[1]},${this.currentColor[2]},${this.currentColor[3] / 255})`;
+    lm.drawingContext.fillRect(0, 0, w, h);
+    lm.drawingContext.restore();
+
+    // 3. Process Lights
     if (lights && lights.length > 0) {
        // Pass 1: Cut out visibility holes (remove darkness)
        lm.drawingContext.save();
@@ -143,7 +225,7 @@ const WeatherSystem = {
     // Darken clouds significantly at night
     const brightness = map(alpha, 0, 200, 255, 40); 
     
-    // Mix in some of the ambient color (e.g. orange at dawn)
+    // Mix in some of the ambient color
     const r = map(this.currentColor[0], 0, 255, 255, 100); 
     const g = map(this.currentColor[1], 0, 255, 255, 100);
     const b = map(this.currentColor[2], 0, 255, 255, 120);
