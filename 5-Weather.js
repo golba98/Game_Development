@@ -4,12 +4,12 @@ const WeatherSystem = {
   dayDurationSeconds: 150, // Slightly longer cycle for smoother transitions
   cycle: 0.5, // Start exactly at Noon (0.5)
   
-  // Colors (r, g, b, alpha) -> Better calibrated for pixel-art
+  // Colors (r, g, b, alpha) -> Standard dark to light transition
   colors: {
-    night: [4, 4, 15, 240],      // Deep indigo / virtually black, high opacity
-    dawn:  [255, 160, 60, 100],  // Warm orange/pink morning glow
+    night: [5, 5, 15, 240],      // Dark / virtually black, high opacity
+    dawn:  [5, 5, 15, 120],      // Gradual lightening, no orange
     day:   [0, 0, 0, 0],         // Perfectly clear
-    dusk:  [80, 30, 100, 130]    // Deep purple / magenta twilight
+    dusk:  [5, 5, 15, 150]       // Gradual darkening, no purple
   },
 
   currentColor: [0, 0, 0, 0],
