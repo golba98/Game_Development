@@ -20,7 +20,8 @@ const WeatherSystem = {
   starsGenerated: false,
   STAR_COUNT: 500,
   STAR_FIELD_SIZE: 4000,
-  PARALLAX_FACTOR: 0,   // Stars fixed in sky, independent of player movement
+  PARALLAX_FACTOR: 1.0,  // Stars fixed to world coordinates (1:1 with camera)
+  STAR_DRIFT_SPEED: 0,   // No drift, perfectly static
   starTime: 0,
 
   // Star color palette for natural variety
@@ -99,8 +100,12 @@ const WeatherSystem = {
     const time = this.starTime;
     const fieldSize = this.STAR_FIELD_SIZE;
     
-    const offsetX = (camX || 0) * this.PARALLAX_FACTOR;
-    const offsetY = (camY || 0) * this.PARALLAX_FACTOR;
+    // Calculate continuous drift (moving like clouds)
+    const driftX = time * this.STAR_DRIFT_SPEED;
+    const driftY = time * (this.STAR_DRIFT_SPEED * 0.2); // slight diagonal movement
+    
+    const offsetX = (camX || 0) * this.PARALLAX_FACTOR + driftX;
+    const offsetY = (camY || 0) * this.PARALLAX_FACTOR + driftY;
     
     ctx.save();
     // Use additive blending so stars GLOW on top of darkness
@@ -199,10 +204,7 @@ const WeatherSystem = {
     // 1. Fill with darkness
     lm.background(this.currentColor[0], this.currentColor[1], this.currentColor[2], this.currentColor[3]);
 
-    // 2. Draw stars ON TOP of darkness with additive blending (they glow through)
-    this.drawStars(lm.drawingContext, w, h, this.currentColor[3], camX, camY);
-
-    // 3. Process Lights
+    // 2. Process Lights
     if (lights && lights.length > 0) {
        // Pass 1: Cut out visibility holes (remove darkness + stars in lit areas)
        lm.drawingContext.save();
@@ -240,6 +242,9 @@ const WeatherSystem = {
        }
        lm.drawingContext.restore();
     }
+    
+    // 3. Draw stars ON TOP of the lighting and darkness mask
+    this.drawStars(lm.drawingContext, w, h, this.currentColor[3], camX, camY);
     
     // Draw the lightmap onto the main canvas
     image(lm, 0, 0);
