@@ -18,11 +18,12 @@ const WeatherSystem = {
   // --- Star System ---
   stars: [],
   starsGenerated: false,
-  STAR_COUNT: 200,
-  starTime: 0, // For twinkling animation
+  STAR_COUNT: 600,       // More stars for the large world area
+  STAR_FIELD_SIZE: 4000, // Stars tile in a 4000x4000 world-space block
+  PARALLAX_FACTOR: 0.15, // Stars move slower than camera (far away sky feel)
+  starTime: 0,
 
   _seededRandom: function(seed) {
-    // Simple seeded PRNG for consistent star placement
     let s = seed;
     return function() {
       s = (s * 16807 + 0) % 2147483647;
@@ -30,29 +31,28 @@ const WeatherSystem = {
     };
   },
 
-  generateStars: function(w, h) {
+  generateStars: function() {
     this.stars = [];
-    const rng = this._seededRandom(12345);
+    const rng = this._seededRandom(54321);
+    const fieldSize = this.STAR_FIELD_SIZE;
     
-    // Divide screen into a grid for even distribution
-    const cols = Math.ceil(Math.sqrt(this.STAR_COUNT * (w / h)));
+    // Jittered grid across the star field for even distribution
+    const cols = Math.ceil(Math.sqrt(this.STAR_COUNT));
     const rows = Math.ceil(this.STAR_COUNT / cols);
-    const cellW = w / cols;
-    const cellH = h / rows;
+    const cellW = fieldSize / cols;
+    const cellH = fieldSize / rows;
     
     let count = 0;
     for (let row = 0; row < rows && count < this.STAR_COUNT; row++) {
       for (let col = 0; col < cols && count < this.STAR_COUNT; col++) {
-        // Random position within grid cell (jittered grid)
         const x = (col + rng()) * cellW;
         const y = (row + rng()) * cellH;
         
-        // Variety: size (1-3px for pixel art), brightness, twinkle speed
         const sizeRoll = rng();
-        const size = sizeRoll < 0.7 ? 1 : (sizeRoll < 0.92 ? 2 : 3);
-        const baseBrightness = 150 + Math.floor(rng() * 105); // 150-255
-        const twinkleSpeed = 0.5 + rng() * 2.5;  // Varied twinkle rates
-        const twinkleOffset = rng() * Math.PI * 2; // Phase offset
+        const size = sizeRoll < 0.6 ? 2 : (sizeRoll < 0.85 ? 3 : 4);
+        const baseBrightness = 200 + Math.floor(rng() * 55); // 200-255 (brighter)
+        const twinkleSpeed = 0.5 + rng() * 2.0;
+        const twinkleOffset = rng() * Math.PI * 2;
         
         this.stars.push({ x, y, size, baseBrightness, twinkleSpeed, twinkleOffset });
         count++;
@@ -61,28 +61,44 @@ const WeatherSystem = {
     this.starsGenerated = true;
   },
 
-  drawStars: function(ctx, w, h, darknessAlpha) {
-    // Stars only visible when darkness alpha > 80 (getting dark)
-    if (darknessAlpha < 80) return;
+  drawStars: function(ctx, w, h, darknessAlpha, camX, camY) {
+    // Stars visible when darkness alpha > 60
+    if (darknessAlpha < 60) return;
     
-    // Regenerate if screen size changed
     if (!this.starsGenerated) {
-      this.generateStars(w, h);
+      this.generateStars();
     }
     
-    // Star visibility scales with darkness (fully visible at alpha 200+)
-    const starOpacity = Math.min(1.0, (darknessAlpha - 80) / 120);
+    // Star visibility scales with darkness — fully visible at alpha 160+
+    const starOpacity = Math.min(1.0, (darknessAlpha - 60) / 100);
     const time = this.starTime;
+    const fieldSize = this.STAR_FIELD_SIZE;
+    
+    // Camera offset with parallax (stars move slowly)
+    const offsetX = (camX || 0) * this.PARALLAX_FACTOR;
+    const offsetY = (camY || 0) * this.PARALLAX_FACTOR;
     
     ctx.save();
     for (const star of this.stars) {
-      // Twinkle: oscillate brightness
-      const twinkle = 0.5 + 0.5 * Math.sin(time * star.twinkleSpeed + star.twinkleOffset);
-      const brightness = Math.floor(star.baseBrightness * (0.4 + 0.6 * twinkle));
-      const alpha = Math.floor(starOpacity * 255 * (0.3 + 0.7 * twinkle));
+      // World-space position offset by camera, then wrap (tile the star field)
+      let sx = ((star.x - offsetX) % fieldSize + fieldSize) % fieldSize;
+      let sy = ((star.y - offsetY) % fieldSize + fieldSize) % fieldSize;
       
-      ctx.fillStyle = `rgba(${brightness}, ${brightness}, ${Math.min(255, brightness + 30)}, ${alpha / 255})`;
-      ctx.fillRect(Math.floor(star.x), Math.floor(star.y), star.size, star.size);
+      // Only draw stars visible on screen
+      if (sx > w + 4 || sy > h + 4) continue;
+      
+      // Twinkle
+      const twinkle = 0.5 + 0.5 * Math.sin(time * star.twinkleSpeed + star.twinkleOffset);
+      const brightness = Math.floor(star.baseBrightness * (0.6 + 0.4 * twinkle));
+      const alpha = starOpacity * (0.5 + 0.5 * twinkle);
+      
+      // Slightly blue-white tint
+      const r = brightness;
+      const g = brightness;
+      const b = Math.min(255, brightness + 25);
+      
+      ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(2)})`;
+      ctx.fillRect(Math.floor(sx), Math.floor(sy), star.size, star.size);
     }
     ctx.restore();
   },
@@ -108,35 +124,28 @@ const WeatherSystem = {
     // 0.85 - 1.00 : Deep Night
 
     if (t < 0.15) { 
-      // Deep Night 
       this.currentColor = [...this.colors.night];
     } 
     else if (t < 0.25) { 
-      // Night -> Dawn Glow (10% of cycle)
       lerpT = (t - 0.15) / 0.10;
       this.currentColor = this.lerpColor(this.colors.night, this.colors.dawn, lerpT);
     } 
     else if (t < 0.35) { 
-      // Dawn Glow -> Full Day (10% of cycle)
       lerpT = (t - 0.25) / 0.10;
       this.currentColor = this.lerpColor(this.colors.dawn, this.colors.day, lerpT);
     } 
     else if (t < 0.65) { 
-      // Full Day (30% of cycle)
       this.currentColor = [...this.colors.day];
     } 
     else if (t < 0.75) { 
-      // Day -> Dusk Glow (10% of cycle)
       lerpT = (t - 0.65) / 0.10;
       this.currentColor = this.lerpColor(this.colors.day, this.colors.dusk, lerpT);
     } 
     else if (t < 0.85) { 
-      // Dusk Glow -> Deep Night (10% of cycle)
       lerpT = (t - 0.75) / 0.10;
       this.currentColor = this.lerpColor(this.colors.dusk, this.colors.night, lerpT);
     } 
     else { 
-      // Deep Night (15% of cycle remaining to reach 1.0)
       this.currentColor = [...this.colors.night];
     }
   },
@@ -152,21 +161,20 @@ const WeatherSystem = {
 
   // Now accepts lights array: [{x, y, radius, r, g, b, intensity}]
   // x, y are SCREEN coordinates
-  drawOverlay: function(w, h, lights) {
+  drawOverlay: function(w, h, lights, camX, camY) {
     if (this.currentColor[3] < 5) return; // Don't draw if fully clear
 
     // Initialize or Resize Buffer
     if (!this.lightMap || this.lightMap.width !== w || this.lightMap.height !== h) {
        if (this.lightMap) this.lightMap.remove();
        this.lightMap = createGraphics(w, h);
-       this.starsGenerated = false; // Regenerate stars for new size
     }
 
     const lm = this.lightMap;
     lm.clear();
 
     // 1. Draw stars BEFORE the darkness fill (they sit behind the overlay)
-    this.drawStars(lm.drawingContext, w, h, this.currentColor[3]);
+    this.drawStars(lm.drawingContext, w, h, this.currentColor[3], camX, camY);
     
     // 2. Fill with darkness (drawn on top of stars using source-over,
     //    so stars peek through where the overlay is semi-transparent)

@@ -6868,7 +6868,7 @@ function draw() {
 
       push();
       scale(1 / gameScale);
-      WeatherSystem.drawOverlay(width, height, lights);
+      WeatherSystem.drawOverlay(width, height, lights, camX * gameScale, camY * gameScale);
       pop();
   }
 
