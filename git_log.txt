@@ -1,0 +1,5 @@
+ea31a18 (HEAD -> pr/golba98/3, origin/pr/golba98/3) Improve combat responsiveness, movement feel, and system performance
+e1001e7 Overhaul HUD layout and simplify day/night transitions
+22add3d Implement dynamic colored lighting system and player inventory mechanics
+13645d6 (origin/main, origin/HEAD) Implement Day/Night Weather system and Environmental kills
+d8bba58 Implement Portal progression system, CRT-styled command terminal, and Victory logic improvements

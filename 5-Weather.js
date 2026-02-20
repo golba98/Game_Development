@@ -1,15 +1,15 @@
 
 const WeatherSystem = {
   // Config
-  dayDurationSeconds: 120, // Reduced from 300 to 120 for faster cycle
-  cycle: 0.25, // Start at dawn/day transition for better first impression
+  dayDurationSeconds: 150, // Slightly longer cycle for smoother transitions
+  cycle: 0.5, // Start exactly at Noon (0.5)
   
-  // Colors (r, g, b, alpha)
+  // Colors (r, g, b, alpha) -> Better calibrated for pixel-art
   colors: {
-    night: [5, 5, 20, 230],      // Deep midnight blue-black
-    dawn: [255, 245, 210, 80],   // Soft, desaturated morning cream/gold
-    day: [0, 0, 0, 0],           // Clear day
-    dusk: [40, 60, 120, 150]     // Cool twilight blue
+    night: [4, 4, 15, 240],      // Deep indigo / virtually black, high opacity
+    dawn:  [255, 160, 60, 100],  // Warm orange/pink morning glow
+    day:   [0, 0, 0, 0],         // Perfectly clear
+    dusk:  [80, 30, 100, 130]    // Deep purple / magenta twilight
   },
 
   currentColor: [0, 0, 0, 0],
@@ -25,33 +25,45 @@ const WeatherSystem = {
     let t = this.cycle;
     let lerpT;
 
-    // Adjusted timings for a 120s cycle:
-    // Transitions are now 10% each (12s) instead of 5% (6s)
-    if (t < 0.15) { // Deep Night
+    // Redesigned logical cycle:
+    // 0.00 - 0.15 : Deep Night
+    // 0.15 - 0.25 : Night -> Dawn
+    // 0.25 - 0.35 : Dawn -> Day
+    // 0.35 - 0.65 : Full Day
+    // 0.65 - 0.75 : Day -> Dusk
+    // 0.75 - 0.85 : Dusk -> Night
+    // 0.85 - 1.00 : Deep Night
+
+    if (t < 0.15) { 
+      // Deep Night 
       this.currentColor = [...this.colors.night];
-    } else if (t < 0.35) { // Dawn Transition
-      if (t < 0.25) {
-         // Night -> Dawn Glow (12s)
-         lerpT = (t - 0.15) / 0.10;
-         this.currentColor = this.lerpColor(this.colors.night, this.colors.dawn, lerpT);
-      } else {
-         // Dawn Glow -> Full Day (12s)
-         lerpT = (t - 0.25) / 0.10;
-         this.currentColor = this.lerpColor(this.colors.dawn, this.colors.day, lerpT);
-      }
-    } else if (t < 0.65) { // Full Day
+    } 
+    else if (t < 0.25) { 
+      // Night -> Dawn Glow (10% of cycle)
+      lerpT = (t - 0.15) / 0.10;
+      this.currentColor = this.lerpColor(this.colors.night, this.colors.dawn, lerpT);
+    } 
+    else if (t < 0.35) { 
+      // Dawn Glow -> Full Day (10% of cycle)
+      lerpT = (t - 0.25) / 0.10;
+      this.currentColor = this.lerpColor(this.colors.dawn, this.colors.day, lerpT);
+    } 
+    else if (t < 0.65) { 
+      // Full Day (30% of cycle)
       this.currentColor = [...this.colors.day];
-    } else if (t < 0.85) { // Dusk Transition
-      if (t < 0.75) {
-        // Day -> Dusk Glow (12s)
-        lerpT = (t - 0.65) / 0.10;
-        this.currentColor = this.lerpColor(this.colors.day, this.colors.dusk, lerpT);
-      } else {
-        // Dusk Glow -> Deep Night (12s)
-        lerpT = (t - 0.75) / 0.10;
-        this.currentColor = this.lerpColor(this.colors.dusk, this.colors.night, lerpT);
-      }
-    } else { // Deep Night
+    } 
+    else if (t < 0.75) { 
+      // Day -> Dusk Glow (10% of cycle)
+      lerpT = (t - 0.65) / 0.10;
+      this.currentColor = this.lerpColor(this.colors.day, this.colors.dusk, lerpT);
+    } 
+    else if (t < 0.85) { 
+      // Dusk Glow -> Deep Night (10% of cycle)
+      lerpT = (t - 0.75) / 0.10;
+      this.currentColor = this.lerpColor(this.colors.dusk, this.colors.night, lerpT);
+    } 
+    else { 
+      // Deep Night (15% of cycle remaining to reach 1.0)
       this.currentColor = [...this.colors.night];
     }
   },
@@ -143,71 +155,74 @@ const WeatherSystem = {
      push();
      translate(x, y);
      
-     // Background
-     noStroke();
-     fill(0, 0, 0, 150);
-     circle(0, 0, radius * 2);
-     stroke(255, 215, 0, 100);
-     strokeWeight(2);
-     noFill();
-     circle(0, 0, radius * 2);
+     // Background Box
+     const boxSize = radius * 2.2;
+     if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
+         imageMode(CENTER);
+         image(BUTTON_BG, 0, 0, boxSize, boxSize);
+         imageMode(CORNER);
+     } else {
+         stroke(0); strokeWeight(4); fill(20, 20, 20, 180);
+         rectMode(CENTER);
+         rect(0, 0, boxSize, boxSize, 4);
+         rectMode(CORNER);
+     }
+     
+     // Gold Inner Border
+     if (typeof MENU_GOLD_BORDER !== 'undefined') {
+         stroke(MENU_GOLD_BORDER);
+         strokeWeight(2); noFill();
+         rectMode(CENTER);
+         rect(0, 0, boxSize - 6, boxSize - 6, 2);
+         rectMode(CORNER);
+     } else {
+         stroke(255, 215, 0, 100);
+         strokeWeight(2); noFill();
+         rectMode(CENTER);
+         rect(0, 0, boxSize - 6, boxSize - 6, 2);
+         rectMode(CORNER);
+     }
 
-     // Cycle indicator
-     // 0.0 = Midnight (Bottom)
-     // 0.25 = Dawn (Left) - Wait, usually Sun rises East/Right? 
-     // Let's standardise: 
-     // 0.0 (Midnight) -> Bottom (-PI/2 ? No, PI/2)
-     // 0.5 (Noon) -> Top (-PI/2)
-     
-     // Rotate so 0.5 is up (-90 deg)
-     // 0.0 should be down (90 deg)
-     // Map cycle 0..1 to 0..TWO_PI, plus offset
      const angle = map(this.cycle, 0, 1, 0, TWO_PI) + HALF_PI;
-     
      rotate(angle);
      
-     // Sun/Moon position (on the ring)
      const iconDist = radius - 8;
      
-     // Sun (at 0.5 cycle, which is PI from 0.0) -> Opposite to "Current Time"?
-     // Wait, if I rotate the whole sky, the pointer is static? 
-     // Let's rotate the 'sky' so the icons move.
-     
-     // Sun is at Noon (0.5). So at cycle 0.5, Sun should be at Top.
-     // Current rotation puts 0.0 at Bottom.
-     // So Noon (0.5) is at Bottom + PI = Top. Correct.
-     
-     // Draw Moon (at 0.0)
+     // Draw Moon (Blocky style)
      push();
      translate(0, iconDist); // Bottom
      fill(200, 200, 255); noStroke();
-     circle(0, 0, 10); // Moon shape
+     rectMode(CENTER);
+     rect(0, 0, 10, 10, 2); // Moon 
      fill(0, 0, 0, 150);
-     circle(3, -2, 8); // Crater/Crescent cut
+     rect(3, -2, 6, 6, 2); // Crescent cutout
+     rectMode(CORNER);
      pop();
 
-     // Draw Sun (at 0.5)
+     // Draw Sun (Blocky style)
      push();
      rotate(PI);
      translate(0, iconDist);
      fill(255, 200, 0); noStroke();
-     circle(0, 0, 12);
-     // Rays
-     stroke(255, 200, 0, 100); strokeWeight(2);
-     for(let i=0; i<8; i++) {
-        line(0, 0, 0, 18);
-        rotate(PI/4);
-     }
+     rectMode(CENTER);
+     rect(0, 0, 10, 10, 2);
+     // Cross Rays
+     fill(255, 200, 0, 150);
+     rect(0, -9, 4, 4);
+     rect(0, 9, 4, 4);
+     rect(-9, 0, 4, 4);
+     rect(9, 0, 4, 4);
+     rectMode(CORNER);
      pop();
      
-     // Horizon Line (Visual candy)
-     // Reset Rotation to draw static elements
+     // Horizon Line (Static)
      pop(); 
      
      push();
      translate(x, y);
-     stroke(255, 50);
-     line(-radius, 0, radius, 0); // Horizon
+     stroke(255, 40);
+     strokeWeight(2);
+     line(-radius + 2, 0, radius - 2, 0);
      pop();
   }
 };

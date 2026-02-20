@@ -1,0 +1,6 @@
+{ 
+"liveServer.settings.CustomBrowser": "chrome",
+"liveServer.settings.advanceCustomBrowserCmdLine": "msedge --profile-directory=\"Profile 2\""
+
+
+}

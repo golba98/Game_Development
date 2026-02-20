@@ -3391,9 +3391,8 @@ function canMoveTo(fromX, fromY, toX, toY) {
 
   // 3. Logs (Tiles)
   if (isToLog) {
-    // Can move to a log if jumping OR if already on a log
-    if (isJumping || isFromLog) return true;
-    return false;
+    // Logs act as bridges, walking onto them is freely permitted
+    return true;
   }
 
   // 4. Enemies
@@ -4512,21 +4511,24 @@ function drawInventory() {
     const vw = virtualW || (width / (gameScale || 1));
     const vh = virtualH || (height / (gameScale || 1));
     
-    const startX = (vw - totalW) / 2;
-    const startY = vh - bgH - 20;
+    const startX = 30; // Position bottom left
+    const startY = vh - bgH - 25;
     
     push();
     // Background Panel
-    if (BUTTON_BG) {
-         tint(50, 50, 60, 220);
-         image(BUTTON_BG, startX, startY, totalW, bgH);
-         noTint();
+    if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
+         image(BUTTON_BG, startX - 10, startY - 10, totalW + 20, bgH + 20);
     } else {
          fill(20, 20, 20, 200);
-         stroke(MENU_GOLD_BORDER);
-         strokeWeight(2);
-         rect(startX, startY, totalW, bgH, 4);
+         stroke(0);
+         strokeWeight(4);
+         rect(startX - 10, startY - 10, totalW + 20, bgH + 20, 4);
     }
+    
+    // Gold Inner Border
+    stroke(MENU_GOLD_BORDER);
+    strokeWeight(2); noFill();
+    rect(startX - 7, startY - 7, totalW + 14, bgH + 14, 2);
     
     // Slots
     const slotsStartX = startX + 10;
@@ -4541,22 +4543,27 @@ function drawInventory() {
         fill(0, 100);
         rect(x, slotsStartY, slotSize, slotSize, 4);
         
-        // Icon
+        // Icon (Blocky Style)
         if (count > 0) {
+            fill(item.color);
+            rectMode(CENTER);
             if (item.id === 'potion') {
-                fill(item.color);
-                circle(x + slotSize/2, slotsStartY + slotSize/2, slotSize * 0.6);
+                rect(x + slotSize/2, slotsStartY + slotSize/2, slotSize * 0.5, slotSize * 0.5, 2);
+                fill(255, 100);
+                rect(x + slotSize/2, slotsStartY + slotSize/2 - 6, slotSize * 0.2, slotSize * 0.3); // bottle neck
             } else {
-                fill(item.color);
                 push();
                 translate(x + slotSize/2, slotsStartY + slotSize/2);
                 rotate(QUARTER_PI);
-                rect(-slotSize*0.25, -slotSize*0.25, slotSize*0.5, slotSize*0.5);
+                rect(0, 0, slotSize * 0.4, slotSize * 0.4);
                 pop();
             }
+            rectMode(CORNER);
         } else {
              fill(255, 20);
-             circle(x + slotSize/2, slotsStartY + slotSize/2, slotSize * 0.4);
+             rectMode(CENTER);
+             rect(x + slotSize/2, slotsStartY + slotSize/2, slotSize * 0.3, slotSize * 0.3, 2);
+             rectMode(CORNER);
         }
         
         // Border
@@ -4588,26 +4595,27 @@ function drawInventory() {
 
 function drawVignette() {
     push();
-    const vW = virtualW || (width / gameScale);
-    const vH = virtualH || (height / gameScale);
+    // vW and vH are strictly the physical canvas dimensions since it is drawn after pop()
+    const vW = width;
+    const vH = height;
     
     // Use a large radial gradient via native canvas context for performance
     const ctx = drawingContext;
     const centerX = vW / 2;
     const centerY = vH / 2;
-    const outerRadius = Math.max(vW, vH) * 0.9;
+    const outerRadius = Math.max(vW, vH) * 0.8;
     const innerRadius = Math.min(vW, vH) * 0.2;
 
     const grad = ctx.createRadialGradient(
-        centerX * gameScale, centerY * gameScale, innerRadius * gameScale,
-        centerX * gameScale, centerY * gameScale, outerRadius * gameScale
+        centerX, centerY, innerRadius,
+        centerX, centerY, outerRadius
     );
     
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.45)'); // Subtle dark edges
+    grad.addColorStop(1, 'rgba(0,0,0,0.55)'); // Subtle dark edges
 
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, vW, vH);
     pop();
 }
 
@@ -6795,23 +6803,31 @@ function draw() {
       const lights = [];
       const camX = drawCamX || 0;
       const camY = drawCamY || 0;
+      const sX = typeof shakeX !== 'undefined' ? shakeX : 0;
+      const sY = typeof shakeY !== 'undefined' ? shakeY : 0;
 
       // Helper to add light
       const addLight = (worldX, worldY, radius, color, intensity) => {
-          const sx = (worldX * cellSize + cellSize/2) - camX;
-          const sy = (worldY * cellSize + cellSize/2) - camY;
+          const sx = (worldX * cellSize + cellSize/2) - camX + sX;
+          const sy = (worldY * cellSize + cellSize/2) - camY + sY;
           // Cull off-screen lights to save performance
-          if (sx < -radius || sx > width + radius || sy < -radius || sy > height + radius) return;
+          if (sx < -radius || sx > virtualW + radius || sy < -radius || sy > virtualH + radius) return;
           
-          lights.push({ x: sx, y: sy, radius, color, intensity });
+          lights.push({ 
+              x: sx * gameScale, 
+              y: sy * gameScale, 
+              radius: radius * gameScale, 
+              color, 
+              intensity 
+          });
       };
 
       if (playerPosition) {
           const pX = isMoving ? renderX : playerPosition.x;
           const pY = isMoving ? renderY : playerPosition.y;
           
-          // Player Torch (Warm Orange)
-          addLight(pX, pY, 320 + Math.sin(millis() / 200) * 10, [255, 160, 60], 0.25);
+          // Player Torch (Clean White Light)
+          addLight(pX, pY, 320 + Math.sin(millis() / 200) * 10, [250, 250, 255], 0.25);
       }
       
       // Portal Light
@@ -6850,8 +6866,13 @@ function draw() {
         }
       }
 
+      push();
+      scale(1 / gameScale);
       WeatherSystem.drawOverlay(width, height, lights);
+      pop();
   }
+
+
 
   // --- MINIMAP ---
   if (showMinimap && mapImage) {
@@ -6961,7 +6982,8 @@ function draw() {
   drawCompass();
 
   if (typeof WeatherSystem !== 'undefined') {
-      WeatherSystem.drawClock(width / 2, 40, 25);
+      const clockX = 30 + (maxHealth * 38) + 50; 
+      WeatherSystem.drawClock(clockX, 45, 25);
   }
 
   try {
@@ -6970,8 +6992,9 @@ function draw() {
   
   if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
 
+  pop(); // End Top level Push
+
   drawVignette();
-  pop(); 
 }
 
 
@@ -7468,19 +7491,19 @@ function drawSprintMeter() {
 
   const barW = 240;
   const barH = 22;
-  const cx = vW / 2;
-  const y = vH - 60;
-  const x = cx - barW / 2;
+  const y = vH - barH - 35;
+  const x = vW - barW - 40; // Pin to bottom right, leaving 40px leeway for the bar and 35px for the lightning bolt to its left
 
   push();
   
   // Themed Background
-  if (BUTTON_BG) {
+  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
       tint(255, targetAlpha);
-      image(BUTTON_BG, x - 10, y - 8, barW + 20, barH + 16);
+      image(BUTTON_BG, x - 12, y - 10, barW + 24, barH + 20);
+      noTint();
   } else {
       stroke(0); strokeWeight(4); fill(20, 20, 20, 180 * (targetAlpha / 255));
-      rect(x - 10, y - 8, barW + 20, barH + 16, 4);
+      rect(x - 12, y - 10, barW + 24, barH + 20, 4);
   }
   
   // Gold Inner Border
