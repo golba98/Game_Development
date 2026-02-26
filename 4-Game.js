@@ -512,7 +512,6 @@ function setup() {
   virtualH = H / gameScale;
 
   let cnv = createCanvas(W, H);
-  frameRate(60); // Cap frame rate for consistent 60fps feel
   ensureTextSizeOverride();
   
   try {
@@ -3595,9 +3594,11 @@ function updateSprintState() {
     }
   }
 
-  // Update smooth sprint percentage for UI with a smoother lerp factor
+  // Update smooth sprint percentage for UI with an adaptive lerp factor
   const targetPct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
-  smoothSprintPct = lerp(smoothSprintPct, targetPct, 0.1);
+  // Adaptive lerp based on ~60fps baseline
+  const t = 1 - Math.pow(1 - 0.12, gameDelta / 16.67);
+  smoothSprintPct = lerp(smoothSprintPct, targetPct, t);
 }
 
 function getActiveMoveDurationMs() {
@@ -6628,8 +6629,9 @@ function draw() {
     smoothCamX = targetCamX;
     smoothCamY = targetCamY;
   } else {
-    // Simplified smoothing for 60fps consistency
-    const t = 0.18; 
+    // Adaptive smoothing based on frame time (normalized to ~60fps)
+    // 0.18 is the base lerp at 60Hz; scales smoothly for 144Hz+
+    const t = 1 - Math.pow(1 - 0.18, gameDelta / 16.67);
     smoothCamX = lerp(smoothCamX, targetCamX, t);
     smoothCamY = lerp(smoothCamY, targetCamY, t);
   }
@@ -8688,8 +8690,10 @@ function updateClouds() {
   for (let i = clouds.length - 1; i >= 0; i--) {
     const cloud = clouds[i];
     
-    cloud.x += cloud.speed;
-    cloud.driftPhase += 0.01;
+    // Normalize speed to ~60fps (16.67ms)
+    const dtScale = gameDelta / 16.67;
+    cloud.x += cloud.speed * dtScale;
+    cloud.driftPhase += 0.01 * dtScale;
     cloud.y = cloud.baseY + Math.sin(cloud.driftPhase) * 20 * (cloud.verticalDrift || 0.1);
     
    
