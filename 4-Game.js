@@ -3437,6 +3437,12 @@ function canMoveTo(fromX, fromY, toX, toY) {
     return false;
   }
 
+  // 3. Logs (Tiles)
+  if (isToLog) {
+    // Can move to a log if jumping OR if already on a log
+    if (isJumping || isFromLog) return true;
+    return false;
+  }
 
   // 4. Enemies
   if (enemies && enemies.length > 0) {
@@ -4537,124 +4543,29 @@ function drawHealthBar() {
   pop();
 }
 
-function drawInventory() {
-    if (!playerInventory) return;
-    
-    const slotSize = 44;
-    const padding = 8;
-    const items = [
-        { key: '1', id: 'potion', label: 'HP', color: [255, 80, 80] },
-        { key: '2', id: 'speed', label: 'SPD', color: [255, 215, 0] }
-    ];
-    
-    const totalW = items.length * slotSize + (items.length - 1) * padding + 20; 
-    const bgH = slotSize + 20;
-    
-    // Position at bottom center
-    const vw = virtualW || (width / (gameScale || 1));
-    const vh = virtualH || (height / (gameScale || 1));
-    
-    // Move to Bottom-Right
-    const startX = vw - totalW - 20;
-    const startY = vh - bgH - 20;
-    
-    push();
-    // Background Panel
-    if (BUTTON_BG) {
-         tint(50, 50, 60, 220);
-         image(BUTTON_BG, startX, startY, totalW, bgH);
-         noTint();
-    } else {
-         fill(20, 20, 20, 200);
-         stroke(MENU_GOLD_BORDER);
-         strokeWeight(2);
-         rect(startX, startY, totalW, bgH, 4);
-    }
-    
-    // Slots
-    const slotsStartX = startX + 10;
-    const slotsStartY = startY + 10;
-    
-    items.forEach((item, index) => {
-        const x = slotsStartX + index * (slotSize + padding);
-        const count = playerInventory[item.id] || 0;
-        
-        // Slot
-        noStroke();
-        fill(0, 100);
-        rect(x, slotsStartY, slotSize, slotSize, 4);
-        
-        // Icon
-        if (count > 0) {
-            if (item.id === 'potion') {
-                fill(item.color);
-                // Pixel-art Potion (Blocky)
-                rect(x + slotSize*0.3, slotsStartY + slotSize*0.4, slotSize * 0.4, slotSize * 0.4);
-                rect(x + slotSize*0.4, slotsStartY + slotSize*0.25, slotSize * 0.2, slotSize * 0.15);
-            } else {
-                fill(item.color);
-                push();
-                translate(x + slotSize/2, slotsStartY + slotSize/2);
-                rotate(QUARTER_PI);
-                // Diamond shape
-                rect(-slotSize*0.25, -slotSize*0.25, slotSize*0.5, slotSize*0.5);
-                pop();
-            }
-        } else {
-             fill(255, 20);
-             // Empty slot indicator (small dot)
-             rect(x + slotSize*0.45, slotsStartY + slotSize*0.45, slotSize * 0.1, slotSize * 0.1);
-        }
-        
-        // Border
-        stroke(MENU_GOLD_BORDER);
-        strokeWeight(1);
-        noFill();
-        rect(x, slotsStartY, slotSize, slotSize, 4);
-        
-        // Count Badge
-        if (count > 0) {
-            noStroke();
-            fill(255);
-            textAlign(RIGHT, BOTTOM);
-            textSize(14);
-            textStyle(BOLD);
-            text(count, x + slotSize - 2, slotsStartY + slotSize - 2);
-        }
-        
-        // Key Hint
-        fill(180);
-        textAlign(LEFT, TOP);
-        textSize(10);
-        textStyle(NORMAL);
-        text(item.key, x + 2, slotsStartY + 2);
-    });
-    
-    pop();
-}
-
 function drawVignette() {
     push();
-    const vW = virtualW || (width / gameScale);
-    const vH = virtualH || (height / gameScale);
+    // vW and vH are strictly the physical canvas dimensions since it is drawn after pop()
+    const vW = width;
+    const vH = height;
     
     // Use a large radial gradient via native canvas context for performance
     const ctx = drawingContext;
     const centerX = vW / 2;
     const centerY = vH / 2;
-    const outerRadius = Math.max(vW, vH) * 0.9;
+    const outerRadius = Math.max(vW, vH) * 0.8;
     const innerRadius = Math.min(vW, vH) * 0.2;
 
     const grad = ctx.createRadialGradient(
-        centerX * gameScale, centerY * gameScale, innerRadius * gameScale,
-        centerX * gameScale, centerY * gameScale, outerRadius * gameScale
+        centerX, centerY, innerRadius,
+        centerX, centerY, outerRadius
     );
     
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.45)'); // Subtle dark edges
+    grad.addColorStop(1, 'rgba(0,0,0,0.55)'); // Subtle dark edges
 
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, vW, vH);
     pop();
 }
 
@@ -6847,76 +6758,27 @@ function draw() {
 
   if (typeof WeatherSystem !== 'undefined') {
       const lights = [];
-      const camX = drawCamX || 0;
-      const camY = drawCamY || 0;
-
-      // Helper to add light
-      const addLight = (worldX, worldY, radius, color, intensity) => {
-          const sx = (worldX * cellSize + cellSize/2) - camX;
-          const sy = (worldY * cellSize + cellSize/2) - camY;
-          // Cull off-screen lights to save performance
-          if (sx < -radius || sx > width + radius || sy < -radius || sy > height + radius) return;
-          
-          lights.push({ x: sx, y: sy, radius, color, intensity });
-      };
-
       if (playerPosition) {
           const pX = isMoving ? renderX : playerPosition.x;
           const pY = isMoving ? renderY : playerPosition.y;
+          // Calculate screen coordinates based on camera (defined in draw scope)
+          // We assume drawCamX/Y are available. If not, we recalculate or use globals if available.
+          // Since drawCamX is local to draw(), we might need to recalculate or ensure scope.
+          // Let's rely on drawCamX/Y being in scope as this is inside draw().
           
-          // Player Light - Natural Lantern
-          const flicker = (Math.sin(millis() / 200) * 5) + (Math.random() * 5);
-          addLight(pX, pY, 340 + flicker, [255, 230, 200], 0.25);
+          const screenX = (pX * cellSize + cellSize/2) - drawCamX;
+          const screenY = (pY * cellSize + cellSize/2) - drawCamY;
+          
+          lights.push({
+              x: screenX, 
+              y: screenY, 
+              radius: 300 + Math.sin(millis() / 200) * 10 // Breathing light effect
+          });
       }
-      
-      // Portal Light
-      if (portalPos) {
-           const isActive = isPortalActive;
-           const color = isActive ? [100, 200, 255] : [100, 100, 100]; // Blue if active, Gray if not
-           const rad = isActive ? 220 + Math.sin(millis()/300)*20 : 100;
-           addLight(portalPos.x, portalPos.y, rad, color, isActive ? 0.4 : 0.1);
-      }
-      
-      // Projectile Lights
-      if (projectiles) {
-        for (const p of projectiles) {
-            if (p.type === 'acid_blob') {
-                addLight(p.x, p.y, 140, [50, 255, 50], 0.5); // Toxic Green
-            }
-        }
-      }
-      
-      // Enemy Lights
-      if (enemies) {
-        for (const e of enemies) {
-            if (e.type === 'mantis') {
-                if (e.attacking) {
-                    addLight(e.renderX, e.renderY, 160, [255, 50, 50], 0.5); // Angry Red Flash
-                } else if (e.isPanicking) {
-                    addLight(e.renderX, e.renderY, 120, [255, 100, 100], 0.3); // Panic Red
-                }
-            } else if (e.type === 'maggot') {
-                // Maggots glow faintly green
-                addLight(e.renderX, e.renderY, 90, [100, 255, 100], 0.15);
-                if (e.attacking) {
-                     addLight(e.renderX, e.renderY, 130, [150, 255, 50], 0.4); // Bright spit charge
-                }
-            }
-        }
-      }
-
-      // VFX Lights (Fireflies, etc)
-      if (vfx) {
-          for (const effect of vfx) {
-              if (effect.getLight && typeof effect.getLight === 'function') {
-                  const l = effect.getLight();
-                  addLight(effect.x, effect.y, l.radius, l.color, l.intensity);
-              }
-          }
-      }
-
       WeatherSystem.drawOverlay(width, height, lights);
   }
+
+
 
   // --- MINIMAP ---
   if (showMinimap && mapImage) {
@@ -7025,19 +6887,19 @@ function draw() {
   drawInventory();
   drawCompass();
 
-      if (typeof WeatherSystem !== 'undefined') {
-         const vW = virtualW || (width / gameScale);
-         // Aligned vertically with health bar (y=45) and moved further left (vW - 240)
-         WeatherSystem.drawClock(vW - 240, 45, 25);
-      }
+  if (typeof WeatherSystem !== 'undefined') {
+      WeatherSystem.drawClock(width / 2, 40, 25);
+  }
+
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
   } catch (e) {}
   
   if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
 
+  pop(); // End Top level Push
+
   drawVignette();
-  pop(); 
 }
 
 
@@ -7534,19 +7396,20 @@ function drawSprintMeter() {
 
   const barW = 240;
   const barH = 22;
-  // Move to Bottom-Left
-  const x = 55; // Leave space for the lightning bolt icon at x=20
-  const y = vH - 45; 
+  const cx = vW / 2;
+  const y = vH - 60;
+  const x = cx - barW / 2;
 
   push();
   
   // Themed Background
-  if (BUTTON_BG) {
+  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
       tint(255, targetAlpha);
-      image(BUTTON_BG, x - 10, y - 8, barW + 20, barH + 16);
+      image(BUTTON_BG, x - 12, y - 10, barW + 24, barH + 20);
+      noTint();
   } else {
       stroke(0); strokeWeight(4); fill(20, 20, 20, 180 * (targetAlpha / 255));
-      rect(x - 10, y - 8, barW + 20, barH + 16, 4);
+      rect(x - 12, y - 10, barW + 24, barH + 20, 4);
   }
   
   // Gold Inner Border
