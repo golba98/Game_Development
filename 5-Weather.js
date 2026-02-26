@@ -199,31 +199,36 @@ const WeatherSystem = {
     }
 
     const lm = this.lightMap;
-    lm.clear();
     
-    // 1. Fill with darkness
-    lm.background(this.currentColor[0], this.currentColor[1], this.currentColor[2], this.currentColor[3]);
+    // Performance optimization: Redraw the darkness/lighting buffer only every 2 frames
+    // This provides a significant FPS boost during night cycles
+    if (typeof frameCount === 'undefined' || frameCount % 2 === 0) {
+        lm.clear();
+        
+        // 1. Fill with darkness
+        lm.background(this.currentColor[0], this.currentColor[1], this.currentColor[2], this.currentColor[3]);
 
-    // 2. Process Lights
-    if (lights && lights.length > 0) {
-       const ctx = lm.drawingContext;
-       lm.erase();
-       lm.noStroke();
-       
-       for (const l of lights) {
-          ctx.save();
-          const rad = l.radius || 100;
-          const grd = ctx.createRadialGradient(l.x, l.y, rad * 0.1, l.x, l.y, rad);
-          grd.addColorStop(0, `rgba(0,0,0,1)`);   // Cut completely center
-          grd.addColorStop(1, `rgba(0,0,0,0)`);   // Fade to darkness edge
-          
-          ctx.fillStyle = grd;
-          ctx.beginPath();
-          ctx.arc(l.x, l.y, rad, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-       }
-       lm.noErase();
+        // 2. Process Lights
+        if (lights && lights.length > 0) {
+           const ctx = lm.drawingContext;
+           lm.erase();
+           lm.noStroke();
+           
+           for (const l of lights) {
+              ctx.save();
+              const rad = l.radius || 100;
+              const grd = ctx.createRadialGradient(l.x, l.y, rad * 0.1, l.x, l.y, rad);
+              grd.addColorStop(0, `rgba(0,0,0,1)`);   // Cut completely center
+              grd.addColorStop(1, `rgba(0,0,0,0)`);   // Fade to darkness edge
+              
+              ctx.fillStyle = grd;
+              ctx.beginPath();
+              ctx.arc(l.x, l.y, rad, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+           }
+           lm.noErase();
+        }
     }
     
     // Draw the lightmap onto the main canvas
