@@ -2,14 +2,14 @@
 const WeatherSystem = {
   // Config
   dayDurationSeconds: 120, // Reduced from 300 to 120 for faster cycle
-  cycle: 0.25, // Start at dawn/day transition for better first impression
+  cycle: 0.3, // Start at full day (0.3) instead of transition (0.25) to avoid initial "orange" filter
   
   // Colors (r, g, b, alpha) -> Standard dark to light transition
   colors: {
     night: [5, 5, 12, 230],     // Deep, almost black night (high contrast with torch)
-    dawn: [255, 230, 200, 60],  // Subtle, pale warm glow (realistic morning light)
+    dawn: [200, 220, 255, 40],  // Soft blue/white dawn (removed orange)
     day: [0, 0, 0, 0],          // Clear
-    dusk: [40, 30, 60, 120]     // Desaturated cool violet/grey (fading light)
+    dusk: [15, 15, 40, 140]     // Deep blue dusk
   },
 
   currentColor: [0, 0, 0, 0],
@@ -155,7 +155,7 @@ const WeatherSystem = {
 
     if (t < 0.2) { // Night
       this.currentColor = [...this.colors.night];
-    } else if (t < 0.3) { // Dawn
+    } else if (t < 0.3) { // Dawn (10% of cycle)
       if (t < 0.25) {
          lerpT = (t - 0.2) / 0.05;
          this.currentColor = this.lerpColor(this.colors.night, this.colors.dawn, lerpT);
@@ -163,14 +163,16 @@ const WeatherSystem = {
          lerpT = (t - 0.25) / 0.05;
          this.currentColor = this.lerpColor(this.colors.dawn, this.colors.day, lerpT);
       }
-    } else if (t < 0.7) { // Day
+    } else if (t < 0.6) { // Day (30% of cycle)
       this.currentColor = [...this.colors.day];
-    } else if (t < 0.8) { // Dusk
+    } else if (t < 0.9) { // Extended Dusk/Evening (30% of cycle) for gradual darkening
       if (t < 0.75) {
-        lerpT = (t - 0.7) / 0.05;
+        // Day to Dusk (Fading light)
+        lerpT = (t - 0.6) / 0.15;
         this.currentColor = this.lerpColor(this.colors.day, this.colors.dusk, lerpT);
       } else {
-        lerpT = (t - 0.75) / 0.05;
+        // Dusk to Night (Becoming dark)
+        lerpT = (t - 0.75) / 0.15;
         this.currentColor = this.lerpColor(this.colors.dusk, this.colors.night, lerpT);
       }
     } else { // Night
@@ -204,10 +206,12 @@ const WeatherSystem = {
 
     // 2. Process Lights
     if (lights && lights.length > 0) {
+       const ctx = lm.drawingContext;
        lm.erase();
        lm.noStroke();
        
        for (const l of lights) {
+          ctx.save();
           const rad = l.radius || 100;
           const grd = ctx.createRadialGradient(l.x, l.y, rad * 0.1, l.x, l.y, rad);
           grd.addColorStop(0, `rgba(0,0,0,1)`);   // Cut completely center
@@ -242,71 +246,118 @@ const WeatherSystem = {
   drawClock: function(x, y, radius) {
      push();
      translate(x, y);
+     rectMode(CENTER);
      
-     // Background
+     const size = radius * 2;
+     
+     // --- 1. Outer Square Frame (Pixel-Themed Bronze) ---
+     // Drop Shadow
      noStroke();
-     fill(0, 0, 0, 150);
-     circle(0, 0, radius * 2);
-     stroke(255, 215, 0, 100);
-     strokeWeight(2);
+     fill(0, 120);
+     rect(2, 2, size + 10, size + 10, 4);
+     
+     // Main Bronze Box
+     stroke(50, 40, 30); // Darker border
+     strokeWeight(3);
+     fill(35, 30, 25); // Dark metallic backing
+     rect(0, 0, size + 6, size + 6, 2);
+     
+     // Inner Gold Inlay
+     stroke(180, 150, 50); 
+     strokeWeight(1.5);
      noFill();
-     circle(0, 0, radius * 2);
+     rect(0, 0, size + 2, size + 2, 1);
 
-     // Cycle indicator
-     // 0.0 = Midnight (Bottom)
-     // 0.25 = Dawn (Left) - Wait, usually Sun rises East/Right? 
-     // Let's standardise: 
-     // 0.0 (Midnight) -> Bottom (-PI/2 ? No, PI/2)
-     // 0.5 (Noon) -> Top (-PI/2)
-     
-     // Rotate so 0.5 is up (-90 deg)
-     // 0.0 should be down (90 deg)
-     // Map cycle 0..1 to 0..TWO_PI, plus offset
-     const angle = map(this.cycle, 0, 1, 0, TWO_PI) + HALF_PI;
-     rotate(angle);
-     
-     // Sun/Moon position (on the ring)
-     const iconDist = radius - 8;
-     
-     // Sun (at 0.5 cycle, which is PI from 0.0) -> Opposite to "Current Time"?
-     // Wait, if I rotate the whole sky, the pointer is static? 
-     // Let's rotate the 'sky' so the icons move.
-     
-     // Sun is at Noon (0.5). So at cycle 0.5, Sun should be at Top.
-     // Current rotation puts 0.0 at Bottom.
-     // So Noon (0.5) is at Bottom + PI = Top. Correct.
-     
-     // Draw Moon (at 0.0)
+     // Corner Rivets (Mechanical pixel look)
+     fill(100, 90, 80);
+     noStroke();
+     const off = size/2 + 1;
+     rect(-off, -off, 4, 4);
+     rect(off, -off, 4, 4);
+     rect(off, off, 4, 4);
+     rect(-off, off, 4, 4);
+
+     // --- 2. Quilted Background (Theme matching) ---
      push();
-     translate(0, iconDist); // Bottom
-     fill(200, 200, 255); noStroke();
-     circle(0, 0, 10); // Moon shape
-     fill(0, 0, 0, 150);
-     circle(3, -2, 8); // Crater/Crescent cut
+     // Clip to inner square
+     drawingContext.beginPath();
+     drawingContext.rect(-size/2, -size/2, size, size);
+     drawingContext.clip();
+     
+     // Quilted texture
+     stroke(45, 40, 35, 150);
+     strokeWeight(1);
+     const step = 10;
+     for(let i = -size; i < size; i += step) {
+        line(i, -size, i + size, size);
+        line(i + size, -size, i, size);
+     }
+     
+     // --- 3. Sky "Strip" (Rotates behind the frame) ---
+     const skyRotation = map(this.cycle, 0, 1, 0, TWO_PI) + HALF_PI;
+     push();
+     rotate(skyRotation);
+     noStroke();
+     // Day half
+     fill(40, 100, 220, 100);
+     arc(0, 0, size * 1.5, size * 1.5, PI, TWO_PI);
+     // Night half
+     fill(10, 10, 40, 140);
+     arc(0, 0, size * 1.5, size * 1.5, 0, PI);
      pop();
+     
+     pop(); // End Clipping
 
-     // Draw Sun (at 0.5)
+     // --- 4. Celestial Icons (Moving in a square path or circle within) ---
+     const iconDist = radius - 6;
+     const sunAngle = map(this.cycle, 0, 1, 0, TWO_PI) + HALF_PI;
+     const moonAngle = sunAngle + PI;
+
+     // Draw Sun
      push();
-     rotate(PI);
-     translate(0, iconDist);
-     fill(255, 200, 0); noStroke();
-     circle(0, 0, 12);
-     // Rays
-     stroke(255, 200, 0, 100); strokeWeight(2);
-     for(let i=0; i<8; i++) {
-        line(0, 0, 0, 18);
-        rotate(PI/4);
+     translate(cos(sunAngle) * iconDist, sin(sunAngle) * iconDist);
+     // Sun Glow
+     noStroke();
+     fill(255, 200, 50, 80);
+     circle(0, 0, 16);
+     // Square Sun Core (Pixel look)
+     fill(255, 255, 200);
+     rect(0, 0, 10, 10);
+     // "Pixel" Rays
+     stroke(255, 215, 0, 200);
+     strokeWeight(2);
+     for(let i=0; i<4; i++) {
+        rotate(PI/2);
+        const rLen = 9 + sin(millis() * 0.005 + i) * 2;
+        line(0, 6, 0, rLen);
      }
      pop();
-     
-     // Horizon Line (Visual candy)
-     // Reset Rotation to draw static elements
-     pop(); 
-     
+
+     // Draw Moon
      push();
-     translate(x, y);
-     stroke(255, 50);
-     line(-radius, 0, radius, 0); // Horizon
+     translate(cos(moonAngle) * iconDist, sin(moonAngle) * iconDist);
+     // Moon Glow
+     noStroke();
+     fill(150, 180, 255, 40);
+     rect(0, 0, 14, 14, 2);
+     // Moon Shape (Blocky Crescent)
+     fill(220, 230, 255);
+     rect(0, 0, 10, 10, 1);
+     fill(30, 25, 20); // Masking for crescent
+     rect(4, -3, 8, 8, 1);
+     pop();
+
+     // --- 5. Glass / Reflection ---
+     noStroke();
+     fill(255, 30);
+     triangle(-radius, -radius, radius, -radius, -radius, radius);
+
+     // --- 6. Top Pointer (Static Indicator) ---
+     fill(255, 215, 0);
+     noStroke();
+     // Small square gem at top
+     rect(0, -radius - 4, 6, 6);
+     
      pop();
   }
 };

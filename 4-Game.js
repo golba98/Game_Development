@@ -732,6 +732,9 @@ function startPlayerAttack() {
 }
 
 function mousePressed() {
+  // Ensure keyboard focus is on this window for WASD input
+  try { window.focus(); } catch (e) {}
+
   if (isTerminalOpen) return;
   if (isGameOver) return;
   
@@ -3421,6 +3424,11 @@ function canMoveTo(fromX, fromY, toX, toY) {
   const isToHill = (toState >= hillMin && toState <= hillMax) || (toState === cliffTile);
   const isFromHill = (fromState >= hillMin && fromState <= hillMax) || (fromState === cliffTile);
 
+  const logTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.LOG : 8;
+  const rampTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.RAMP : 7;
+  const isToLogOrRamp = (toState === logTile || toState === rampTile);
+  const isFromLogOrRamp = (fromState === logTile || fromState === rampTile);
+
   const isToObstacle = decorativeObstacleTiles.has(targetIdx);
   const isFromObstacle = decorativeObstacleTiles.has(currentIdx);
 
@@ -3437,11 +3445,10 @@ function canMoveTo(fromX, fromY, toX, toY) {
     return false;
   }
 
-  // 3. Logs (Tiles)
-  if (isToLog) {
-    // Can move to a log if jumping OR if already on a log
-    if (isJumping || isFromLog) return true;
-    return false;
+  // 3. Logs & Ramps (Bridges)
+  if (isToLogOrRamp) {
+    // Bridges should always be walkable from anywhere
+    return true;
   }
 
   // 4. Enemies
@@ -4540,6 +4547,64 @@ function drawHealthBar() {
     }
   }
   noTint();
+  pop();
+}
+
+function drawInventory() {
+  if (!playerInventory) return;
+  const potions = playerInventory['potion'] || 0;
+  const speeds = playerInventory['speed'] || 0;
+  if (potions === 0 && speeds === 0) return;
+
+  const startX = 30;
+  const startY = 95;
+  const slotW = 48;
+  const slotH = 48;
+  const slotSpacing = 8;
+  const slots = [];
+
+  if (potions > 0) slots.push({ label: '1', count: potions, col: [0, 200, 80] });
+  if (speeds > 0) slots.push({ label: '2', count: speeds, col: [255, 215, 0] });
+
+  const containerW = slots.length * (slotW + slotSpacing) + slotSpacing + 10;
+  const containerH = slotH + 20;
+
+  push();
+  if (BUTTON_BG) {
+    image(BUTTON_BG, startX - 8, startY - 8, containerW, containerH);
+  } else {
+    stroke(0); strokeWeight(4); fill(20, 20, 20, 180);
+    rect(startX - 8, startY - 8, containerW, containerH, 4);
+  }
+  stroke(MENU_GOLD_BORDER);
+  strokeWeight(2); noFill();
+  rect(startX - 5, startY - 5, containerW - 6, containerH - 6, 2);
+
+  for (let i = 0; i < slots.length; i++) {
+    const s = slots[i];
+    const sx = startX + i * (slotW + slotSpacing);
+    const sy = startY;
+
+    // Slot background
+    noStroke(); fill(0, 0, 0, 120);
+    rect(sx, sy, slotW, slotH, 3);
+
+    // Item indicator
+    fill(s.col[0], s.col[1], s.col[2]);
+    noStroke();
+    ellipse(sx + slotW / 2, sy + slotH / 2 - 4, 20, 20);
+
+    // Count
+    fill(255); noStroke();
+    textAlign(CENTER, CENTER);
+    if (typeof gTextSize === 'function') gTextSize(14); else textSize(14);
+    text('x' + s.count, sx + slotW / 2, sy + slotH - 8);
+
+    // Key hint
+    fill(200, 200, 200, 180);
+    if (typeof gTextSize === 'function') gTextSize(10); else textSize(10);
+    text('[' + s.label + ']', sx + slotW / 2, sy + 6);
+  }
   pop();
 }
 
@@ -6168,6 +6233,9 @@ let sprintLastUpdate = 0;
 
 let mapImage;
 let mapOverlays = [];
+let drawablePool = [];
+let drawablePoolIdx = 0;
+let currentDrawables = [];
 let spritesheet = null;
 const SPRITESHEET_PATH = 'assets/1-Background/test3.png';
 let spirtesheet_idle = null;
@@ -6554,9 +6622,11 @@ function draw() {
     smoothCamX = targetCamX;
     smoothCamY = targetCamY;
   } else {
-    // 0.15 smoothing factor for responsiveness without jitter
-    smoothCamX = lerp(smoothCamX, targetCamX, 0.15);
-    smoothCamY = lerp(smoothCamY, targetCamY, 0.15);
+    // Delta-time-aware smoothing for consistent feel across 60Hz/144Hz
+    // ~6ms half-life at 60fps
+    const t = 1 - Math.pow(0.001, gameDelta / 1000);
+    smoothCamX = lerp(smoothCamX, targetCamX, t);
+    smoothCamY = lerp(smoothCamY, targetCamY, t);
   }
 
   // Use floor to prevent sub-pixel shimmering on tiles
@@ -6624,14 +6694,20 @@ function draw() {
 
 
   try {
-    const drawables = [];
+    drawablePoolIdx = 0;
+    currentDrawables.length = 0;
+
     if (Array.isArray(mapOverlays)) {
       for (const o of mapOverlays) {
           if (!o) continue;
-          const drawX = o.px + Math.floor((cellSize - o.destW) / 2);
-          const drawY = o.py + (cellSize - o.destH);
-          const baseY = o.py + cellSize;
-          drawables.push({ type: 'overlay', o, drawX, drawY, baseY });
+          if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+          const d = drawablePool[drawablePoolIdx++];
+          d.type = 'overlay';
+          d.o = o;
+          d.drawX = o.px + Math.floor((cellSize - o.destW) / 2);
+          d.drawY = o.py + (cellSize - o.destH);
+          d.baseY = o.py + cellSize;
+          currentDrawables.push(d);
         }
     }
     if (Array.isArray(decorativeObjects) && decorativeObjects.length) {
@@ -6640,40 +6716,67 @@ function draw() {
         if (!img) continue;
         const destW = img.width || cellSize;
         const destH = img.height || cellSize;
-        const drawX = deco.tileX * cellSize + Math.floor((cellSize - destW) / 2);
-        const drawY = deco.tileY * cellSize + (cellSize - destH);
-        const baseY = deco.tileY * cellSize + cellSize;
-        drawables.push({ type: 'decor', img, drawX, drawY, destW, destH, baseY });
+        if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+        const d = drawablePool[drawablePoolIdx++];
+        d.type = 'decor';
+        d.img = img;
+        d.drawX = deco.tileX * cellSize + Math.floor((cellSize - destW) / 2);
+        d.drawY = deco.tileY * cellSize + (cellSize - destH);
+        d.destW = destW;
+        d.destH = destH;
+        d.baseY = deco.tileY * cellSize + cellSize;
+        currentDrawables.push(d);
       }
     }
     if (playerPosition) {
       const drawTileX = isMoving ? renderX : playerPosition.x;
       const drawTileY = isMoving ? renderY : playerPosition.y;
-      const playerBaseY = (drawTileY * cellSize) + cellSize;
-      drawables.push({ type: 'player', baseY: playerBaseY });
+      if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+      const d = drawablePool[drawablePoolIdx++];
+      d.type = 'player';
+      d.baseY = (drawTileY * cellSize) + cellSize;
+      currentDrawables.push(d);
     }
     if (enemies && enemies.length) {
       for (const e of enemies) {
-           const baseY = (e.renderY * cellSize) + cellSize; 
-           drawables.push({ type: 'enemy', entity: e, baseY });
+           if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+           const d = drawablePool[drawablePoolIdx++];
+           d.type = 'enemy';
+           d.entity = e;
+           d.baseY = (e.renderY * cellSize) + cellSize; 
+           currentDrawables.push(d);
       }
     }
     if (projectiles && projectiles.length) {
       for (const p of projectiles) {
-           const baseY = (p.y * cellSize) + cellSize;
-           drawables.push({ type: 'projectile', entity: p, baseY });
+           if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+           const d = drawablePool[drawablePoolIdx++];
+           d.type = 'projectile';
+           d.entity = p;
+           d.baseY = (p.y * cellSize) + cellSize;
+           currentDrawables.push(d);
       }
     }
     if (vfx && vfx.length) {
       for (const effect of vfx) {
-           const baseY = (effect.y * cellSize) + cellSize;
-           drawables.push({ type: 'vfx', entity: effect, baseY });
+           if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+           const d = drawablePool[drawablePoolIdx++];
+           d.type = 'vfx';
+           d.entity = effect;
+           d.baseY = (effect.y * cellSize) + cellSize;
+           currentDrawables.push(d);
       }
     }
     if (portalPos) {
-        drawables.push({ type: 'portal', x: portalPos.x, y: portalPos.y, baseY: (portalPos.y * cellSize) + cellSize });
+        if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+        const d = drawablePool[drawablePoolIdx++];
+        d.type = 'portal';
+        d.x = portalPos.x;
+        d.y = portalPos.y;
+        d.baseY = (portalPos.y * cellSize) + cellSize;
+        currentDrawables.push(d);
     }
-    drawables.sort((a, b) => (a.baseY - b.baseY));
+    currentDrawables.sort((a, b) => (a.baseY - b.baseY));
     
     // Calculate player bounding box for fading
     let pRect = null;
@@ -6690,7 +6793,7 @@ function draw() {
         };
     }
 
-    for (const d of drawables) {
+    for (const d of currentDrawables) {
       if (d.type === 'overlay') {
         const o = d.o;
         let alpha = 255;
@@ -6775,6 +6878,25 @@ function draw() {
               radius: 300 + Math.sin(millis() / 200) * 10 // Breathing light effect
           });
       }
+      
+      // Add lights from VFX (like fireflies)
+      if (vfx && vfx.length) {
+          for (const effect of vfx) {
+              if (typeof effect.getLight === 'function') {
+                  const l = effect.getLight();
+                  if (l) {
+                      const screenX = l.worldX - drawCamX;
+                      const screenY = l.worldY - drawCamY;
+                      lights.push({
+                          x: screenX,
+                          y: screenY,
+                          radius: l.radius
+                      });
+                  }
+              }
+          }
+      }
+      
       WeatherSystem.drawOverlay(width, height, lights);
   }
 
@@ -6915,7 +7037,9 @@ window.addEventListener('message', (ev) => {
             } else {
               try { window.dispatchEvent(new Event('resize')); } catch (e) {}
             }
-            
+            // Ensure this iframe window has keyboard focus for WASD input
+            try { window.focus(); } catch (e) {}
+            try { const c = document.querySelector('canvas'); if (c) c.focus(); } catch (e) {}
           } catch (e) {}
           break;
         }

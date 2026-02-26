@@ -52,13 +52,15 @@
         if (canvas.parentElement !== root) {
           root.appendChild(canvas);
         }
-        
+
         canvas.style.width = '100%';
         canvas.style.height = '100%';
         canvas.style.objectFit = 'contain';
         canvas.style.display = 'block';
+        canvas.setAttribute('tabindex', '0');
         root.setAttribute('aria-busy', 'false');
         try { canvas.focus(); } catch (e) {}
+        try { window.focus(); } catch (e) {}
         return true;
       }
 
