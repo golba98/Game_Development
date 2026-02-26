@@ -3420,8 +3420,7 @@ function canMoveTo(fromX, fromY, toX, toY) {
   const cliffTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.CLIFF : 6;
   const isToHill = (toState >= hillMin && toState <= hillMax) || (toState === cliffTile);
   const isFromHill = (fromState >= hillMin && fromState <= hillMax) || (fromState === cliffTile);
-  const isToLog = (typeof TILE_TYPES !== 'undefined') && toState === TILE_TYPES.LOG;
-  const isFromLog = (typeof TILE_TYPES !== 'undefined') && fromState === TILE_TYPES.LOG;
+
   const isToObstacle = decorativeObstacleTiles.has(targetIdx);
   const isFromObstacle = decorativeObstacleTiles.has(currentIdx);
 
@@ -3438,12 +3437,6 @@ function canMoveTo(fromX, fromY, toX, toY) {
     return false;
   }
 
-  // 3. Logs (Tiles)
-  if (isToLog) {
-    // Can move to a log if jumping OR if already on a log
-    if (isJumping || isFromLog) return true;
-    return false;
-  }
 
   // 4. Enemies
   if (enemies && enemies.length > 0) {
@@ -6295,7 +6288,7 @@ const TILE_TYPES = Object.freeze({
 });
 
 const WALKABLE_TILES = new Set([
-  TILE_TYPES.GRASS, TILE_TYPES.FLOWERS, TILE_TYPES.RAMP, TILE_TYPES.RIVER
+  TILE_TYPES.GRASS, TILE_TYPES.FLOWERS, TILE_TYPES.RAMP, TILE_TYPES.RIVER, TILE_TYPES.LOG
 ]);
 
 const ITEM_DATA = Object.freeze({
