@@ -512,6 +512,7 @@ function setup() {
   virtualH = H / gameScale;
 
   let cnv = createCanvas(W, H);
+  frameRate(60); // Cap frame rate for consistent 60fps feel
   ensureTextSizeOverride();
   
   try {
@@ -3593,6 +3594,10 @@ function updateSprintState() {
       sprintLastUpdate = now;
     }
   }
+
+  // Update smooth sprint percentage for UI with a smoother lerp factor
+  const targetPct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
+  smoothSprintPct = lerp(smoothSprintPct, targetPct, 0.1);
 }
 
 function getActiveMoveDurationMs() {
@@ -6230,6 +6235,7 @@ let sprintEndMillis = 0;
 let sprintCooldownUntil = 0;
 let sprintRemainingMs = SPRINT_MAX_DURATION_MS;
 let sprintLastUpdate = 0;
+let smoothSprintPct = 1.0; // Added for smoother UI animation
 
 let mapImage;
 let mapOverlays = [];
@@ -6622,9 +6628,8 @@ function draw() {
     smoothCamX = targetCamX;
     smoothCamY = targetCamY;
   } else {
-    // Delta-time-aware smoothing for consistent feel across 60Hz/144Hz
-    // ~6ms half-life at 60fps
-    const t = 1 - Math.pow(0.001, gameDelta / 1000);
+    // Simplified smoothing for 60fps consistency
+    const t = 0.18; 
     smoothCamX = lerp(smoothCamX, targetCamX, t);
     smoothCamY = lerp(smoothCamY, targetCamY, t);
   }
@@ -7509,70 +7514,100 @@ function drawSprintMeter() {
   const vH = virtualH || (height / gameScale);
   const now = millis();
   
-  const pct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
+  const pct = (typeof smoothSprintPct === 'number') ? smoothSprintPct : 0;
+  const actualPct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
   
+  // Show the bar if active, or not full, or in cooldown
   let targetAlpha = 0;
-  if (sprintActive || pct < 0.99 || (sprintCooldownUntil > now)) {
+  if (sprintActive || actualPct < 0.99 || (sprintCooldownUntil > now)) {
     targetAlpha = 255;
   }
   
   if (targetAlpha === 0) return;
 
-  const barW = 240;
-  const barH = 22;
-  const cx = vW / 2;
-  const y = vH - 60;
-  const x = cx - barW / 2;
+  // Positioning: Bottom-Left, to the right of the minimap
+  // Minimap is at x:20, y: vH - 220, width: 200
+  const startX = 230; 
+  const startY = vH - 55; 
+  const barW = 160;   
+  const barH = 10;    
+  
+  const containerW = 200; 
+  const containerH = 32;
 
   push();
   
-  // Themed Background
+  // Themed Background Container
   if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
       tint(255, targetAlpha);
-      image(BUTTON_BG, x - 12, y - 10, barW + 24, barH + 20);
+      image(BUTTON_BG, startX - 10, startY - 8, containerW + 20, containerH + 16);
       noTint();
   } else {
-      stroke(0); strokeWeight(4); fill(20, 20, 20, 180 * (targetAlpha / 255));
-      rect(x - 12, y - 10, barW + 24, barH + 20, 4);
+      stroke(0); strokeWeight(4); fill(20, 20, 20, 200 * (targetAlpha / 255));
+      rect(startX - 10, startY - 8, containerW + 20, containerH + 16, 4);
   }
   
   // Gold Inner Border
   stroke(MENU_GOLD_BORDER);
   strokeWeight(2); noFill();
-  rect(x - 7, y - 6, barW + 14, barH + 12, 2);
+  rect(startX - 7, startY - 5, containerW + 14, containerH + 10, 2);
+
+  // Bar Background (empty part)
+  noStroke();
+  fill(30, 30, 40, targetAlpha);
+  rect(startX + 30, startY + 11, barW, barH, 2);
 
   // Bar Fill
-  if (pct > 0) {
-    noStroke();
-    let r, g, b;
-    if (pct > 0.5) {
-       r = map(pct, 0.5, 1, 255, 0);
-       g = 255;
-       b = map(pct, 0.5, 1, 0, 255);
-    } else {
-       r = 255;
-       g = map(pct, 0, 0.5, 0, 255);
-       b = 0;
+  if (pct > 0.005) {
+    // Stamina Gradient: Cyan to Deep Blue
+    let r = map(actualPct, 0, 1, 0, 100);
+    let g = map(actualPct, 0, 1, 150, 255);
+    let b = map(actualPct, 0, 1, 200, 255);
+    
+    // Smooth pulse when sprinting
+    let alphaPulse = targetAlpha;
+    if (sprintActive) {
+      alphaPulse = targetAlpha * (0.7 + 0.3 * Math.sin(now * 0.015));
     }
-    fill(r, g, b, targetAlpha);
-    rect(x, y, barW * pct, barH, 1);
+    
+    fill(r, g, b, alphaPulse);
+    rect(startX + 30, startY + 11, barW * pct, barH, 2);
+    
+    // Glossy highlight
+    fill(255, 255, 255, 50 * (targetAlpha / 255));
+    rect(startX + 30, startY + 11, barW * pct, barH / 2, 2);
   }
 
-  // Cooldown Overlay (stamina flashing)
+  // Cooldown Overlay (stamina flashing red)
   if (typeof sprintCooldownUntil === 'number' && now < sprintCooldownUntil) {
-    if (Math.floor(now / 200) % 2 === 0) {
-        fill(255, 0, 0, 80);
-        rect(x, y, barW, barH, 1);
+    if (Math.floor(now / 150) % 2 === 0) {
+        fill(255, 50, 50, 120 * (targetAlpha / 255));
+        rect(startX + 30, startY + 11, barW, barH, 2);
     }
   }
 
-  // Icon (Lightning Bolt)
-  const ix = x - 35;
-  const iy = y + barH / 2;
+  // Icon (Energy/Lightning)
+  const ix = startX + 12;
+  const iy = startY + containerH / 2 + 3;
   noStroke();
-  fill(255, 215, 0, targetAlpha);
+  
+  if (sprintActive) {
+    fill(100, 255, 255, targetAlpha); // Bright Cyan
+  } else if (now < sprintCooldownUntil) {
+    fill(255, 100, 100, targetAlpha); // Red
+  } else {
+    fill(180, 200, 255, targetAlpha); // Soft Blue
+  }
+  
+  // Lightning Bolt Shape
   beginShape();
-  vertex(ix, iy - 8); vertex(ix + 8, iy - 8); vertex(ix - 3, iy + 1); vertex(ix + 5, iy + 1); vertex(ix - 5, iy + 12); vertex(ix, iy + 1); vertex(ix - 8, iy + 1);
+  vertex(ix, iy - 10); 
+  vertex(ix + 6, iy - 10); 
+  vertex(ix - 2, iy); 
+  vertex(ix + 4, iy); 
+  vertex(ix - 4, iy + 10); 
+  vertex(ix, iy); 
+  vertex(ix - 6, iy);
   endShape(CLOSE);
 
   pop();
