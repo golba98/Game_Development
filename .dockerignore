@@ -1,0 +1,22 @@
+# Source Control
+.git
+.gitignore
+
+# Dependencies
+node_modules
+npm-debug.log
+
+# IDE / Configs
+.vscode
+.idea
+Dockerfile.txt
+README.md
+git_log.txt
+
+# Environment
+.env
+.env.*
+
+# Logs & temp
+*.log
+.aider*

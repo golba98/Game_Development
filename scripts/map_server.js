@@ -4,6 +4,8 @@ const path = require('path');
 const url = require('url');
 
 const PORT = process.env.PORT || 3000;
+const MAP_SERVER_KEY = process.env.MAP_SERVER_KEY || ''; // Set this in your environment for security
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*'; // Set to https://syncroedit.online in production
 const WORKSPACE_ROOT = path.join(__dirname, '..');
 const MAPS_DIR = path.join(WORKSPACE_ROOT, 'maps');
 const ACTIVE_PATH = path.join(MAPS_DIR, 'active_map.json');
@@ -59,9 +61,9 @@ function send404(res, msg) {
 }
 
 function setCorsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Map-Key');
 }
 
 function contentTypeFor(filePath) {
@@ -103,9 +105,31 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'POST' && pathname === '/save-map') {
+    // Basic Auth Check
+    if (MAP_SERVER_KEY) {
+      const clientKey = req.headers['x-map-key'];
+      if (clientKey !== MAP_SERVER_KEY) {
+        console.warn(`[security] unauthorized save-map attempt from ${req.socket.remoteAddress}`);
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Unauthorized: Missing or invalid X-Map-Key' }));
+        return;
+      }
+    }
+
     let body = '';
-    req.on('data', chunk => { body += chunk.toString(); });
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB Limit
+
+    req.on('data', chunk => { 
+      body += chunk.toString(); 
+      if (body.length > MAX_SIZE) {
+        console.warn(`[security] payload too large for save-map from ${req.socket.remoteAddress}`);
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Payload Too Large: Max size is 5MB' }));
+        req.destroy(); // Close the connection
+      }
+    });
     req.on('end', () => {
+      if (res.writableEnded) return;
       try {
         const obj = JSON.parse(body);
         // Replace the previous active map with the new payload
@@ -135,8 +159,32 @@ const server = http.createServer((req, res) => {
 
   // Otherwise serve static files from workspace root
   let filePath = path.join(WORKSPACE_ROOT, pathname);
-  // sanitize
-  if (!filePath.startsWith(WORKSPACE_ROOT)) { send404(res); return; }
+  
+  // 1. Path Normalization & Traversal Prevention
+  filePath = path.resolve(filePath);
+  if (!filePath.startsWith(WORKSPACE_ROOT)) {
+    console.warn(`[security] blocked path traversal attempt: ${pathname}`);
+    send404(res);
+    return;
+  }
+
+  // 2. Blacklist sensitive files and directories
+  const relativePath = path.relative(WORKSPACE_ROOT, filePath);
+  const pathParts = relativePath.split(path.sep);
+  const isForbidden = pathParts.some(part => 
+    part === '.git' || 
+    part === '.vscode' || 
+    part === 'scripts' || 
+    part.startsWith('.') ||
+    ['Dockerfile.txt', 'README.md', 'git_log.txt', 'package.json', 'package-lock.json'].includes(part)
+  );
+
+  if (isForbidden && pathname !== '/') {
+    console.warn(`[security] blocked access to forbidden path: ${pathname}`);
+    send404(res);
+    return;
+  }
+
   fs.stat(filePath, (err, stats) => {
     if (err) {
       // if directory, try index.html

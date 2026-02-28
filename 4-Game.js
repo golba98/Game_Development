@@ -855,15 +855,26 @@ function createTerminalUI() {
 
 function processTerminalCommand(cmd) {
     const history = document.getElementById('terminal-history');
-    const log = (msg, type = '') => {
+    const log = (msg, type = '', isHTML = false) => {
         const div = document.createElement('div');
         div.className = 'terminal-log ' + type;
-        div.innerHTML = msg; // Use innerHTML for richer formatting if needed
+        if (isHTML) {
+            div.innerHTML = msg;
+        } else {
+            div.textContent = msg;
+        }
         history.appendChild(div);
         history.scrollTop = history.scrollHeight;
     };
 
-    log(`<span style="opacity:0.5">> ${cmd}</span>`);
+    // Safely log the command by using textContent on a prefix span
+    const cmdLine = document.createElement('div');
+    cmdLine.className = 'terminal-log';
+    const prefix = document.createElement('span');
+    prefix.style.opacity = '0.5';
+    prefix.textContent = '> ' + cmd;
+    cmdLine.appendChild(prefix);
+    history.appendChild(cmdLine);
 
     const parts = cmd.split(' ');
     const base = parts[0].toLowerCase();
@@ -8005,17 +8016,22 @@ function persistActiveMapToServer(reason = 'unspecified') {
     if (!payload) { console.warn('[game] no payload to persist to server'); return false; }
 
     let allowServer = false;
+    let saveKey = '';
     try {
       if (typeof window !== 'undefined' && window.location) {
         const params = new URLSearchParams(window.location.search);
         allowServer = (window.location.hostname === 'localhost') || (params.get('useServer') === '1');
+        saveKey = params.get('saveKey') || '';
       }
     } catch (e) { allowServer = false; }
     if (!allowServer) return false;
 
     return fetch('http://localhost:3000/save-map', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Map-Key': saveKey
+      },
       body: JSON.stringify(payload)
     }).then(resp => resp.json().catch(() => ({}))).then((data) => {
       if (data && data.ok) {
