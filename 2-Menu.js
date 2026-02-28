@@ -601,6 +601,9 @@ function createMainMenu() {
         iframe.addEventListener('load', () => {
           try {
             if (iframe.contentWindow) {
+              // Give keyboard focus to the game iframe so WASD input works
+              try { iframe.focus(); } catch (e) {}
+              try { iframe.contentWindow.focus(); } catch (e) {}
               iframe.contentWindow.postMessage({
                 type: 'update-audio-settings',
                 masterVol: masterVol,
@@ -651,6 +654,9 @@ function createMainMenu() {
             if (ifr && ifr.contentWindow) {
               ifr.contentWindow.postMessage({ type: 'game-activated' }, '*');
               console.log('[parent] posted game-activated to iframe');
+              // Ensure iframe has keyboard focus for WASD input
+              try { ifr.focus(); } catch (e) {}
+              try { ifr.contentWindow.focus(); } catch (e) {}
             }
           } catch (e) {}
         }, 180);

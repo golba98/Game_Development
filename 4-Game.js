@@ -732,6 +732,9 @@ function startPlayerAttack() {
 }
 
 function mousePressed() {
+  // Ensure keyboard focus is on this window for WASD input
+  try { window.focus(); } catch (e) {}
+
   if (isTerminalOpen) return;
   if (isGameOver) return;
   
@@ -3149,6 +3152,55 @@ function spawnRipple(x, y) {
     });
 }
 
+function spawnFirefly() {
+    const camX = smoothCamX || 0;
+    const camY = smoothCamY || 0;
+    // Spawn within viewport range
+    const spawnRX = (random(virtualW) - virtualW/2) + camX;
+    const spawnRY = (random(virtualH) - virtualH/2) + camY;
+    
+    vfx.push({
+        type: 'firefly',
+        x: spawnRX / cellSize,
+        y: spawnRY / cellSize,
+        vx: random(-0.02, 0.02),
+        vy: random(-0.02, 0.02),
+        alpha: 0,
+        targetAlpha: random(100, 255),
+        life: random(4000, 8000),
+        maxLife: 8000,
+        phase: random(Math.PI * 2),
+        update: function(dt) {
+            this.life -= dt;
+            this.x += this.vx * (dt / 16.67);
+            this.y += this.vy * (dt / 16.67);
+            this.vx += random(-0.002, 0.002);
+            this.vy += random(-0.002, 0.002);
+            // Pulse alpha
+            this.alpha = map(Math.sin(millis() / 600 + this.phase), -1, 1, 20, this.targetAlpha);
+            return this.life <= 0;
+        },
+        draw: function() {
+            const px = this.x * cellSize;
+            const py = this.y * cellSize;
+            noStroke();
+            fill(200, 255, 100, this.alpha);
+            circle(px, py, 2);
+            fill(200, 255, 100, this.alpha * 0.2);
+            circle(px, py, 6);
+        },
+        getLight: function() {
+            return {
+                worldX: this.x * cellSize,
+                worldY: this.y * cellSize,
+                radius: 40,
+                color: [180, 255, 80],
+                intensity: (this.alpha / 255) * 0.15
+            };
+        }
+    });
+}
+
 function updateVFX() {
     const dt = gameDelta;
     for (let i = vfx.length - 1; i >= 0; i--) {
@@ -3371,8 +3423,12 @@ function canMoveTo(fromX, fromY, toX, toY) {
   const cliffTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.CLIFF : 6;
   const isToHill = (toState >= hillMin && toState <= hillMax) || (toState === cliffTile);
   const isFromHill = (fromState >= hillMin && fromState <= hillMax) || (fromState === cliffTile);
-  const isToLog = (typeof TILE_TYPES !== 'undefined') && toState === TILE_TYPES.LOG;
-  const isFromLog = (typeof TILE_TYPES !== 'undefined') && fromState === TILE_TYPES.LOG;
+
+  const logTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.LOG : 8;
+  const rampTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.RAMP : 7;
+  const isToLogOrRamp = (toState === logTile || toState === rampTile);
+  const isFromLogOrRamp = (fromState === logTile || fromState === rampTile);
+
   const isToObstacle = decorativeObstacleTiles.has(targetIdx);
   const isFromObstacle = decorativeObstacleTiles.has(currentIdx);
 
@@ -3389,9 +3445,9 @@ function canMoveTo(fromX, fromY, toX, toY) {
     return false;
   }
 
-  // 3. Logs (Tiles)
-  if (isToLog) {
-    // Logs act as bridges, walking onto them is freely permitted
+  // 3. Logs & Ramps (Bridges)
+  if (isToLogOrRamp) {
+    // Bridges should always be walkable from anywhere
     return true;
   }
 
@@ -3537,6 +3593,12 @@ function updateSprintState() {
       sprintLastUpdate = now;
     }
   }
+
+  // Update smooth sprint percentage for UI with an adaptive lerp factor
+  const targetPct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
+  // Adaptive lerp based on ~60fps baseline
+  const t = 1 - Math.pow(1 - 0.12, gameDelta / 16.67);
+  smoothSprintPct = lerp(smoothSprintPct, targetPct, t);
 }
 
 function getActiveMoveDurationMs() {
@@ -4495,102 +4557,61 @@ function drawHealthBar() {
 }
 
 function drawInventory() {
-    if (!playerInventory) return;
-    
-    const slotSize = 44;
-    const padding = 8;
-    const items = [
-        { key: '1', id: 'potion', label: 'HP', color: [255, 80, 80] },
-        { key: '2', id: 'speed', label: 'SPD', color: [255, 215, 0] }
-    ];
-    
-    const totalW = items.length * slotSize + (items.length - 1) * padding + 20; 
-    const bgH = slotSize + 20;
-    
-    // Position at bottom center
-    const vw = virtualW || (width / (gameScale || 1));
-    const vh = virtualH || (height / (gameScale || 1));
-    
-    const startX = 30; // Position bottom left
-    const startY = vh - bgH - 25;
-    
-    push();
-    // Background Panel
-    if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
-         image(BUTTON_BG, startX - 10, startY - 10, totalW + 20, bgH + 20);
-    } else {
-         fill(20, 20, 20, 200);
-         stroke(0);
-         strokeWeight(4);
-         rect(startX - 10, startY - 10, totalW + 20, bgH + 20, 4);
-    }
-    
-    // Gold Inner Border
-    stroke(MENU_GOLD_BORDER);
-    strokeWeight(2); noFill();
-    rect(startX - 7, startY - 7, totalW + 14, bgH + 14, 2);
-    
-    // Slots
-    const slotsStartX = startX + 10;
-    const slotsStartY = startY + 10;
-    
-    items.forEach((item, index) => {
-        const x = slotsStartX + index * (slotSize + padding);
-        const count = playerInventory[item.id] || 0;
-        
-        // Slot
-        noStroke();
-        fill(0, 100);
-        rect(x, slotsStartY, slotSize, slotSize, 4);
-        
-        // Icon (Blocky Style)
-        if (count > 0) {
-            fill(item.color);
-            rectMode(CENTER);
-            if (item.id === 'potion') {
-                rect(x + slotSize/2, slotsStartY + slotSize/2, slotSize * 0.5, slotSize * 0.5, 2);
-                fill(255, 100);
-                rect(x + slotSize/2, slotsStartY + slotSize/2 - 6, slotSize * 0.2, slotSize * 0.3); // bottle neck
-            } else {
-                push();
-                translate(x + slotSize/2, slotsStartY + slotSize/2);
-                rotate(QUARTER_PI);
-                rect(0, 0, slotSize * 0.4, slotSize * 0.4);
-                pop();
-            }
-            rectMode(CORNER);
-        } else {
-             fill(255, 20);
-             rectMode(CENTER);
-             rect(x + slotSize/2, slotsStartY + slotSize/2, slotSize * 0.3, slotSize * 0.3, 2);
-             rectMode(CORNER);
-        }
-        
-        // Border
-        stroke(MENU_GOLD_BORDER);
-        strokeWeight(1);
-        noFill();
-        rect(x, slotsStartY, slotSize, slotSize, 4);
-        
-        // Count Badge
-        if (count > 0) {
-            noStroke();
-            fill(255);
-            textAlign(RIGHT, BOTTOM);
-            textSize(14);
-            textStyle(BOLD);
-            text(count, x + slotSize - 2, slotsStartY + slotSize - 2);
-        }
-        
-        // Key Hint
-        fill(180);
-        textAlign(LEFT, TOP);
-        textSize(10);
-        textStyle(NORMAL);
-        text(item.key, x + 2, slotsStartY + 2);
-    });
-    
-    pop();
+  if (!playerInventory) return;
+  const potions = playerInventory['potion'] || 0;
+  const speeds = playerInventory['speed'] || 0;
+  if (potions === 0 && speeds === 0) return;
+
+  const startX = 30;
+  const startY = 95;
+  const slotW = 48;
+  const slotH = 48;
+  const slotSpacing = 8;
+  const slots = [];
+
+  if (potions > 0) slots.push({ label: '1', count: potions, col: [0, 200, 80] });
+  if (speeds > 0) slots.push({ label: '2', count: speeds, col: [255, 215, 0] });
+
+  const containerW = slots.length * (slotW + slotSpacing) + slotSpacing + 10;
+  const containerH = slotH + 20;
+
+  push();
+  if (BUTTON_BG) {
+    image(BUTTON_BG, startX - 8, startY - 8, containerW, containerH);
+  } else {
+    stroke(0); strokeWeight(4); fill(20, 20, 20, 180);
+    rect(startX - 8, startY - 8, containerW, containerH, 4);
+  }
+  stroke(MENU_GOLD_BORDER);
+  strokeWeight(2); noFill();
+  rect(startX - 5, startY - 5, containerW - 6, containerH - 6, 2);
+
+  for (let i = 0; i < slots.length; i++) {
+    const s = slots[i];
+    const sx = startX + i * (slotW + slotSpacing);
+    const sy = startY;
+
+    // Slot background
+    noStroke(); fill(0, 0, 0, 120);
+    rect(sx, sy, slotW, slotH, 3);
+
+    // Item indicator
+    fill(s.col[0], s.col[1], s.col[2]);
+    noStroke();
+    ellipse(sx + slotW / 2, sy + slotH / 2 - 4, 20, 20);
+
+    // Count
+    fill(255); noStroke();
+    textAlign(CENTER, CENTER);
+    if (typeof gTextSize === 'function') gTextSize(14); else textSize(14);
+    text('x' + s.count, sx + slotW / 2, sy + slotH - 8);
+
+    // Key hint
+    fill(200, 200, 200, 180);
+    if (typeof gTextSize === 'function') gTextSize(10); else textSize(10);
+    text('[' + s.label + ']', sx + slotW / 2, sy + 6);
+  }
+  pop();
 }
 
 function drawVignette() {
@@ -6215,9 +6236,13 @@ let sprintEndMillis = 0;
 let sprintCooldownUntil = 0;
 let sprintRemainingMs = SPRINT_MAX_DURATION_MS;
 let sprintLastUpdate = 0;
+let smoothSprintPct = 1.0; // Added for smoother UI animation
 
 let mapImage;
 let mapOverlays = [];
+let drawablePool = [];
+let drawablePoolIdx = 0;
+let currentDrawables = [];
 let spritesheet = null;
 const SPRITESHEET_PATH = 'assets/1-Background/test3.png';
 let spirtesheet_idle = null;
@@ -6249,7 +6274,7 @@ const TILE_TYPES = Object.freeze({
 });
 
 const WALKABLE_TILES = new Set([
-  TILE_TYPES.GRASS, TILE_TYPES.FLOWERS, TILE_TYPES.RAMP, TILE_TYPES.RIVER
+  TILE_TYPES.GRASS, TILE_TYPES.FLOWERS, TILE_TYPES.RAMP, TILE_TYPES.RIVER, TILE_TYPES.LOG
 ]);
 
 const ITEM_DATA = Object.freeze({
@@ -6604,9 +6629,11 @@ function draw() {
     smoothCamX = targetCamX;
     smoothCamY = targetCamY;
   } else {
-    // 0.15 smoothing factor for responsiveness without jitter
-    smoothCamX = lerp(smoothCamX, targetCamX, 0.15);
-    smoothCamY = lerp(smoothCamY, targetCamY, 0.15);
+    // Adaptive smoothing based on frame time (normalized to ~60fps)
+    // 0.18 is the base lerp at 60Hz; scales smoothly for 144Hz+
+    const t = 1 - Math.pow(1 - 0.18, gameDelta / 16.67);
+    smoothCamX = lerp(smoothCamX, targetCamX, t);
+    smoothCamY = lerp(smoothCamY, targetCamY, t);
   }
 
   // Use floor to prevent sub-pixel shimmering on tiles
@@ -6674,14 +6701,20 @@ function draw() {
 
 
   try {
-    const drawables = [];
+    drawablePoolIdx = 0;
+    currentDrawables.length = 0;
+
     if (Array.isArray(mapOverlays)) {
       for (const o of mapOverlays) {
           if (!o) continue;
-          const drawX = o.px + Math.floor((cellSize - o.destW) / 2);
-          const drawY = o.py + (cellSize - o.destH);
-          const baseY = o.py + cellSize;
-          drawables.push({ type: 'overlay', o, drawX, drawY, baseY });
+          if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+          const d = drawablePool[drawablePoolIdx++];
+          d.type = 'overlay';
+          d.o = o;
+          d.drawX = o.px + Math.floor((cellSize - o.destW) / 2);
+          d.drawY = o.py + (cellSize - o.destH);
+          d.baseY = o.py + cellSize;
+          currentDrawables.push(d);
         }
     }
     if (Array.isArray(decorativeObjects) && decorativeObjects.length) {
@@ -6690,40 +6723,67 @@ function draw() {
         if (!img) continue;
         const destW = img.width || cellSize;
         const destH = img.height || cellSize;
-        const drawX = deco.tileX * cellSize + Math.floor((cellSize - destW) / 2);
-        const drawY = deco.tileY * cellSize + (cellSize - destH);
-        const baseY = deco.tileY * cellSize + cellSize;
-        drawables.push({ type: 'decor', img, drawX, drawY, destW, destH, baseY });
+        if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+        const d = drawablePool[drawablePoolIdx++];
+        d.type = 'decor';
+        d.img = img;
+        d.drawX = deco.tileX * cellSize + Math.floor((cellSize - destW) / 2);
+        d.drawY = deco.tileY * cellSize + (cellSize - destH);
+        d.destW = destW;
+        d.destH = destH;
+        d.baseY = deco.tileY * cellSize + cellSize;
+        currentDrawables.push(d);
       }
     }
     if (playerPosition) {
       const drawTileX = isMoving ? renderX : playerPosition.x;
       const drawTileY = isMoving ? renderY : playerPosition.y;
-      const playerBaseY = (drawTileY * cellSize) + cellSize;
-      drawables.push({ type: 'player', baseY: playerBaseY });
+      if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+      const d = drawablePool[drawablePoolIdx++];
+      d.type = 'player';
+      d.baseY = (drawTileY * cellSize) + cellSize;
+      currentDrawables.push(d);
     }
     if (enemies && enemies.length) {
       for (const e of enemies) {
-           const baseY = (e.renderY * cellSize) + cellSize; 
-           drawables.push({ type: 'enemy', entity: e, baseY });
+           if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+           const d = drawablePool[drawablePoolIdx++];
+           d.type = 'enemy';
+           d.entity = e;
+           d.baseY = (e.renderY * cellSize) + cellSize; 
+           currentDrawables.push(d);
       }
     }
     if (projectiles && projectiles.length) {
       for (const p of projectiles) {
-           const baseY = (p.y * cellSize) + cellSize;
-           drawables.push({ type: 'projectile', entity: p, baseY });
+           if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+           const d = drawablePool[drawablePoolIdx++];
+           d.type = 'projectile';
+           d.entity = p;
+           d.baseY = (p.y * cellSize) + cellSize;
+           currentDrawables.push(d);
       }
     }
     if (vfx && vfx.length) {
       for (const effect of vfx) {
-           const baseY = (effect.y * cellSize) + cellSize;
-           drawables.push({ type: 'vfx', entity: effect, baseY });
+           if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+           const d = drawablePool[drawablePoolIdx++];
+           d.type = 'vfx';
+           d.entity = effect;
+           d.baseY = (effect.y * cellSize) + cellSize;
+           currentDrawables.push(d);
       }
     }
     if (portalPos) {
-        drawables.push({ type: 'portal', x: portalPos.x, y: portalPos.y, baseY: (portalPos.y * cellSize) + cellSize });
+        if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+        const d = drawablePool[drawablePoolIdx++];
+        d.type = 'portal';
+        d.x = portalPos.x;
+        d.y = portalPos.y;
+        d.baseY = (portalPos.y * cellSize) + cellSize;
+        currentDrawables.push(d);
     }
-    drawables.sort((a, b) => (a.baseY - b.baseY));
+    currentDrawables.sort((a, b) => (a.baseY - b.baseY));
     
     // Calculate player bounding box for fading
     let pRect = null;
@@ -6740,7 +6800,7 @@ function draw() {
         };
     }
 
-    for (const d of drawables) {
+    for (const d of currentDrawables) {
       if (d.type === 'overlay') {
         const o = d.o;
         let alpha = 255;
@@ -6799,77 +6859,52 @@ function draw() {
 
   pop(); // END WORLD TRANSFORM
 
+  // Night Ambience: Fireflies
+  if (typeof WeatherSystem !== 'undefined' && (WeatherSystem.cycle < 0.3 || WeatherSystem.cycle > 0.7)) {
+      if (random(1) < 0.03) { 
+          spawnFirefly();
+      }
+  }
+
   if (typeof WeatherSystem !== 'undefined') {
       const lights = [];
-      const camX = drawCamX || 0;
-      const camY = drawCamY || 0;
-      const sX = typeof shakeX !== 'undefined' ? shakeX : 0;
-      const sY = typeof shakeY !== 'undefined' ? shakeY : 0;
-
-      // Helper to add light
-      const addLight = (worldX, worldY, radius, color, intensity) => {
-          const sx = (worldX * cellSize + cellSize/2) - camX + sX;
-          const sy = (worldY * cellSize + cellSize/2) - camY + sY;
-          // Cull off-screen lights to save performance
-          if (sx < -radius || sx > virtualW + radius || sy < -radius || sy > virtualH + radius) return;
-          
-          lights.push({ 
-              x: sx * gameScale, 
-              y: sy * gameScale, 
-              radius: radius * gameScale, 
-              color, 
-              intensity 
-          });
-      };
-
       if (playerPosition) {
           const pX = isMoving ? renderX : playerPosition.x;
           const pY = isMoving ? renderY : playerPosition.y;
+          // Calculate screen coordinates based on camera (defined in draw scope)
+          // We assume drawCamX/Y are available. If not, we recalculate or use globals if available.
+          // Since drawCamX is local to draw(), we might need to recalculate or ensure scope.
+          // Let's rely on drawCamX/Y being in scope as this is inside draw().
           
-          // Player Torch (Clean White Light)
-          addLight(pX, pY, 320 + Math.sin(millis() / 200) * 10, [250, 250, 255], 0.25);
+          const screenX = (pX * cellSize + cellSize/2) - drawCamX;
+          const screenY = (pY * cellSize + cellSize/2) - drawCamY;
+          
+          lights.push({
+              x: screenX, 
+              y: screenY, 
+              radius: 300 + Math.sin(millis() / 200) * 10 // Breathing light effect
+          });
       }
       
-      // Portal Light
-      if (portalPos) {
-           const isActive = isPortalActive;
-           const color = isActive ? [100, 200, 255] : [100, 100, 100]; // Blue if active, Gray if not
-           const rad = isActive ? 220 + Math.sin(millis()/300)*20 : 100;
-           addLight(portalPos.x, portalPos.y, rad, color, isActive ? 0.4 : 0.1);
+      // Add lights from VFX (like fireflies)
+      if (vfx && vfx.length) {
+          for (const effect of vfx) {
+              if (typeof effect.getLight === 'function') {
+                  const l = effect.getLight();
+                  if (l) {
+                      const screenX = l.worldX - drawCamX;
+                      const screenY = l.worldY - drawCamY;
+                      lights.push({
+                          x: screenX,
+                          y: screenY,
+                          radius: l.radius
+                      });
+                  }
+              }
+          }
       }
       
-      // Projectile Lights
-      if (projectiles) {
-        for (const p of projectiles) {
-            if (p.type === 'acid_blob') {
-                addLight(p.x, p.y, 140, [50, 255, 50], 0.5); // Toxic Green
-            }
-        }
-      }
-      
-      // Enemy Lights
-      if (enemies) {
-        for (const e of enemies) {
-            if (e.type === 'mantis') {
-                if (e.attacking) {
-                    addLight(e.renderX, e.renderY, 160, [255, 50, 50], 0.5); // Angry Red Flash
-                } else if (e.isPanicking) {
-                    addLight(e.renderX, e.renderY, 120, [255, 100, 100], 0.3); // Panic Red
-                }
-            } else if (e.type === 'maggot') {
-                // Maggots glow faintly green
-                addLight(e.renderX, e.renderY, 90, [100, 255, 100], 0.15);
-                if (e.attacking) {
-                     addLight(e.renderX, e.renderY, 130, [150, 255, 50], 0.4); // Bright spit charge
-                }
-            }
-        }
-      }
-
-      push();
-      scale(1 / gameScale);
-      WeatherSystem.drawOverlay(width, height, lights, camX * gameScale, camY * gameScale);
-      pop();
+      WeatherSystem.drawOverlay(width, height, lights);
   }
 
 
@@ -6982,8 +7017,7 @@ function draw() {
   drawCompass();
 
   if (typeof WeatherSystem !== 'undefined') {
-      const clockX = 30 + (maxHealth * 38) + 50; 
-      WeatherSystem.drawClock(clockX, 45, 25);
+      WeatherSystem.drawClock(width / 2, 40, 25);
   }
 
   try {
@@ -7010,7 +7044,9 @@ window.addEventListener('message', (ev) => {
             } else {
               try { window.dispatchEvent(new Event('resize')); } catch (e) {}
             }
-            
+            // Ensure this iframe window has keyboard focus for WASD input
+            try { window.focus(); } catch (e) {}
+            try { const c = document.querySelector('canvas'); if (c) c.focus(); } catch (e) {}
           } catch (e) {}
           break;
         }
@@ -7407,10 +7443,10 @@ try {
 
 function drawDifficultyBadge() {
   const vW = virtualW || (width / gameScale);
-  const margin = 20;
+  const margin = 120; // Increased margin from 20 to 120 to move away from the corner
   const badgeSize = 32;
   const x = vW - margin - badgeSize;
-  const y = margin;
+  const y = 30; // Slightly lower for better visibility
   
   // Determine color based on difficulty
   let badgeColor;
@@ -7480,69 +7516,100 @@ function drawSprintMeter() {
   const vH = virtualH || (height / gameScale);
   const now = millis();
   
-  const pct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
+  const pct = (typeof smoothSprintPct === 'number') ? smoothSprintPct : 0;
+  const actualPct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
   
+  // Show the bar if active, or not full, or in cooldown
   let targetAlpha = 0;
-  if (sprintActive || pct < 0.99 || (sprintCooldownUntil > now)) {
+  if (sprintActive || actualPct < 0.99 || (sprintCooldownUntil > now)) {
     targetAlpha = 255;
   }
   
   if (targetAlpha === 0) return;
 
-  const barW = 240;
-  const barH = 22;
-  const y = vH - barH - 35;
-  const x = vW - barW - 40; // Pin to bottom right, leaving 40px leeway for the bar and 35px for the lightning bolt to its left
+  // Positioning: Bottom-Left, to the right of the minimap
+  // Minimap is at x:20, y: vH - 220, width: 200
+  const startX = 230; 
+  const startY = vH - 55; 
+  const barW = 160;   
+  const barH = 10;    
+  
+  const containerW = 200; 
+  const containerH = 32;
 
   push();
   
-  // Themed Background
+  // Themed Background Container
   if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
       tint(255, targetAlpha);
-      image(BUTTON_BG, x - 12, y - 10, barW + 24, barH + 20);
+      image(BUTTON_BG, startX - 10, startY - 8, containerW + 20, containerH + 16);
       noTint();
   } else {
-      stroke(0); strokeWeight(4); fill(20, 20, 20, 180 * (targetAlpha / 255));
-      rect(x - 12, y - 10, barW + 24, barH + 20, 4);
+      stroke(0); strokeWeight(4); fill(20, 20, 20, 200 * (targetAlpha / 255));
+      rect(startX - 10, startY - 8, containerW + 20, containerH + 16, 4);
   }
   
   // Gold Inner Border
   stroke(MENU_GOLD_BORDER);
   strokeWeight(2); noFill();
-  rect(x - 7, y - 6, barW + 14, barH + 12, 2);
+  rect(startX - 7, startY - 5, containerW + 14, containerH + 10, 2);
+
+  // Bar Background (empty part)
+  noStroke();
+  fill(30, 30, 40, targetAlpha);
+  rect(startX + 30, startY + 11, barW, barH, 2);
 
   // Bar Fill
-  if (pct > 0) {
-    noStroke();
-    let r, g, b;
-    if (pct > 0.5) {
-       r = map(pct, 0.5, 1, 255, 0);
-       g = 255;
-       b = map(pct, 0.5, 1, 0, 255);
-    } else {
-       r = 255;
-       g = map(pct, 0, 0.5, 0, 255);
-       b = 0;
+  if (pct > 0.005) {
+    // Stamina Gradient: Cyan to Deep Blue
+    let r = map(actualPct, 0, 1, 0, 100);
+    let g = map(actualPct, 0, 1, 150, 255);
+    let b = map(actualPct, 0, 1, 200, 255);
+    
+    // Smooth pulse when sprinting
+    let alphaPulse = targetAlpha;
+    if (sprintActive) {
+      alphaPulse = targetAlpha * (0.7 + 0.3 * Math.sin(now * 0.015));
     }
-    fill(r, g, b, targetAlpha);
-    rect(x, y, barW * pct, barH, 1);
+    
+    fill(r, g, b, alphaPulse);
+    rect(startX + 30, startY + 11, barW * pct, barH, 2);
+    
+    // Glossy highlight
+    fill(255, 255, 255, 50 * (targetAlpha / 255));
+    rect(startX + 30, startY + 11, barW * pct, barH / 2, 2);
   }
 
-  // Cooldown Overlay (stamina flashing)
+  // Cooldown Overlay (stamina flashing red)
   if (typeof sprintCooldownUntil === 'number' && now < sprintCooldownUntil) {
-    if (Math.floor(now / 200) % 2 === 0) {
-        fill(255, 0, 0, 80);
-        rect(x, y, barW, barH, 1);
+    if (Math.floor(now / 150) % 2 === 0) {
+        fill(255, 50, 50, 120 * (targetAlpha / 255));
+        rect(startX + 30, startY + 11, barW, barH, 2);
     }
   }
 
-  // Icon (Lightning Bolt)
-  const ix = x - 35;
-  const iy = y + barH / 2;
+  // Icon (Energy/Lightning)
+  const ix = startX + 12;
+  const iy = startY + containerH / 2 + 3;
   noStroke();
-  fill(255, 215, 0, targetAlpha);
+  
+  if (sprintActive) {
+    fill(100, 255, 255, targetAlpha); // Bright Cyan
+  } else if (now < sprintCooldownUntil) {
+    fill(255, 100, 100, targetAlpha); // Red
+  } else {
+    fill(180, 200, 255, targetAlpha); // Soft Blue
+  }
+  
+  // Lightning Bolt Shape
   beginShape();
-  vertex(ix, iy - 8); vertex(ix + 8, iy - 8); vertex(ix - 3, iy + 1); vertex(ix + 5, iy + 1); vertex(ix - 5, iy + 12); vertex(ix, iy + 1); vertex(ix - 8, iy + 1);
+  vertex(ix, iy - 10); 
+  vertex(ix + 6, iy - 10); 
+  vertex(ix - 2, iy); 
+  vertex(ix + 4, iy); 
+  vertex(ix - 4, iy + 10); 
+  vertex(ix, iy); 
+  vertex(ix - 6, iy);
   endShape(CLOSE);
 
   pop();
@@ -8623,8 +8690,10 @@ function updateClouds() {
   for (let i = clouds.length - 1; i >= 0; i--) {
     const cloud = clouds[i];
     
-    cloud.x += cloud.speed;
-    cloud.driftPhase += 0.01;
+    // Normalize speed to ~60fps (16.67ms)
+    const dtScale = gameDelta / 16.67;
+    cloud.x += cloud.speed * dtScale;
+    cloud.driftPhase += 0.01 * dtScale;
     cloud.y = cloud.baseY + Math.sin(cloud.driftPhase) * 20 * (cloud.verticalDrift || 0.1);
     
    

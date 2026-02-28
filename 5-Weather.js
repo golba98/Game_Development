@@ -1,15 +1,15 @@
 
 const WeatherSystem = {
   // Config
-  dayDurationSeconds: 150, // Slightly longer cycle for smoother transitions
-  cycle: 0.5, // Start exactly at Noon (0.5)
+  dayDurationSeconds: 120, // Reduced from 300 to 120 for faster cycle
+  cycle: 0.3, // Start at full day (0.3) instead of transition (0.25) to avoid initial "orange" filter
   
   // Colors (r, g, b, alpha) -> Standard dark to light transition
   colors: {
-    night: [5, 5, 15, 240],      // Dark / virtually black, high opacity
-    dawn:  [5, 5, 15, 120],      // Gradual lightening, no orange
-    day:   [0, 0, 0, 0],         // Perfectly clear
-    dusk:  [5, 5, 15, 150]       // Gradual darkening, no purple
+    night: [5, 5, 12, 230],     // Deep, almost black night (high contrast with torch)
+    dawn: [200, 220, 255, 40],  // Soft blue/white dawn (removed orange)
+    day: [0, 0, 0, 0],          // Clear
+    dusk: [15, 15, 40, 140]     // Deep blue dusk
   },
 
   currentColor: [0, 0, 0, 0],
@@ -153,29 +153,29 @@ const WeatherSystem = {
     let t = this.cycle;
     let lerpT;
 
-    if (t < 0.15) { 
+    if (t < 0.2) { // Night
       this.currentColor = [...this.colors.night];
-    } 
-    else if (t < 0.25) { 
-      lerpT = (t - 0.15) / 0.10;
-      this.currentColor = this.lerpColor(this.colors.night, this.colors.dawn, lerpT);
-    } 
-    else if (t < 0.35) { 
-      lerpT = (t - 0.25) / 0.10;
-      this.currentColor = this.lerpColor(this.colors.dawn, this.colors.day, lerpT);
-    } 
-    else if (t < 0.65) { 
+    } else if (t < 0.3) { // Dawn (10% of cycle)
+      if (t < 0.25) {
+         lerpT = (t - 0.2) / 0.05;
+         this.currentColor = this.lerpColor(this.colors.night, this.colors.dawn, lerpT);
+      } else {
+         lerpT = (t - 0.25) / 0.05;
+         this.currentColor = this.lerpColor(this.colors.dawn, this.colors.day, lerpT);
+      }
+    } else if (t < 0.6) { // Day (30% of cycle)
       this.currentColor = [...this.colors.day];
-    } 
-    else if (t < 0.75) { 
-      lerpT = (t - 0.65) / 0.10;
-      this.currentColor = this.lerpColor(this.colors.day, this.colors.dusk, lerpT);
-    } 
-    else if (t < 0.85) { 
-      lerpT = (t - 0.75) / 0.10;
-      this.currentColor = this.lerpColor(this.colors.dusk, this.colors.night, lerpT);
-    } 
-    else { 
+    } else if (t < 0.9) { // Extended Dusk/Evening (30% of cycle) for gradual darkening
+      if (t < 0.75) {
+        // Day to Dusk (Fading light)
+        lerpT = (t - 0.6) / 0.15;
+        this.currentColor = this.lerpColor(this.colors.day, this.colors.dusk, lerpT);
+      } else {
+        // Dusk to Night (Becoming dark)
+        lerpT = (t - 0.75) / 0.15;
+        this.currentColor = this.lerpColor(this.colors.dusk, this.colors.night, lerpT);
+      }
+    } else { // Night
       this.currentColor = [...this.colors.night];
     }
   },
@@ -199,52 +199,37 @@ const WeatherSystem = {
     }
 
     const lm = this.lightMap;
-    lm.clear();
     
-    // 1. Fill with darkness
-    lm.background(this.currentColor[0], this.currentColor[1], this.currentColor[2], this.currentColor[3]);
+    // Performance optimization: Redraw the darkness/lighting buffer only every 2 frames
+    // This provides a significant FPS boost during night cycles
+    if (typeof frameCount === 'undefined' || frameCount % 2 === 0) {
+        lm.clear();
+        
+        // 1. Fill with darkness
+        lm.background(this.currentColor[0], this.currentColor[1], this.currentColor[2], this.currentColor[3]);
 
-    // 2. Process Lights
-    if (lights && lights.length > 0) {
-       // Pass 1: Cut out visibility holes (remove darkness + stars in lit areas)
-       lm.drawingContext.save();
-       lm.drawingContext.globalCompositeOperation = 'destination-out';
-       for (const l of lights) {
-          const rad = l.radius || 100;
-          const grd = lm.drawingContext.createRadialGradient(l.x, l.y, rad * 0.1, l.x, l.y, rad);
-          grd.addColorStop(0, `rgba(0,0,0,1)`);   
-          grd.addColorStop(1, `rgba(0,0,0,0)`);   
-          lm.drawingContext.fillStyle = grd;
-          lm.drawingContext.beginPath();
-          lm.drawingContext.arc(l.x, l.y, rad, 0, Math.PI * 2);
-          lm.drawingContext.fill();
-       }
-       lm.drawingContext.restore();
-       
-       // Pass 2: Add Color Tints
-       lm.drawingContext.save();
-       lm.drawingContext.globalCompositeOperation = 'source-over';
-       for (const l of lights) {
-           if (l.color) {
+        // 2. Process Lights
+        if (lights && lights.length > 0) {
+           const ctx = lm.drawingContext;
+           lm.erase();
+           lm.noStroke();
+           
+           for (const l of lights) {
+              ctx.save();
               const rad = l.radius || 100;
-              const [r, g, b] = l.color;
-              const intensity = l.intensity !== undefined ? l.intensity : 0.3;
+              const grd = ctx.createRadialGradient(l.x, l.y, rad * 0.1, l.x, l.y, rad);
+              grd.addColorStop(0, `rgba(0,0,0,1)`);   // Cut completely center
+              grd.addColorStop(1, `rgba(0,0,0,0)`);   // Fade to darkness edge
               
-              const grd = lm.drawingContext.createRadialGradient(l.x, l.y, 0, l.x, l.y, rad);
-              grd.addColorStop(0, `rgba(${r},${g},${b},${intensity})`);
-              grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
-              
-              lm.drawingContext.fillStyle = grd;
-              lm.drawingContext.beginPath();
-              lm.drawingContext.arc(l.x, l.y, rad, 0, Math.PI * 2);
-              lm.drawingContext.fill();
+              ctx.fillStyle = grd;
+              ctx.beginPath();
+              ctx.arc(l.x, l.y, rad, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
            }
-       }
-       lm.drawingContext.restore();
+           lm.noErase();
+        }
     }
-    
-    // 3. Draw stars ON TOP of the lighting and darkness mask
-    this.drawStars(lm.drawingContext, w, h, this.currentColor[3], camX, camY);
     
     // Draw the lightmap onto the main canvas
     image(lm, 0, 0);
@@ -266,75 +251,118 @@ const WeatherSystem = {
   drawClock: function(x, y, radius) {
      push();
      translate(x, y);
+     rectMode(CENTER);
      
-     // Background Box
-     const boxSize = radius * 2.2;
-     if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
-         imageMode(CENTER);
-         image(BUTTON_BG, 0, 0, boxSize, boxSize);
-         imageMode(CORNER);
-     } else {
-         stroke(0); strokeWeight(4); fill(20, 20, 20, 180);
-         rectMode(CENTER);
-         rect(0, 0, boxSize, boxSize, 4);
-         rectMode(CORNER);
+     const size = radius * 2;
+     
+     // --- 1. Outer Square Frame (Pixel-Themed Bronze) ---
+     // Drop Shadow
+     noStroke();
+     fill(0, 120);
+     rect(2, 2, size + 10, size + 10, 4);
+     
+     // Main Bronze Box
+     stroke(50, 40, 30); // Darker border
+     strokeWeight(3);
+     fill(35, 30, 25); // Dark metallic backing
+     rect(0, 0, size + 6, size + 6, 2);
+     
+     // Inner Gold Inlay
+     stroke(180, 150, 50); 
+     strokeWeight(1.5);
+     noFill();
+     rect(0, 0, size + 2, size + 2, 1);
+
+     // Corner Rivets (Mechanical pixel look)
+     fill(100, 90, 80);
+     noStroke();
+     const off = size/2 + 1;
+     rect(-off, -off, 4, 4);
+     rect(off, -off, 4, 4);
+     rect(off, off, 4, 4);
+     rect(-off, off, 4, 4);
+
+     // --- 2. Quilted Background (Theme matching) ---
+     push();
+     // Clip to inner square
+     drawingContext.beginPath();
+     drawingContext.rect(-size/2, -size/2, size, size);
+     drawingContext.clip();
+     
+     // Quilted texture
+     stroke(45, 40, 35, 150);
+     strokeWeight(1);
+     const step = 10;
+     for(let i = -size; i < size; i += step) {
+        line(i, -size, i + size, size);
+        line(i + size, -size, i, size);
      }
      
-     // Gold Inner Border
-     if (typeof MENU_GOLD_BORDER !== 'undefined') {
-         stroke(MENU_GOLD_BORDER);
-         strokeWeight(2); noFill();
-         rectMode(CENTER);
-         rect(0, 0, boxSize - 6, boxSize - 6, 2);
-         rectMode(CORNER);
-     } else {
-         stroke(255, 215, 0, 100);
-         strokeWeight(2); noFill();
-         rectMode(CENTER);
-         rect(0, 0, boxSize - 6, boxSize - 6, 2);
-         rectMode(CORNER);
-     }
-
-     const angle = map(this.cycle, 0, 1, 0, TWO_PI) + HALF_PI;
-     rotate(angle);
-     
-     const iconDist = radius - 8;
-     
-     // Draw Moon (Blocky style)
+     // --- 3. Sky "Strip" (Rotates behind the frame) ---
+     const skyRotation = map(this.cycle, 0, 1, 0, TWO_PI) + HALF_PI;
      push();
-     translate(0, iconDist); // Bottom
-     fill(200, 200, 255); noStroke();
-     rectMode(CENTER);
-     rect(0, 0, 10, 10, 2); // Moon 
-     fill(0, 0, 0, 150);
-     rect(3, -2, 6, 6, 2); // Crescent cutout
-     rectMode(CORNER);
-     pop();
-
-     // Draw Sun (Blocky style)
-     push();
-     rotate(PI);
-     translate(0, iconDist);
-     fill(255, 200, 0); noStroke();
-     rectMode(CENTER);
-     rect(0, 0, 10, 10, 2);
-     // Cross Rays
-     fill(255, 200, 0, 150);
-     rect(0, -9, 4, 4);
-     rect(0, 9, 4, 4);
-     rect(-9, 0, 4, 4);
-     rect(9, 0, 4, 4);
-     rectMode(CORNER);
+     rotate(skyRotation);
+     noStroke();
+     // Day half
+     fill(40, 100, 220, 100);
+     arc(0, 0, size * 1.5, size * 1.5, PI, TWO_PI);
+     // Night half
+     fill(10, 10, 40, 140);
+     arc(0, 0, size * 1.5, size * 1.5, 0, PI);
      pop();
      
-     // Horizon Line (Static)
-     pop(); 
-     
+     pop(); // End Clipping
+
+     // --- 4. Celestial Icons (Moving in a square path or circle within) ---
+     const iconDist = radius - 6;
+     const sunAngle = map(this.cycle, 0, 1, 0, TWO_PI) + HALF_PI;
+     const moonAngle = sunAngle + PI;
+
+     // Draw Sun
      push();
-     translate(x, y);
-     stroke(255, 40);
+     translate(cos(sunAngle) * iconDist, sin(sunAngle) * iconDist);
+     // Sun Glow
+     noStroke();
+     fill(255, 200, 50, 80);
+     circle(0, 0, 16);
+     // Square Sun Core (Pixel look)
+     fill(255, 255, 200);
+     rect(0, 0, 10, 10);
+     // "Pixel" Rays
+     stroke(255, 215, 0, 200);
      strokeWeight(2);
-     line(-radius + 2, 0, radius - 2, 0);
+     for(let i=0; i<4; i++) {
+        rotate(PI/2);
+        const rLen = 9 + sin(millis() * 0.005 + i) * 2;
+        line(0, 6, 0, rLen);
+     }
+     pop();
+
+     // Draw Moon
+     push();
+     translate(cos(moonAngle) * iconDist, sin(moonAngle) * iconDist);
+     // Moon Glow
+     noStroke();
+     fill(150, 180, 255, 40);
+     rect(0, 0, 14, 14, 2);
+     // Moon Shape (Blocky Crescent)
+     fill(220, 230, 255);
+     rect(0, 0, 10, 10, 1);
+     fill(30, 25, 20); // Masking for crescent
+     rect(4, -3, 8, 8, 1);
+     pop();
+
+     // --- 5. Glass / Reflection ---
+     noStroke();
+     fill(255, 30);
+     triangle(-radius, -radius, radius, -radius, -radius, radius);
+
+     // --- 6. Top Pointer (Static Indicator) ---
+     fill(255, 215, 0);
+     noStroke();
+     // Small square gem at top
+     rect(0, -radius - 4, 6, 6);
+     
      pop();
   }
 };
