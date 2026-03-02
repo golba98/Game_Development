@@ -5,6 +5,8 @@ let initialEnemies = [];
 let projectiles = [];
 let mantisMoveSprite = null;
 let mantisAttackSprite = null;
+let beetleMoveSprite = null;
+let beetleAttackSprite = null;
 let maggotWalkSprite = null;
 let maggotSpitSprite = null;
 let acidBlobSprite = null;
@@ -20,9 +22,12 @@ let vfx = [];
 let playerHealth = 7;
 let maxHealth = 7;
 let playerInventory = { 'potion': 0, 'speed': 0 };
+let lastHealthChange = 0;
+let lastScoreChange = 0;
 let heartImage = null;
 let playerHurtTimer = 0;
 let isGameOver = false;
+let playerScore = 0;
 let initialSpawnPosition = { x: 0, y: 0 };
 let gameOverOverlay = null;
 let victoryOverlay = null;
@@ -32,6 +37,9 @@ let gameDelta = 0;
 let screenShakeTimer = 0;
 let screenShakeAmount = 0;
 let rippleTimer = 0;
+let transitionAlpha = 0;
+let isTransitioning = false;
+let currentLevel = 1;
 
 if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
   const canvasProto = HTMLCanvasElement.prototype;
@@ -412,6 +420,16 @@ function preload() {
       (err) => { console.warn('[game] failed to load MantisAttack.png', err); }
     );
 
+    trackLoadImage('beetle_move', 'assets/2-Characters/5-Enemies/BeetleMove.png',
+      (img) => { beetleMoveSprite = img; verboseLog('[game] loaded BeetleMove.png'); },
+      (err) => { console.warn('[game] failed to load BeetleMove.png', err); }
+    );
+
+    trackLoadImage('beetle_attack', 'assets/2-Characters/5-Enemies/BeetleAttack.png',
+      (img) => { beetleAttackSprite = img; verboseLog('[game] loaded BeetleAttack.png'); },
+      (err) => { console.warn('[game] failed to load BeetleAttack.png', err); }
+    );
+
     trackLoadImage('maggot_walk', 'assets/2-Characters/5-Enemies/MaggotWalk.png',
       (img) => { maggotWalkSprite = img; verboseLog('[game] loaded MaggotWalk.png'); },
       (err) => { console.warn('[game] failed to load MaggotWalk.png', err); }
@@ -430,6 +448,11 @@ function preload() {
     trackLoadImage('heart', 'assets/3-GUI/Heart.png',
       (img) => { heartImage = img; verboseLog('[game] loaded Heart.png'); },
       (err) => { console.warn('[game] failed to load Heart.png', err); }
+    );
+
+    trackLoadImage('coin_anim', 'assets/6-Icons/coin_4_frames.png',
+      (img) => { coinAnimSprite = img; verboseLog('[game] loaded coin_4_frames.png'); },
+      (err) => { console.warn('[game] failed to load coin_4_frames.png', err); }
     );
 
     trackLoadImage('acid_splat', 'assets/2-Characters/5-Enemies/AcidSplat.png',
@@ -1044,27 +1067,50 @@ function generateMap() {
 
 function generateMap_Part1() {
   verboseLog('[game] Generating Part 1 (Base)...');
-  
+
   if (!W || !H) return;
+
   logicalW = FIXED_MAP_WIDTH_TILES;
   logicalH = FIXED_MAP_HEIGHT_TILES;
 
   mapStates = new Uint8Array(logicalW * logicalH);
   terrainLayer = new Uint8Array(logicalW * logicalH);
 
-  
   const clearArea = computeClearArea();
-  applyNoiseTerrain(clearArea.centerX, clearArea.centerY, clearArea.baseClearWidth, clearArea.baseClearHeight);
-  
-  
-  genTempData = { clearArea };
-}
 
-function generateMap_Part2() {
+  if (typeof WeatherSystem !== 'undefined') {
+      WeatherSystem.reset();
+  }
+
+  // Randomly choose between noise-based and scatter-based generation  const generationStyle = Math.random();
+  if (generationStyle < 0.5) {
+      verboseLog('[game] Style: Noise-based Forest');
+      applyNoiseTerrain(clearArea.centerX, clearArea.centerY, clearArea.baseClearWidth, clearArea.baseClearHeight);
+  } else {
+      verboseLog('[game] Style: Randomized Roughness');
+      // Simple scatter with clear area protection
+      for (let y = 0; y < logicalH; y++) {
+          for (let x = 0; x < logicalW; x++) {
+              const idx = y * logicalW + x;
+              const inClearZone = (x >= clearArea.centerX - clearArea.baseClearWidth/2 && 
+                                   x <= clearArea.centerX + clearArea.baseClearWidth/2 && 
+                                   y >= clearArea.centerY - clearArea.baseClearHeight/2 && 
+                                   y <= clearArea.centerY + clearArea.baseClearHeight/2);
+
+              if (inClearZone) {
+                  mapStates[idx] = TILE_TYPES.GRASS;
+              } else {
+                  mapStates[idx] = Math.random() < 0.18 ? TILE_TYPES.FOREST : TILE_TYPES.GRASS;
+              }
+          }
+      }
+  }
+
+  genTempData = { clearArea };
+}function generateMap_Part2() {
   verboseLog('[game] Generating Part 2 (Roughness)...');
-  
-  const { clearArea } = genTempData;
-  
+  enemies = []; // CLEAR ALL PREVIOUS ENEMIES TO PREVENT DUPLICATES
+  const { clearArea } = genTempData;  
   const spawn = postProcessRiversAndClearArea(clearArea.clearStartX, clearArea.clearEndX, clearArea.clearStartY, clearArea.clearEndY);
 
   
@@ -1130,24 +1176,86 @@ function generateMap_Part2() {
      if (difficultySetting === 'hard') enemyCount = 24;
      else if (difficultySetting === 'easy') enemyCount = 6;
      
+     let beetleSpawned = false;
      for (let i = 0; i < enemyCount; i++) {
         let ex, ey;
         let attempts = 0;
+        let invalid = true;
         do {
            ex = Math.floor(Math.random() * logicalW);
            ey = Math.floor(Math.random() * logicalH);
            attempts++;
            const tState = mapStates[ey * logicalW + ex];
-           var invalid = isSolid(tState) || tState === TILE_TYPES.RIVER;
+           invalid = isSolid(tState) || tState === TILE_TYPES.RIVER;
         } while (attempts < 50 && invalid);
         
         const finalTile = mapStates[ey * logicalW + ex];
         if (!isSolid(finalTile) && finalTile !== TILE_TYPES.RIVER) {
-            const eType = Math.random() < 0.5 ? 'mantis' : 'maggot';
+            const roll = Math.random();
+            let eType = roll < 0.5 ? 'mantis' : 'maggot';
+            
+            // Only spawn ONE beetle per map
+            if (!beetleSpawned && Math.random() < 0.15) {
+                eType = 'beetle';
+                beetleSpawned = true;
+            }
             spawnEnemy(eType, ex, ey);
         }
      }
+     
+     // Fallback: Ensure exactly one beetle spawns, and FORCE it to be on GRASS near the player
+     if (!beetleSpawned) {
+        let ex, ey, attempts = 0, found = false;
+        const searchRadius = 15;
+        do {
+           // Try to find a spot relatively near the player but not on top of them
+           const angle = Math.random() * TWO_PI;
+           const dist = 8 + Math.random() * searchRadius;
+           ex = Math.floor(playerPosition.x + Math.cos(angle) * dist);
+           ey = Math.floor(playerPosition.y + Math.sin(angle) * dist);
+           ex = constrain(ex, 1, logicalW - 2);
+           ey = constrain(ey, 1, logicalH - 2);
+           attempts++;
+           const tState = mapStates[ey * logicalW + ex];
+           found = (tState === TILE_TYPES.GRASS);
+        } while (attempts < 200 && !found);
+        
+        if (found) {
+            spawnEnemy('beetle', ex, ey);
+            beetleSpawned = true;
+            verboseLog(`[game] Boss Beetle forced at ${ex}, ${ey}`);
+        } else {
+            // Absolute fallback anywhere on grass
+            for (let i = 0; i < mapStates.length; i++) {
+                if (mapStates[i] === TILE_TYPES.GRASS) {
+                    spawnEnemy('beetle', i % logicalW, Math.floor(i / logicalW));
+                    beetleSpawned = true;
+                    break;
+                }
+            }
+        }
+     }
+     
+     // Scatter Coins
+     for (let i = 0; i < 20; i++) {
+        let cx = Math.floor(Math.random() * logicalW);
+        let cy = Math.floor(Math.random() * logicalH);
+        const idx = cy * logicalW + cx;
+        if (mapStates[idx] === TILE_TYPES.GRASS) {
+            mapStates[idx] = TILE_TYPES.COIN;
+        }
+     }
+     
      initialEnemies = enemies.map(e => ({ type: e.type, x: e.x, y: e.y }));
+     
+     // CRITICAL: Reset camera and redraw static map to prevent shifting
+     smoothCamX = playerPosition.x * cellSize - width/2;
+     smoothCamY = playerPosition.y * cellSize - height/2;
+     createMapImage();
+
+     try {
+         showToast('OBJECTIVE: Collect all Coins and Eliminate all Threats!', 'warn', 5000);
+     } catch(e) {}
   } catch(e) {}
 
   treeObjects = [];
@@ -1169,6 +1277,10 @@ function generateMap_Part2() {
   redraw();
   autosaveMap();
   persistActiveMapToServer('generated');
+  
+  try {
+      showToast('OBJECTIVE: Collect all Coins and Eliminate all Threats!', 'warn', 5000);
+  } catch(e) {}
 }
 
 function computeClearArea() {
@@ -2013,6 +2125,14 @@ function createMapImage() {
       let imgDestW = cellSize;
       let imgDestH = cellSize;
       
+      if (tileState === TILE_TYPES.COIN) {
+          // Skip drawing coins into the static map image
+          // We draw them animated in the main loop instead
+          const grassImg = (TILE_IMAGES && TILE_IMAGES['tile_1']) ? TILE_IMAGES['tile_1'] : null;
+          if (grassImg) mapImage.image(grassImg, px, py, cellSize, cellSize);
+          continue;
+      }
+
       if (tileState === TILE_TYPES.FOREST && TILE_IMAGES['gentle_forest']) {
         img = TILE_IMAGES['gentle_forest'];
         imgDestW = img.width;
@@ -2491,7 +2611,166 @@ function spawnEnemy(type, x, y) {
     enemies.push(createMantis(x, y));
   } else if (type === 'maggot') {
     enemies.push(createMaggot(x, y));
+  } else if (type === 'beetle') {
+    enemies.push(createBeetle(x, y));
   }
+}
+
+function createBeetle(startX, startY) {
+  // Scale health with currentLevel
+  const hpBonus = (currentLevel - 1) * 5;
+  const totalHP = 15 + hpBonus;
+  
+  return {
+    type: 'beetle',
+    x: startX,
+    y: startY,
+    health: totalHP,
+    maxHealth: totalHP,
+    renderX: startX,
+    renderY: startY,
+    direction: 'S',
+    moving: false,
+    animFrame: 0,
+    animTimer: 0,
+    attacking: false,
+    attackFrame: 0,
+    attackTimer: 0,
+    aggro: false,
+    speed: 0.02,
+
+    update: function() {
+      const now = millis();
+      const dt = gameDelta || 16.6; 
+      const targetX = playerPosition.x;
+      const targetY = playerPosition.y;
+      const d = dist(this.x, this.y, targetX, targetY);
+
+      if (d < 15) this.aggro = true;
+
+      this.moving = false;
+
+      if (this.aggro && !this.attacking) {
+        // Increase attack range to 2.2 tiles for more reliability
+        if (d < 2.2) {
+          this.attacking = true;
+          this.attackFrame = 0;
+          this.attackTimer = 0;
+        } else {
+          let dx = targetX - this.x;
+          let dy = targetY - this.y;
+          const canMoveDirect = d < 8 && !isSolid(getTileState(Math.round(this.x + dx * 0.5), Math.round(this.y + dy * 0.5)));
+          
+          // Higher chase speed
+          const moveSpeed = (d < 6) ? 0.05 : 0.03;
+
+          if (canMoveDirect) {
+            const mag = Math.sqrt(dx*dx + dy*dy) || 1;
+            this.x += (dx / mag) * moveSpeed;
+            this.y += (dy / mag) * moveSpeed;
+            this.moving = true;
+          } else {
+            const step = findNextStep(Math.round(this.x), Math.round(this.y), Math.round(targetX), Math.round(targetY));
+            if (step) {
+                const stepDX = step.x - this.x;
+                const stepDY = step.y - this.y;
+                const mag = Math.sqrt(stepDX*stepDX + stepDY*stepDY) || 1;
+                this.x += (stepDX / mag) * moveSpeed;
+                this.y += (stepDY / mag) * moveSpeed;
+                this.moving = true;
+            }
+          }
+          if (Math.abs(dx) > Math.abs(dy)) this.direction = dx > 0 ? 'E' : 'W';
+          else this.direction = dy > 0 ? 'S' : 'N';
+        }
+      }
+
+      if (this.attacking) {
+        this.attackTimer += dt;
+        
+        // LUNGE MECHANIC: Beetle lunges forward during the first 4 frames
+        if (this.attackFrame < 4) {
+            const lungeSpeed = 0.06;
+            let lx = targetX - this.x;
+            let ly = targetY - this.y;
+            const lMag = Math.sqrt(lx*lx + ly*ly) || 1;
+            this.x += (lx / lMag) * lungeSpeed;
+            this.y += (ly / lMag) * lungeSpeed;
+        }
+
+        if (this.attackTimer > 100) { // Slightly faster attack animation
+          this.attackTimer = 0;
+          this.attackFrame++;
+          
+          if (this.attackFrame === 4) {
+            const currentDist = dist(this.renderX, this.renderY, playerPosition.x, playerPosition.y);
+            if (currentDist < 2.5) { // Generous hit-box for the boss
+                playerHealth = Math.max(0, playerHealth - 4); // Massive 4 hearts damage
+                spawnDamageText("-4", playerPosition.x, playerPosition.y, [255, 0, 0]);
+                playerHurtTimer = 600;
+                screenShakeTimer = 400;
+                screenShakeAmount = 20;
+            }
+          }
+          
+          if (this.attackFrame >= 6) {
+            this.attacking = false;
+            this.attackFrame = 0;
+          }
+        }
+      }
+
+      this.renderX = lerp(this.renderX, this.x, 0.2);
+      this.renderY = lerp(this.renderY, this.y, 0.2);
+    },
+
+    draw: function() {
+      let sprite = beetleMoveSprite;
+      let frameCount = 4;
+      let frame = 0;
+      let row = 0;
+
+      if (this.attacking) {
+        sprite = beetleAttackSprite;
+        frameCount = 6;
+        frame = Math.min(this.attackFrame, 5);
+        if (this.direction === 'S') row = 0;
+        else if (this.direction === 'E') row = 1;
+        else if (this.direction === 'W') row = 2;
+        else if (this.direction === 'N') row = 3;
+      } else {
+        sprite = beetleMoveSprite;
+        frameCount = 4;
+        if (this.moving) frame = Math.floor(millis() / 150) % frameCount;
+        else frame = 0;
+
+        if (this.direction === 'S') row = 0;
+        else if (this.direction === 'W') row = 1;
+        else if (this.direction === 'E') row = 2;
+        else if (this.direction === 'N') row = 3;
+      }
+      
+      if (!sprite) return;
+      
+      const tw = 32, th = 32;
+      const sx = frame * tw;
+      const sy = row * th;
+
+      const rx = (this.renderX - playerPosition.x) * cellSize + width / 2;
+      const ry = (this.renderY - playerPosition.y) * cellSize + height / 2;
+
+      push();
+      // Draw 32x32 source frame scaled up to 80x80 (Boss size)
+      image(sprite, rx - 40, ry - 40, 80, 80, sx, sy, tw, th);
+      pop();
+      
+      noStroke();
+      fill(0, 100);
+      rect(rx - 30, ry - 50, 60, 6);
+      fill(255, 0, 0);
+      rect(rx - 30, ry - 50, (this.health / this.maxHealth) * 60, 6);
+    }
+  };
 }
 
 function createMantis(startX, startY) {
@@ -3397,6 +3676,7 @@ function handleItemInteraction(targetX, targetY) {
     case TILE_TYPES.HEALTH:
       if (playerHealth < maxHealth) {
           playerHealth = Math.min(maxHealth, playerHealth + 1);
+          lastHealthChange = millis(); // Trigger UI pulse
           spawnDamageText("+1 HP", targetX, targetY, [0, 255, 0]);
           consumed = true;
       } else {
@@ -3406,12 +3686,20 @@ function handleItemInteraction(targetX, targetY) {
           spawnDamageText("GOT POTION", targetX, targetY, [100, 255, 255]);
           consumed = true;
       }
+      screenShakeTimer = 100; screenShakeAmount = 3;
       break;
     case TILE_TYPES.POWERUP:
       // Inventory
       if (!playerInventory) playerInventory = { 'potion': 0, 'speed': 0 };
       playerInventory['speed'] = (playerInventory['speed'] || 0) + 1;
       spawnDamageText("GOT BOOST", targetX, targetY, [255, 215, 0]);
+      consumed = true;
+      screenShakeTimer = 150; screenShakeAmount = 5;
+      break;
+    case TILE_TYPES.COIN:
+      playerScore += 10;
+      lastScoreChange = millis(); // Trigger UI pulse
+      spawnDamageText("+10 GOLD", targetX, targetY, [255, 255, 0]);
       consumed = true;
       break;
   }
@@ -3796,6 +4084,15 @@ function _drawPlayerInternal() {
                 if (tile === TILE_TYPES.FLOWERS) {
                     mapStates[idx] = TILE_TYPES.GRASS;
                     spawnDamageText("✂", cutX, cutY, [100, 255, 100]);
+                    
+                    // 15% chance to drop a coin or heart
+                    const lootRoll = Math.random();
+                    if (lootRoll < 0.1) {
+                        mapStates[idx] = TILE_TYPES.COIN;
+                    } else if (lootRoll < 0.15) {
+                        mapStates[idx] = TILE_TYPES.HEALTH;
+                    }
+                    
                     drawTileToMap(cutX, cutY); // Optimized update
                 }
             }
@@ -4381,10 +4678,57 @@ function closeInGameMenu() {
   try { if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize(); } catch(e) {}
 }
 
+function startLevelTransition() {
+  if (isTransitioning) return;
+  isTransitioning = true;
+  transitionAlpha = 0;
+  
+  try { showToast(`Level ${currentLevel} Clear! Entering Level ${currentLevel + 1}...`, 'info', 4000); } catch(e) {}
+}
+
+function handleTransitionLogic() {
+  if (!isTransitioning) return;
+  
+  const dt = gameDelta || 16.6;
+  const fadeSpeed = 4; // Fade out in ~60 frames
+  
+  if (transitionAlpha < 255) {
+      transitionAlpha = Math.min(255, transitionAlpha + fadeSpeed);
+      if (transitionAlpha === 255) {
+          // At peak blackout, swap the world
+          currentLevel++;
+          generateMap();
+          // Reset player for the new world
+          playerHealth = maxHealth;
+          isPortalActive = false;
+          victoryShown = false;
+      }
+  } else {
+      // Fading back in (handled in generateMap which usually resets stuff, 
+      // but let's be explicit)
+      // Actually, let's wait a moment at black
+      setTimeout(() => {
+          isTransitioning = false;
+          // Fade in is handled by naturally letting draw run 
+          // without drawing the black rect once isTransitioning is false.
+          // For a true fade-in, we'd need another state, 
+          // but for now, simple is better.
+      }, 500);
+  }
+}
+
 function triggerGameOver() {
   if (isGameOver) return;
   isGameOver = true;
   showGameOverScreen();
+}
+
+function hasAnyCoins() {
+  if (!mapStates) return false;
+  for (let i = 0; i < mapStates.length; i++) {
+    if (mapStates[i] === TILE_TYPES.COIN) return true;
+  }
+  return false;
 }
 
 function triggerVictory() {
@@ -4424,7 +4768,7 @@ function showVictoryScreen() {
   title.style('color', '#000');
   title.style('text-shadow', 'none');
 
-  let msg = createDiv('All threats eliminated.<br>Find the portal to escape.');
+  let msg = createDiv(`All threats eliminated.<br>Final Gold: ${playerScore}<br>Find the portal to escape.`);
   msg.parent(panel);
   msg.style('text-align', 'center');
   msg.style('margin-bottom', '30px');
@@ -4469,6 +4813,13 @@ function showGameOverScreen() {
   title.style('font-weight', 'bold');
   title.style('color', '#000');
   title.style('text-shadow', 'none');
+
+  let msg = createDiv(`Your journey has ended.<br>Final Gold: ${playerScore}`);
+  msg.parent(panel);
+  msg.style('text-align', 'center');
+  msg.style('margin-bottom', '30px');
+  msg.style('font-size', '20px');
+  msg.style('color', '#fff');
 
   const createMenuBtn = (label, onClick) => {
     let btn = createButton(label);
@@ -4539,6 +4890,18 @@ function drawHealthBar() {
   const containerH = 55;
 
   push();
+  
+  // UI Pulse Effect
+  const now = millis();
+  let pulseScale = 1.0;
+  if (now - lastHealthChange < 200) {
+      pulseScale = map(now - lastHealthChange, 0, 200, 1.3, 1.0);
+  }
+  
+  translate(startX + containerW/2, startY + containerH/2);
+  scale(pulseScale);
+  translate(-(startX + containerW/2), -(startY + containerH/2));
+
   // Themed Background
   if (BUTTON_BG) {
       image(BUTTON_BG, startX - 15, startY - 12, containerW, containerH);
@@ -4567,6 +4930,109 @@ function drawHealthBar() {
   pop();
 }
 
+function drawMinimap() {
+  const vW = virtualW || (width / gameScale);
+  const vH = virtualH || (height / gameScale);
+  const mSize = 150;
+  const mX = 30;
+  const mY = vH - 180; // Above the bottom margin
+  
+  push();
+  // Background
+  stroke(0, 150); strokeWeight(4); fill(20, 20, 30, 180);
+  rect(mX - 5, mY - 5, mSize + 10, mSize + 10, 5);
+  
+  // Gold Border
+  stroke(MENU_GOLD_BORDER); strokeWeight(2); noFill();
+  rect(mX - 3, mY - 3, mSize + 6, mSize + 6, 3);
+  
+  noStroke();
+  const mapW = logicalW * cellSize;
+  const mapH = logicalH * cellSize;
+  const scale = mSize / Math.max(mapW, mapH);
+
+  // 1. Draw Coins (Gold)
+  if (mapStates) {
+      fill(255, 215, 0, 200);
+      for (let i = 0; i < mapStates.length; i++) {
+          if (mapStates[i] === TILE_TYPES.COIN) {
+              const lx = i % logicalW;
+              const ly = Math.floor(i / logicalW);
+              rect(mX + (lx * cellSize * scale), mY + (ly * cellSize * scale), 3, 3);
+          }
+      }
+  }
+
+  // 2. Draw Portal (Purple)
+  if (portalPos) {
+      fill(180, 50, 255);
+      rect(mX + (portalPos.x * cellSize * scale) - 2, mY + (portalPos.y * cellSize * scale) - 2, 6, 6);
+  }
+
+  // 3. Draw Enemies (Red)
+  if (enemies) {
+      fill(255, 50, 50);
+      for (const e of enemies) {
+          rect(mX + (e.x * cellSize * scale) - 2, mY + (e.y * cellSize * scale) - 2, 4, 4);
+      }
+  }
+
+  // 4. Draw Player (White Arrow)
+  if (playerPosition) {
+      const pX = mX + (playerPosition.x * cellSize * scale);
+      const pY = mY + (playerPosition.y * cellSize * scale);
+      fill(255);
+      ellipse(pX, pY, 5, 5);
+      // Small direction indicator
+      stroke(255); strokeWeight(2);
+      let dx = 0, dy = 0;
+      if (facing === 'left') dx = -5; else dx = 5;
+      line(pX, pY, pX + dx, pY);
+  }
+  
+  pop();
+}
+
+function drawScore() {
+  const x = 30;
+  const y = 110; // Shifted down to avoid overlap with health (85)
+  
+  push();
+  
+  // UI Pulse Effect
+  const now = millis();
+  let pulseScale = 1.0;
+  if (now - lastScoreChange < 200) {
+      pulseScale = map(now - lastScoreChange, 0, 200, 1.2, 1.0);
+  }
+  
+  translate(x + 70, y - 5);
+  scale(pulseScale);
+  translate(-(x + 70), -(y - 5));
+
+  if (uiFont) textFont(uiFont);
+  
+  // Outer Border
+  stroke(0, 100);
+  strokeWeight(4);
+  fill(0, 150);
+  rect(x - 5, y - 20, 140, 30, 5);
+  
+  // Inner Border
+  stroke(255, 215, 0); // GOLD
+  strokeWeight(2);
+  noFill();
+  rect(x - 3, y - 18, 136, 26, 3);
+  
+  // Text
+  noStroke();
+  fill(255, 255, 255);
+  textSize(16);
+  textAlign(LEFT, CENTER);
+  text(`GOLD: ${playerScore}`, x + 5, y - 5);
+  pop();
+}
+
 function drawInventory() {
   if (!playerInventory) return;
   const potions = playerInventory['potion'] || 0;
@@ -4574,14 +5040,14 @@ function drawInventory() {
   if (potions === 0 && speeds === 0) return;
 
   const startX = 30;
-  const startY = 95;
+  const startY = 150; // Shifted down to avoid overlap with gold (110)
   const slotW = 48;
   const slotH = 48;
   const slotSpacing = 8;
   const slots = [];
 
-  if (potions > 0) slots.push({ label: '1', count: potions, col: [0, 200, 80] });
-  if (speeds > 0) slots.push({ label: '2', count: speeds, col: [255, 215, 0] });
+  if (potions > 0) slots.push({ label: 'P', count: potions, col: [0, 200, 80] });
+  if (speeds > 0) slots.push({ label: 'S', count: speeds, col: [255, 215, 0] });
 
   const containerW = slots.length * (slotW + slotSpacing) + slotSpacing + 10;
   const containerH = slotH + 20;
@@ -6266,6 +6732,7 @@ const TILE_TYPES = Object.freeze({
   CHEST: 100,
   HEALTH: 101,
   POWERUP: 102,
+  COIN: 103,
   
   CLIFF: 6,
   RAMP: 7, 
@@ -6292,6 +6759,7 @@ const ITEM_DATA = Object.freeze({
   [TILE_TYPES.CHEST]:  { label: 'CHEST', spawnRate: 0.01, color: [218, 165, 32] },
   [TILE_TYPES.HEALTH]: { label: 'HEALTH', spawnRate: 0.005, color: [0, 255, 127] },
   [TILE_TYPES.POWERUP]:{ label: 'POWERUP', spawnRate: 0.003, color: [138, 43, 226] },
+  [TILE_TYPES.COIN]:   { label: 'COIN', spawnRate: 0.02, color: [255, 215, 0] },
 });
 
 const DECOR_ASSET_PATHS = Object.freeze({
@@ -6335,10 +6803,10 @@ const SPRITES = {
   [TILE_TYPES.GRASS]: { x: 0, y: 0, w: 16, h: 16 },
   [TILE_TYPES.FOREST]: { x: 862, y: 191, w: 32, h: 32, drawW: 64, drawH: 64 },
   [TILE_TYPES.CLIFF]: { x: 862, y: 0, w: 16, h: 16 },
-  [TILE_TYPES.RAMP]: { x: 400, y: 224, w: 64, h: 64 }
-  
+  [TILE_TYPES.RAMP]: { x: 400, y: 224, w: 64, h: 64 },
+  [TILE_TYPES.COIN]: { isImage: true, asset: 'coin_sprite' },
+  [TILE_TYPES.HEALTH]: { isImage: true, asset: 'heart' }
 };
-
 
 const TILE_IMAGE_PATHS = {
   [TILE_TYPES.FOREST]: 'assets/1-Background/2-Game/tree_1.png'
@@ -6560,7 +7028,7 @@ function draw() {
   // Clamp deltaTime to prevent huge jumps after lag/tab switch
   gameDelta = (typeof deltaTime !== 'undefined') ? Math.min(deltaTime, 50) : 16.67;
 
-  if (typeof WeatherSystem !== 'undefined') {
+  if (typeof WeatherSystem !== 'undefined' && !inGameMenuVisible && !settingsOverlayDiv && !isGameOver) {
     WeatherSystem.update(gameDelta);
   }
 
@@ -6692,7 +7160,7 @@ function draw() {
       }
 
       // VICTORY CHECK
-      if (enemies && enemies.length === 0 && !victoryShown) {
+      if (enemies && enemies.length === 0 && !hasAnyCoins() && !victoryShown) {
           triggerVictory();
       }
 
@@ -6746,6 +7214,23 @@ function draw() {
         currentDrawables.push(d);
       }
     }
+
+    if (mapStates && logicalW && logicalH) {
+      for (let i = 0; i < mapStates.length; i++) {
+        if (mapStates[i] === TILE_TYPES.COIN) {
+          if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
+          const d = drawablePool[drawablePoolIdx++];
+          d.type = 'coin';
+          const lx = i % logicalW;
+          const ly = Math.floor(i / logicalW);
+          d.tileX = lx;
+          d.tileY = ly;
+          d.baseY = (ly * cellSize) + cellSize;
+          currentDrawables.push(d);
+        }
+      }
+    }
+
     if (playerPosition) {
       const drawTileX = isMoving ? renderX : playerPosition.x;
       const drawTileY = isMoving ? renderY : playerPosition.y;
@@ -6828,6 +7313,15 @@ function draw() {
         if (alpha < 255) noTint();
       } else if (d.type === 'decor') {
         try { if (d.img) image(d.img, d.drawX, d.drawY, d.destW, d.destH); } catch (e) {}
+      } else if (d.type === 'coin') {
+        if (coinAnimSprite && coinAnimSprite.width > 0) {
+            const frameCount = 4;
+            const frame = Math.floor(millis() / 150) % frameCount;
+            const fw = coinAnimSprite.width / frameCount;
+            const fh = coinAnimSprite.height;
+            const drawSize = cellSize * 0.8;
+            image(coinAnimSprite, d.tileX * cellSize + (cellSize - drawSize) / 2, d.tileY * cellSize + (cellSize - drawSize) / 2, drawSize, drawSize, frame * fw, 0, fw, fh);
+        }
       } else if (d.type === 'player') {
         try { drawPlayer(); } catch (e) {}
       } else if (d.type === 'enemy') {
@@ -7025,7 +7519,9 @@ function draw() {
   drawHealthBar();
   drawSprintMeter();
   drawInventory();
+  drawScore();
   drawCompass();
+  if (showMinimap) drawMinimap();
 
   if (typeof WeatherSystem !== 'undefined') {
       WeatherSystem.drawClock(width / 2, 40, 25);
@@ -7538,10 +8034,9 @@ function drawSprintMeter() {
   
   if (targetAlpha === 0) return;
 
-  // Positioning: Bottom-Left, to the right of the minimap
-  // Minimap is at x:20, y: vH - 220, width: 200
-  const startX = 230; 
-  const startY = vH - 55; 
+  // Positioning: Bottom-Left
+  const startX = 30; 
+  const startY = vH - 100; 
   const barW = 160;   
   const barH = 10;    
   
@@ -7626,146 +8121,117 @@ function drawSprintMeter() {
   pop();
 }
 
+function findNearestCoin(px, py) {
+    if (!mapStates || !logicalW || !logicalH) return null;
+    let nearest = null;
+    let minDist = Infinity;
+    for (let i = 0; i < mapStates.length; i++) {
+        if (mapStates[i] === TILE_TYPES.COIN) {
+            const cx = i % logicalW;
+            const cy = Math.floor(i / logicalW);
+            const d = Math.hypot(cx - px, cy - py);
+            if (d < minDist) {
+                minDist = d;
+                nearest = { x: cx, y: cy };
+            }
+        }
+    }
+    return nearest;
+}
+
 function drawCompass() {
     if (!playerPosition) return;
     
     const vW = virtualW || (width / gameScale);
     const vH = virtualH || (height / gameScale);
-    
-    // Get current camera and player render positions for screen-space math
     const camX = Math.floor(smoothCamX || 0);
     const camY = Math.floor(smoothCamY || 0);
     const pX = isMoving ? renderX : playerPosition.x;
     const pY = isMoving ? renderY : playerPosition.y;
-    
-    // Player screen position (in virtual pixels)
     const pScreenX = (pX * cellSize + cellSize / 2) - camX;
     const pScreenY = (pY * cellSize + cellSize / 2) - camY;
 
-    const drawMarker = (tx, ty, isEnemy) => {
-        // Target screen position
-        const tScreenX = (tx * cellSize + cellSize / 2) - camX;
-        const tScreenY = (ty * cellSize + cellSize / 2) - camY;
-        
-        // VISIBILITY CHECK: If target is on screen, don't show the pointer
-        const padding = 40;
-        if (tScreenX > padding && tScreenX < vW - padding && 
-            tScreenY > padding && tScreenY < vH - padding) {
-            return;
+    const activeMarkers = [];
+
+    // Find nearest coin
+    const nearestCoin = findNearestCoin(pX, pY);
+    if (nearestCoin) activeMarkers.push({ x: nearestCoin.x, y: nearestCoin.y, type: 'coin', label: 'COIN' });
+
+    // Find nearest enemy
+    if (enemies && enemies.length > 0) {
+        let nearestE = null, minDistE = Infinity;
+        for (const e of enemies) {
+            const d = Math.hypot(e.x - pX, e.y - pY);
+            if (d < minDistE) { minDistE = d; nearestE = e; }
         }
+        if (nearestE) activeMarkers.push({ x: nearestE.x, y: nearestE.y, type: 'enemy', label: 'ENEMY' });
+    }
+
+    // Portal
+    if (isPortalActive && portalPos) {
+        activeMarkers.push({ x: portalPos.x, y: portalPos.y, type: 'portal', label: 'PORTAL' });
+    }
+
+    activeMarkers.forEach((m, i) => {
+        const tScreenX = (m.x * cellSize + cellSize / 2) - camX;
+        const tScreenY = (m.y * cellSize + cellSize / 2) - camY;
+        const padding = 60;
+        
+        // If on screen, skip pointer
+        if (tScreenX > padding && tScreenX < vW - padding && tScreenY > padding && tScreenY < vH - padding) return;
 
         const dx = tScreenX - pScreenX;
         const dy = tScreenY - pScreenY;
         const distTiles = Math.hypot(dx, dy) / cellSize;
         const angle = atan2(dy, dx);
-
-        // SCREEN BOUNDARY MAPPING
-        // We find where the line from Player to Target hits the screen edges
-        const margin = 25;
-        const left = margin;
-        const right = vW - margin;
-        const top = margin;
-        const bottom = vH - margin;
-
-        let edgeX, edgeY;
         
-        // Ray-Box Intersection
-        if (dx === 0 && dy === 0) return;
-
+        const margin = 35 + (i * 5); // Slight offset for multiple markers
         let tMin = Infinity;
+        if (dx > 0) tMin = Math.min(tMin, (vW - margin - pScreenX) / dx);
+        if (dx < 0) tMin = Math.min(tMin, (margin - pScreenX) / dx);
+        if (dy > 0) tMin = Math.min(tMin, (vH - margin - pScreenY) / dy);
+        if (dy < 0) tMin = Math.min(tMin, (margin - pScreenY) / dy);
+        
+        const edgeX = constrain(pScreenX + dx * tMin, margin, vW - margin);
+        const edgeY = constrain(pScreenY + dy * tMin, margin, vH - margin);
 
-        if (dx > 0) tMin = Math.min(tMin, (right - pScreenX) / dx);
-        if (dx < 0) tMin = Math.min(tMin, (left - pScreenX) / dx);
-        if (dy > 0) tMin = Math.min(tMin, (bottom - pScreenY) / dy);
-        if (dy < 0) tMin = Math.min(tMin, (top - pScreenY) / dy);
-
-        edgeX = pScreenX + dx * tMin;
-        edgeY = pScreenY + dy * tMin;
-
-        // Ensure clamped to screen (floating point safety)
-        edgeX = constrain(edgeX, left, right);
-        edgeY = constrain(edgeY, top, bottom);
-
-        // COLOR & STYLE LOGIC
         let markerColor;
-        let pulseSpeed = 200;
-        let baseSize = 1.0;
+        if (m.type === 'enemy') markerColor = color(255, 50, 50);
+        else if (m.type === 'coin') markerColor = color(255, 215, 0);
+        else if (m.type === 'portal') markerColor = color(180, 50, 255);
 
-        if (isEnemy) {
-            if (distTiles > 20) {
-                markerColor = color(180, 0, 0); // Deep Red
-                pulseSpeed = 500;
-            } else if (distTiles > 8) {
-                const t = map(distTiles, 8, 20, 0, 1);
-                markerColor = lerpColor(color(255, 100, 0), color(180, 0, 0), t); 
-                pulseSpeed = 300;
-            } else {
-                markerColor = color(255, 255, 255); // White/Alert
-                pulseSpeed = 150;
-                baseSize = 1.2;
-            }
-        } else {
-            markerColor = color(255, 215, 0); // Goal
-            pulseSpeed = 300;
-        }
-
-        const alpha = map(sin(millis() / pulseSpeed), -1, 1, 180, 255);
+        const alpha = map(sin(millis() / 200), -1, 1, 180, 255);
         
         push();
         translate(edgeX, edgeY);
         rotate(angle);
         
-        // Draw Shadow
+        // Arrow Shadow
         fill(0, 100); noStroke();
-        beginShape();
-        vertex(20 * baseSize + 2, 2); vertex(-10 * baseSize + 2, -14 * baseSize + 2); vertex(2, 2); vertex(-10 * baseSize + 2, 14 * baseSize + 2);
-        endShape(CLOSE);
-
-        // Draw Arrow
+        beginShape(); vertex(22, 2); vertex(-8, -12); vertex(2, 2); vertex(-8, 12); endShape(CLOSE);
+        
+        // Arrow Fill
         fill(markerColor.levels[0], markerColor.levels[1], markerColor.levels[2], alpha);
-        stroke(0, alpha * 0.8);
-        strokeWeight(2);
+        stroke(0, alpha * 0.8); strokeWeight(2);
+        beginShape(); vertex(20, 0); vertex(-10, -14); vertex(0, 0); vertex(-10, 14); endShape(CLOSE);
         
-        const s = baseSize;
-        beginShape();
-        vertex(20 * s, 0); 
-        vertex(-10 * s, -14 * s); 
-        vertex(0, 0); 
-        vertex(-10 * s, 14 * s);
-        endShape(CLOSE);
-        
-        // Label
         rotate(-angle);
-        noStroke();
-        fill(255);
+        noStroke(); 
         if (uiFont) textFont(uiFont);
-        gTextSize(12);
-        textAlign(CENTER);
-        text(Math.round(distTiles) + "m", 0, 32);
+        
+        // Label (COIN/ENEMY/PORTAL)
+        textAlign(CENTER, BOTTOM);
+        textSize(10);
+        fill(0, 180); text(m.label, 1, -19); // Shadow
+        fill(markerColor); text(m.label, 0, -20);
+        
+        // Distance
+        textAlign(CENTER, TOP);
+        textSize(12);
+        fill(0, 180); text(Math.round(distTiles) + "m", 1, 21); // Shadow
+        fill(255); text(Math.round(distTiles) + "m", 0, 20);
         pop();
-    };
-
-    // 1. Enemy Marker
-    if (enemies && enemies.length > 0) {
-        let nearestE = null;
-        let minDistE = Infinity;
-        for (const e of enemies) {
-            const d = Math.hypot(e.x - pX, e.y - pY);
-            if (d < minDistE) { minDistE = d; nearestE = e; }
-        }
-        if (nearestE) drawMarker(nearestE.x, nearestE.y, true);
-    }
-
-    // 2. Goal Marker
-    const goal = findGoalPosition();
-    if (goal) {
-        drawMarker(goal.x, goal.y, false);
-    }
-
-    // 3. Portal Marker
-    if (portalPos) {
-        drawMarker(portalPos.x, portalPos.y, false);
-    }
+    });
 }
 
 function locatePortal() {

@@ -149,6 +149,15 @@ const WeatherSystem = {
     this.calculateColor();
   },
 
+  reset: function() {
+    this.cycle = 0.3; // Start at full day
+    this.starTime = 0;
+    this.calculateColor();
+    if (this.lightMap) {
+        this.lightMap.clear();
+    }
+  },
+
   calculateColor: function() {
     let t = this.cycle;
     let lerpT;
