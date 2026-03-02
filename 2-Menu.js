@@ -5,7 +5,7 @@ const VIDEO_RECOVERY_WINDOW = 0.75;
 const CONTROL_VERTICAL_NUDGE = 8;
 const SELECT_VERTICAL_NUDGE = 15;
 const TEXTSIZE_BUTTON_Y_OFFSET = 10;
-const BACK_BUTTON_VERTICAL_OFFSET = 120;
+const BACK_BUTTON_VERTICAL_OFFSET = 0;
 
 
 
@@ -17,6 +17,19 @@ const DEFAULT_SETTINGS = Object.freeze({
   textSize: 75,
   difficulty: 'normal'
 });
+
+const DEFAULT_CONTROLS = Object.freeze({
+  UP:    { key: 'W', code: 87 },
+  DOWN:  { key: 'S', code: 83 },
+  LEFT:  { key: 'A', code: 65 },
+  RIGHT: { key: 'D', code: 68 },
+  JUMP:  { key: ' ', code: 32 },
+  DASH:  { key: 'SHIFT', code: 16 },
+  ATTACK:{ key: 'MOUSE0', code: -1 }, // Special code for mouse
+  MENU:  { key: 'ESCAPE', code: 27 }
+});
+
+let userControls = JSON.parse(JSON.stringify(DEFAULT_CONTROLS));
 
 
 if (typeof window !== 'undefined') {
@@ -142,6 +155,13 @@ let difficultySetting = DEFAULT_SETTINGS.difficulty;
 let masterVol = DEFAULT_SETTINGS.masterVol;
 let musicVol = DEFAULT_SETTINGS.musicVol;
 let sfxVol = DEFAULT_SETTINGS.sfxVol;
+
+let sensitivitySetting = 5;
+let invertYAxis = false;
+let showTutorials = true;
+let showHUD = true;
+let languageSetting = 'English';
+let colorModeSetting = 'None';
 
 let audioUnlocked = false;
 let videoLoopPending = false;
@@ -795,23 +815,41 @@ function showSubSettings(label) {
 
   const cx = width / 2;
   const cy = height / 2;
-  const panelW = 0.7 * width;
-  const panelH = 0.7 * height;
+  
+  // Use a larger panel for Controls if needed
+  let panelW = 0.7 * width;
+  let panelH = 0.7 * height;
+  if (label === 'Controls') {
+    panelW = 0.8 * width;
+    panelH = 0.85 * height;
+  }
+  
   const panelLeft = cx - panelW / 2;
+  const panelTop = cy - panelH / 2;
   
+  // FIXED LAYOUT CONSTANTS
+  const labelWidth = panelW * 0.35;
+  const labelX = panelLeft + panelW * 0.05;
+  const controlX = panelLeft + panelW * 0.42;
+  const controlWidth = panelW * 0.5;
   
-  
-  const labelX = panelLeft + (panelW * 0.05);
-  const controlX = panelLeft + (panelW * 0.42);
-  const controlWidth = panelW * 0.52;
-  const spacingY = Math.max(panelH * 0.17, 90);
+  // Adjusted spacing to be more consistent
+  let spacingY = Math.round(panelH * 0.12);
+  let startY = panelTop + panelH * 0.18;
+
+  // Reduce spacing if there are many controls
+  if (label === 'Controls') {
+    spacingY = Math.round(panelH * 0.08);
+    startY = panelTop + panelH * 0.12;
+  }
 
   const ctx = createSettingsContext({
     labelX, 
+    labelWidth,
     controlX, 
     controlWidth, 
     panelH,
-    startY: cy - panelH / 2 + panelH * 0.18,
+    startY,
     spacingY
   });
 
@@ -820,14 +858,16 @@ function showSubSettings(label) {
     builder(ctx);
   }
 
-  const backY = cy + panelH / 2 - panelH * 0.12;
-  const backWidth = panelW * 0.3;
-  const backBG = createBgImg("assets/3-GUI/Button_BG.png", cx - backWidth / 2, backY, backWidth, panelH * 0.08, '3');
-  const backBtn = makeSmallBtn("← Back", cx - backWidth / 2, backY, backWidth, panelH * 0.08, () => {
+  const backY = panelTop + panelH - panelH * 0.12;
+  const backWidth = Math.min(panelW * 0.3, 200);
+  const backHeight = panelH * 0.08;
+  const backBG = createBgImg("assets/3-GUI/Button_BG.png", cx - backWidth / 2, backY, backWidth, backHeight, '20005');
+  const backBtn = makeSmallBtn("← Back", cx - backWidth / 2, backY, backWidth, backHeight, () => {
     playClickSFX();
     clearSubSettings();
     showSettingsMenu();
   });
+  backBtn.style('z-index', '20006');
 
   activeSettingElements.push(backBG, backBtn);
   applyCurrentTextSize();
@@ -862,17 +902,20 @@ function makeSmallBtn(label, x, y, w, h, cb) {
   return b;
 }
 
-function createSettingLabel(txt, x, y, maxWidth = 200, parentEl = null) {
+function createSettingLabel(txt, x, y, width = 200, parentEl = null) {
   const d = createDiv(txt);
   d.parent(parentEl || getMenuDomParent());
   d.position(x, y);
   d.style("color", "white");
-  d.style("font-size", (0.035 * height) + "px");
+  // Consistent font size and family
+  d.style("font-family", "'MyFont', sans-serif");
+  d.style("font-size", "22px");
   d.style("text-align", "right");
-  d.style("width", maxWidth + "px");
+  d.style("width", width + "px");
   d.style("z-index", "4");
   d.style("position", "absolute");
   d.style("pointer-events", "none");
+  d.style("line-height", "1.2");
   if (d.elt && d.elt.classList) d.elt.classList.add('setting-label');
   return d;
 }
@@ -889,22 +932,22 @@ function createSettingsContext(layout) {
     pushElement(el) { activeSettingElements.push(el); },
 
     addSliderRow(labelText, min, max, currentVal, onChange, opts) {
-      const labelWidth = Math.max(120, Math.min(260, this.layout.controlX - this.layout.labelX - 12));
-      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y, labelWidth, domParent));
+      // Align label vertically with slider
+      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y + 2, this.layout.labelWidth, domParent));
 
       const slider = createSlider(min, max, currentVal);
       slider.parent(domParent);
 
       slider.position(this.layout.controlX, this.y);
-      const sliderWidth = Math.max(200, Math.round(this.layout.controlWidth * 0.82));
-      slider.style('width', sliderWidth + 'px');
-      slider.style('height', '26px');
+      const sliderW = Math.round(this.layout.controlWidth * 0.9);
+      slider.style('width', sliderW + 'px');
+      slider.style('height', '30px');
       slider.style('z-index', '20000');
-      registerZoomAwareSlider(slider, sliderWidth, 26);
+      registerZoomAwareSlider(slider, sliderW, 30);
       
       if (opts && opts.isAudio) {
-        slider.attribute('data-setting', labelText === "Master Volume" ? "masterVol" : 
-                                         labelText === "Music Volume" ? "musicVol" : "sfxVol");
+        slider.attribute('data-setting', labelText.toLowerCase().includes("master") ? "masterVol" : 
+                                         labelText.toLowerCase().includes("music") ? "musicVol" : "sfxVol");
       }
       slider.input(() => onChange(slider.value()));
       this.pushElement(slider);
@@ -914,14 +957,13 @@ function createSettingsContext(layout) {
     },
 
     addCheckboxRow(labelText, isChecked, onChange) {
-      const labelWidth = Math.max(120, Math.min(260, this.layout.controlX - this.layout.labelX - 12));
-      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y, labelWidth, domParent));
+      // Align label vertically with checkbox
+      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y + 5, this.layout.labelWidth, domParent));
 
-      const chk = createCheckbox('', isChecked);
+      const chk = createCheckbox('', !!isChecked);
       chk.parent(domParent);
 
-      const checkboxOffset = Math.round(this.layout.spacingY * 0.05);
-      chk.position(this.layout.controlX, this.y - checkboxOffset);
+      chk.position(this.layout.controlX, this.y);
       chk.style('z-index', '20000');
       watchZoomNeutralElement(chk);
  
@@ -935,22 +977,23 @@ function createSettingsContext(layout) {
     },
 
     addSelectRow(labelText, options, config) {
-      const labelWidth = Math.max(120, Math.min(260, this.layout.controlX - this.layout.labelX - 12));
-      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y, labelWidth, domParent));
+      // Align label vertically with select
+      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y + 8, this.layout.labelWidth, domParent));
 
       const sel = createSelect();
       sel.parent(domParent);
-      const selectWidth = Math.min(this.layout.controlWidth * 0.72, 360);
-      const selectHeight = Math.max(42, Math.round(this.layout.spacingY * 0.6));
+      const selectW = Math.min(this.layout.controlWidth * 0.8, 300);
+      const selectH = 40;
       sel.position(this.layout.controlX, this.y);
-      sel.size(selectWidth, selectHeight);
-      sel.style('font-size', '24px');
+      sel.size(selectW, selectH);
+      sel.style('font-size', '18px');
+      sel.style('font-family', "'MyFont', sans-serif");
       sel.style('z-index', '20000');
       sel.style('background', '#222');
       sel.style('color', 'white');
-      sel.style('border', '2px solid #555');
+      sel.style('border', '2px solid #ffcc00');
       sel.style('border-radius', '5px');
-      sel.style('padding', '10px 12px');
+      sel.style('padding', '5px 10px');
       watchZoomNeutralElement(sel);
 
       options.forEach(opt => sel.option(opt));
@@ -967,6 +1010,51 @@ function createSettingsContext(layout) {
 
       this.pushElement(sel);
 
+      this.y += this.layout.spacingY;
+      return this;
+    },
+
+    addControlRow(labelText, currentKey, onRebind) {
+      this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y + 5, this.layout.labelWidth, domParent));
+
+      const btn = createButton(currentKey);
+      btn.parent(domParent);
+      btn.position(this.layout.controlX, this.y);
+      btn.size(this.layout.controlWidth * 0.6, 40);
+      styleSmallButton(btn);
+      btn.style('background', '#333');
+      btn.style('border', '2px solid #555');
+      btn.style('border-radius', '8px');
+      btn.style('z-index', '20000');
+      watchZoomNeutralElement(btn);
+      
+      btn.mousePressed(() => {
+        const previousLabel = btn.html();
+        btn.html('...');
+        btn.style('background', '#884400');
+        
+        const keyHandler = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          if (e.key === 'Escape') {
+            btn.html(previousLabel);
+            btn.style('background', '#333');
+            window.removeEventListener('keydown', keyHandler, true);
+            return;
+          }
+
+          const newKey = e.key.toUpperCase();
+          const newKeyCode = e.keyCode;
+          onRebind(newKey, newKeyCode);
+          btn.html(newKey === ' ' ? 'SPACE' : newKey);
+          btn.style('background', '#333');
+          window.removeEventListener('keydown', keyHandler, true);
+        };
+        window.addEventListener('keydown', keyHandler, true);
+      });
+
+      this.pushElement(btn);
       this.y += this.layout.spacingY;
       return this;
     }
@@ -1003,27 +1091,56 @@ function buildAudioSettings(ctx) {
 
 function buildGameplaySettings(ctx) {
   ctx
-    .addCheckboxRow("Show Tutorials", true)
-    .addCheckboxRow("Enable HUD", true)
+    .addCheckboxRow("Show Tutorials", showTutorials, v => {
+        showTutorials = v;
+        saveAllSettings();
+    })
+    .addCheckboxRow("Enable HUD", showHUD, v => {
+        showHUD = v;
+        saveAllSettings();
+    })
     .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
       value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
       onChange: (val) => {
         const normalized = val.toLowerCase();
         difficultySetting = normalized;
-        if(typeof setDifficulty === 'function') setDifficulty(normalized, { regenerate: false });
+        saveAllSettings();
       }
     });
 }
 
 function buildControlsSettings(ctx) {
-  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {})
-     .addCheckboxRow("Invert Y Axis", false);
+  ctx.addSliderRow("Sensitivity", 1, 10, sensitivitySetting, v => {
+        sensitivitySetting = v;
+        saveAllSettings();
+     })
+     .addCheckboxRow("Invert Y Axis", invertYAxis, v => {
+        invertYAxis = v;
+        saveAllSettings();
+     });
+
+  ctx.y += 20; // Gap
+
+  // Movement
+  ctx.addControlRow("Move Up", userControls.UP.key === ' ' ? 'SPACE' : userControls.UP.key, (k, c) => { userControls.UP = { key: k, code: c }; saveAllSettings(); });
+  ctx.addControlRow("Move Down", userControls.DOWN.key === ' ' ? 'SPACE' : userControls.DOWN.key, (k, c) => { userControls.DOWN = { key: k, code: c }; saveAllSettings(); });
+  ctx.addControlRow("Move Left", userControls.LEFT.key === ' ' ? 'SPACE' : userControls.LEFT.key, (k, c) => { userControls.LEFT = { key: k, code: c }; saveAllSettings(); });
+  ctx.addControlRow("Move Right", userControls.RIGHT.key === ' ' ? 'SPACE' : userControls.RIGHT.key, (k, c) => { userControls.RIGHT = { key: k, code: c }; saveAllSettings(); });
+  
+  // Actions
+  ctx.addControlRow("Jump", userControls.JUMP.key === ' ' ? 'SPACE' : userControls.JUMP.key, (k, c) => { userControls.JUMP = { key: k, code: c }; saveAllSettings(); });
+  ctx.addControlRow("Dash", userControls.DASH.key === ' ' ? 'SPACE' : userControls.DASH.key, (k, c) => { userControls.DASH = { key: k, code: c }; saveAllSettings(); });
+  ctx.addControlRow("Attack", userControls.ATTACK.key === ' ' ? 'SPACE' : userControls.ATTACK.key, (k, c) => { userControls.ATTACK = { key: k, code: c }; saveAllSettings(); });
 }
 
 function buildAccessibilitySettings(ctx) {
-  
-  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
-  
+  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"], {
+      value: colorModeSetting,
+      onChange: (v) => {
+          colorModeSetting = v;
+          saveAllSettings();
+      }
+  });
   
   const { labelX, controlX, controlWidth, panelH, spacingY } = ctx.layout;
   
@@ -1082,7 +1199,13 @@ function buildAccessibilitySettings(ctx) {
 }
 
 function buildLanguageSettings(ctx) {
-  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
+  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"], {
+      value: languageSetting,
+      onChange: (v) => {
+          languageSetting = v;
+          saveAllSettings();
+      }
+  });
 }
 
 // === Settings Helpers ===
@@ -1409,7 +1532,11 @@ function resetDefaults() {
 }
 
 function saveAllSettings() {
-  const settings = { masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting };
+  const settings = { 
+    masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting,
+    sensitivitySetting, invertYAxis, showTutorials, showHUD, 
+    languageSetting, colorModeSetting, userControls
+  };
   localStorage.setItem("menuSettings", JSON.stringify(settings));
   console.log("💾 Saved Settings:", settings);
 }
@@ -1422,6 +1549,16 @@ function loadAllSettings() {
     musicVol = s.musicVol ?? musicVol;
     sfxVol = s.sfxVol ?? sfxVol;
     textSizeSetting = s.textSizeSetting ?? textSizeSetting;
+    
+    // New Settings
+    sensitivitySetting = s.sensitivitySetting ?? sensitivitySetting;
+    invertYAxis = s.invertYAxis ?? invertYAxis;
+    showTutorials = s.showTutorials ?? showTutorials;
+    showHUD = s.showHUD ?? showHUD;
+    languageSetting = s.languageSetting ?? languageSetting;
+    colorModeSetting = s.colorModeSetting ?? colorModeSetting;
+    if (s.userControls) userControls = s.userControls;
+
     const storedDifficulty = normalizeDifficultyChoice(s.difficulty);
     if (storedDifficulty) difficultySetting = storedDifficulty;
     applyVolumes();
@@ -1462,8 +1599,13 @@ function draw() {
   if (showingSettings) {
     const cx = width / 2;
     const cy = height / 2;
-    const panelW = 0.7 * width;
-    const panelH = 0.7 * height;
+    let panelW = 0.7 * width;
+    let panelH = 0.7 * height;
+
+    if (activeCategory === 'Controls') {
+      panelW = 0.8 * width;
+      panelH = 0.85 * height;
+    }
 
     push();
     imageMode(CENTER);
@@ -1567,6 +1709,116 @@ function saveAccessibilitySettings() {
 }
 
 // === Custom Styles Injection ===
+let isTerminalOpen = false;
+let terminalEl = null;
+let terminalHistory = [];
+let terminalHistoryIndex = -1;
+
+function injectTerminal() {
+    if (terminalEl) return;
+    
+    terminalEl = createDiv(`
+        <div id="game-terminal">
+            <div id="terminal-header">
+                <span id="terminal-title">SYSTEM COMMAND INTERFACE</span>
+                <span id="terminal-close">ESC to Close</span>
+            </div>
+            <div id="terminal-history"></div>
+            <div id="terminal-input-row">
+                <span id="terminal-prompt">></span>
+                <input type="text" id="terminal-input" spellcheck="false" autocomplete="off" placeholder="Enter command...">
+            </div>
+        </div>
+    `);
+    terminalEl.style('display', 'none');
+    terminalEl.style('z-index', '20000');
+    
+    const input = document.getElementById('terminal-input');
+    const history = document.getElementById('terminal-history');
+    
+    if (!input || !history) return;
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const val = input.value.trim();
+            if (val) {
+                processTerminalCommand(val);
+                terminalHistory.unshift(val);
+                terminalHistoryIndex = -1;
+                input.value = '';
+            }
+        } else if (e.key === 'ArrowUp') {
+            if (terminalHistoryIndex < terminalHistory.length - 1) {
+                terminalHistoryIndex++;
+                input.value = terminalHistory[terminalHistoryIndex];
+            }
+            e.preventDefault();
+        } else if (e.key === 'ArrowDown') {
+            if (terminalHistoryIndex > 0) {
+                terminalHistoryIndex--;
+                input.value = terminalHistory[terminalHistoryIndex];
+            } else {
+                terminalHistoryIndex = -1;
+                input.value = '';
+            }
+            e.preventDefault();
+        } else if (e.key === 'Escape') {
+            toggleTerminal(false);
+        }
+    });
+
+    terminalLog('SYSTEM INITIALIZED. WELCOME TO THE GRID COMMAND INTERFACE.', 'terminal-success');
+    terminalLog('Type <span style="color:#fff">/help</span> for available commands.', 'terminal-log');
+}
+
+function toggleTerminal(state) {
+    if (!terminalEl) injectTerminal();
+    isTerminalOpen = (state !== undefined) ? state : !isTerminalOpen;
+    terminalEl.style('display', isTerminalOpen ? 'block' : 'none');
+    if (isTerminalOpen) {
+        setTimeout(() => document.getElementById('terminal-input')?.focus(), 10);
+    }
+}
+
+function terminalLog(msg, className = 'terminal-log') {
+    const history = document.getElementById('terminal-history');
+    if (!history) return;
+    const cmdLine = document.createElement('div');
+    cmdLine.className = className;
+    cmdLine.innerHTML = msg;
+    history.appendChild(cmdLine);
+    history.scrollTop = history.scrollHeight;
+}
+
+function processTerminalCommand(cmd) {
+    terminalLog(`> ${cmd}`, 'terminal-input-echo');
+    const parts = cmd.toLowerCase().split(' ');
+    const base = parts[0];
+
+    if (base === '/help') {
+        terminalLog('SYSTEM COMMANDS:');
+        terminalLog('  <span style="color:#fff">/tutorial reset</span>   - Reset tutorial flags (shows on next game start).');
+        terminalLog('  <span style="color:#fff">/clear</span>            - Wipe terminal log history.');
+        terminalLog('  <span style="color:#fff">/exit</span>             - Disconnect from console.');
+    } else if (base === '/tutorial') {
+        if (parts[1] === 'reset') {
+            // Since we're in the menu, we just update the storage or flag
+            // 4-Game.js will pick it up on next load.
+            localStorage.setItem('hasShownWelcomeTutorial', 'false');
+            terminalLog('SUCCESS: User experience flags cleared in local storage.', 'terminal-success');
+        } else {
+            terminalLog('USAGE: /tutorial reset', 'terminal-log');
+        }
+    } else if (base === '/clear') {
+        const history = document.getElementById('terminal-history');
+        if (history) history.innerHTML = '';
+    } else if (base === '/exit') {
+        toggleTerminal(false);
+    } else {
+        terminalLog(`ERROR: Command '${base}' not recognized.`, 'terminal-error');
+    }
+}
+
 function injectCustomStyles() {
   const existingStyle = document.getElementById('custom-menu-styles');
   if (existingStyle) existingStyle.remove();
@@ -1655,8 +1907,94 @@ function injectCustomStyles() {
       transform: scale(1.05);
       color: #ffea80 !important;
     }
+
+    /* Terminal Styles */
+    #game-terminal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 700px;
+        height: 450px;
+        background: rgba(15, 15, 20, 0.98);
+        border: 3px solid #ffcc00;
+        box-shadow: 0 0 30px rgba(0,0,0,0.9), inset 0 0 15px rgba(255,204,0,0.1);
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        font-family: 'MyFont', Courier, monospace;
+        color: white;
+        z-index: 20000;
+        pointer-events: auto;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    #terminal-header {
+        background: #ffcc00;
+        color: #000;
+        padding: 8px 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: bold;
+        letter-spacing: 1px;
+        font-size: 14px;
+    }
+    #terminal-close {
+        opacity: 0.7;
+        font-size: 12px;
+    }
+    #terminal-history {
+        flex: 1;
+        overflow-y: auto;
+        margin: 0;
+        padding: 20px;
+        scrollbar-width: thin;
+        scrollbar-color: #ffcc00 transparent;
+        font-size: 16px;
+        line-height: 1.4;
+    }
+    #terminal-history::-webkit-scrollbar { width: 6px; }
+    #terminal-history::-webkit-scrollbar-thumb { background: #ffcc00; border-radius: 3px; }
+    
+    #terminal-input-row {
+        display: flex;
+        align-items: center;
+        border-top: 2px solid rgba(255,204,0,0.3);
+        padding: 15px 20px;
+        background: rgba(0,0,0,0.3);
+    }
+    #terminal-prompt { 
+        margin-right: 12px; 
+        font-weight: bold; 
+        color: #ffcc00;
+        font-size: 20px;
+    }
+    #terminal-input {
+        background: transparent;
+        border: none;
+        color: white;
+        font-family: 'MyFont', monospace;
+        font-size: 18px;
+        width: 100%;
+        outline: none;
+    }
+    #terminal-input::placeholder {
+        color: rgba(255,255,255,0.2);
+    }
+    .terminal-log { margin-bottom: 6px; color: rgba(255,255,255,0.9); }
+    .terminal-success { margin-bottom: 6px; color: #ffff00; font-weight: bold; text-shadow: 0 0 5px rgba(255,255,0,0.3); }
+    .terminal-error { margin-bottom: 6px; color: #ff4444; font-weight: bold; }
+    .terminal-input-echo { margin-bottom: 6px; color: #ffcc00; opacity: 0.8; }
   `);
 
   style.id = 'custom-menu-styles';
   style.parent(document.head);
+}
+
+function keyPressed() {
+    if (key === "'" && keyIsDown(CONTROL)) {
+        toggleTerminal();
+        return false;
+    }
 }

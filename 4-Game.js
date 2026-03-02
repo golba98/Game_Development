@@ -111,6 +111,19 @@ const DEFAULT_SETTINGS = Object.freeze({
   masterVol: 0.8, musicVol: 0.6, sfxVol: 0.7, textSize: 75, difficulty: 'normal'
 });
 
+const DEFAULT_CONTROLS = Object.freeze({
+  UP:    { key: 'W', code: 87 },
+  DOWN:  { key: 'S', code: 83 },
+  LEFT:  { key: 'A', code: 65 },
+  RIGHT: { key: 'D', code: 68 },
+  JUMP:  { key: ' ', code: 32 },
+  DASH:  { key: 'SHIFT', code: 16 },
+  ATTACK:{ key: 'MOUSE0', code: -1 }, // Special code for mouse
+  MENU:  { key: 'ESCAPE', code: 27 }
+});
+
+let userControls = JSON.parse(JSON.stringify(DEFAULT_CONTROLS));
+
 const ALLOW_ACTIVE_MAP_FETCH = false;
 
 const VERBOSE_LOGGING_ENABLED = false;
@@ -270,7 +283,7 @@ function completeLoadingProgress() {
 const CONTROL_VERTICAL_NUDGE = 8;
 const SELECT_VERTICAL_NUDGE = 15;
 const TEXTSIZE_BUTTON_Y_OFFSET = 10;
-const BACK_BUTTON_VERTICAL_OFFSET = 120;
+const BACK_BUTTON_VERTICAL_OFFSET = 0;
 
 let genPhase = 0;      
 let genTimer = 0;    
@@ -824,6 +837,11 @@ function mousePressed() {
   // Ensure keyboard focus is on this window for WASD input
   try { window.focus(); } catch (e) {}
 
+  if (activeTutorial && !isTerminalOpen) {
+      activeTutorial = null;
+      return;
+  }
+
   if (isTerminalOpen) return;
   if (isGameOver) return;
   
@@ -839,7 +857,7 @@ function mousePressed() {
     const mx = mouseX / gameScale;
     const my = mouseY / gameScale;
 
-    if (mouseButton === LEFT) {
+    if (userControls.ATTACK.key === 'MOUSE0' && mouseButton === LEFT) {
         startPlayerAttack();
     }
     
@@ -892,15 +910,19 @@ function createTerminalUI() {
     terminalEl = document.createElement('div');
     terminalEl.id = 'game-terminal';
     terminalEl.innerHTML = `
+        <div id="terminal-header">
+            <span id="terminal-title">SYSTEM COMMAND INTERFACE</span>
+            <span id="terminal-close">ESC to Close</span>
+        </div>
         <div id="terminal-history">
             <div class="terminal-log">CORE OS [Version 1.0.42]</div>
             <div class="terminal-log">Initializing secure connection... OK.</div>
             <div class="terminal-log">Welcome back, Administrator.</div>
-            <div class="terminal-log terminal-hint">Tip: Use Up/Down arrows to cycle history. Press ESC to close.</div>
+            <div class="terminal-log terminal-hint">Tip: Use Up/Down arrows to cycle history.</div>
         </div>
         <div id="terminal-input-row">
-            <span id="terminal-prompt">SYS_ADMIN@GAME:~$</span>
-            <input type="text" id="terminal-input" spellcheck="false" autocomplete="off">
+            <span id="terminal-prompt">></span>
+            <input type="text" id="terminal-input" spellcheck="false" autocomplete="off" placeholder="Enter command...">
         </div>
     `;
     document.body.appendChild(terminalEl);
@@ -942,19 +964,23 @@ function createTerminalUI() {
     });
 }
 
+function terminalLog(msg, type = '', isHTML = false) {
+    const history = document.getElementById('terminal-history');
+    if (!history) return;
+    const div = document.createElement('div');
+    div.className = 'terminal-log ' + type;
+    if (isHTML) {
+        div.innerHTML = msg;
+    } else {
+        div.textContent = msg;
+    }
+    history.appendChild(div);
+    history.scrollTop = history.scrollHeight;
+}
+
 function processTerminalCommand(cmd) {
     const history = document.getElementById('terminal-history');
-    const log = (msg, type = '', isHTML = false) => {
-        const div = document.createElement('div');
-        div.className = 'terminal-log ' + type;
-        if (isHTML) {
-            div.innerHTML = msg;
-        } else {
-            div.textContent = msg;
-        }
-        history.appendChild(div);
-        history.scrollTop = history.scrollHeight;
-    };
+    if (!history) return;
 
     // Safely log the command by using textContent on a prefix span
     const cmdLine = document.createElement('div');
@@ -972,13 +998,13 @@ function processTerminalCommand(cmd) {
         if (enemies && enemies.length > 0) {
             const count = enemies.length;
             enemies = [];
-            log(`SUCCESS: ${count} neural signatures purged from local grid.`, 'terminal-success');
+            terminalLog(`SUCCESS: ${count} neural signatures purged from local grid.`, 'terminal-success');
         } else {
-            log('NOTICE: Scan complete. No enemy signatures detected.', 'terminal-log');
+            terminalLog('NOTICE: Scan complete. No enemy signatures detected.', 'terminal-log');
         }
     } else if (base === '/collect' && parts[1] === 'all') {
         if (!mapStates) {
-            log('ERROR: Neural map not initialized.', 'terminal-error');
+            terminalLog('ERROR: Neural map not initialized.', 'terminal-error');
         } else {
             let collected = 0;
             for (let i = 0; i < mapStates.length; i++) {
@@ -987,23 +1013,22 @@ function processTerminalCommand(cmd) {
                     mapStates[i] = underlyingTerrain;
                     playerScore += 10;
                     collected++;
-                    // Optional: Redraw only if necessary, but for /collect all we can just rebuild mapImage once
                 }
             }
             if (collected > 0) {
                 lastScoreChange = millis();
-                createMapImage(logicalW, logicalH); // Refresh the whole map image
-                log(`SUCCESS: ${collected} gold units sequestered into player storage.`, 'terminal-success');
+                createMapImage(logicalW, logicalH);
+                terminalLog(`SUCCESS: ${collected} gold units sequestered into player storage.`, 'terminal-success');
             } else {
-                log('NOTICE: No loose currency detected on current grid.', 'terminal-log');
+                terminalLog('NOTICE: No loose currency detected on current grid.', 'terminal-log');
             }
         }
     } else if (base === '/scan' && parts[1] === 'boss') {
         const boss = (enemies || []).find(e => e.type === 'beetle');
         if (boss) {
-            log(`CRITICAL THREAT DETECTED: [Beetle Boss] status: ACTIVE, health: ${Math.floor(boss.health)}/${boss.maxHealth}`, 'terminal-error');
+            terminalLog(`CRITICAL THREAT DETECTED: [Beetle Boss] status: ACTIVE, health: ${Math.floor(boss.health)}/${boss.maxHealth}`, 'terminal-error');
         } else {
-            log('NOTICE: No elite signatures detected in current sector.', 'terminal-log');
+            terminalLog('NOTICE: No elite signatures detected in current sector.', 'terminal-log');
         }
     } else if (base === '/locate' && parts[1] === 'boss') {
         const boss = (enemies || []).find(e => e.type === 'beetle');
@@ -1011,9 +1036,9 @@ function processTerminalCommand(cmd) {
             const dx = Math.floor(boss.x - playerPosition.x);
             const dy = Math.floor(boss.y - playerPosition.y);
             const distStr = Math.sqrt(dx*dx + dy*dy).toFixed(1);
-            log(`SIGNAL STRENGTH: Boss coordinates confirmed. Sector: [${Math.floor(boss.x)}, ${Math.floor(boss.y)}]. Distance: ${distStr}m.`, 'terminal-success');
+            terminalLog(`SIGNAL STRENGTH: Boss coordinates confirmed. Sector: [${Math.floor(boss.x)}, ${Math.floor(boss.y)}]. Distance: ${distStr}m.`, 'terminal-success');
         } else {
-            log('ERROR: Unable to lock on. No boss signature found.', 'terminal-error');
+            terminalLog('ERROR: Unable to lock on. No boss signature found.', 'terminal-error');
         }
     } else if (base === '/spawn' && parts[1] === 'boss') {
         const angle = Math.random() * TWO_PI;
@@ -1021,22 +1046,35 @@ function processTerminalCommand(cmd) {
         const ex = Math.floor(playerPosition.x + Math.cos(angle) * dist);
         const ey = Math.floor(playerPosition.y + Math.sin(angle) * dist);
         spawnEnemy('beetle', ex, ey);
-        log(`CRITICAL: Boss Beetle signature forced into local grid at [${ex}, ${ey}].`, 'terminal-error');
+        terminalLog(`CRITICAL: Boss Beetle signature forced into local grid at [${ex}, ${ey}].`, 'terminal-error');
+    } else if (base === '/tutorial') {
+        if (parts[1] === 'welcome') {
+            showTutorial('welcome');
+            terminalLog('SUCCESS: Welcome protocol initialized.', 'terminal-success');
+        } else if (parts[1] === 'reset') {
+            hasShownWelcomeTutorial = false;
+            localStorage.setItem('hasShownWelcomeTutorial', 'false');
+            terminalLog('SUCCESS: User experience flags cleared. Tutorial will show on next initialization.', 'terminal-success');
+        } else {
+            terminalLog('USAGE: /tutorial [welcome|reset]', 'terminal-log');
+        }
     } else if (base === '/help') {
-        log('SYSTEM COMMANDS:');
-        log('  <span style="color:#fff">/kill all</span>    - Wipe all enemies.');
-        log('  <span style="color:#fff">/collect all</span> - Collect all coins on the map.');
-        log('  <span style="color:#fff">/scan boss</span>   - Check for active boss signatures.');
-        log('  <span style="color:#fff">/locate boss</span> - Get precise boss coordinates.');
-        log('  <span style="color:#fff">/spawn boss</span>  - Force a boss beetle to spawn near you.');
-        log('  <span style="color:#fff">/clear</span>       - Wipe terminal log history.');
-        log('  <span style="color:#fff">/exit</span>        - Disconnect from console.');
+        terminalLog('SYSTEM COMMANDS:');
+        terminalLog('  /kill all    - Wipe all enemies.', '', true);
+        terminalLog('  /collect all - Collect all coins.', '', true);
+        terminalLog('  /scan boss   - Check boss status.', '', true);
+        terminalLog('  /locate boss - Find boss position.', '', true);
+        terminalLog('  /spawn boss  - Force boss spawn.', '', true);
+        terminalLog('  /tutorial welcome - Show tutorial.', '', true);
+        terminalLog('  /tutorial reset   - Reset tutorial.', '', true);
+        terminalLog('  /clear       - Clear history.', '', true);
+        terminalLog('  /exit        - Close console.', '', true);
     } else if (base === '/clear') {
         history.innerHTML = '<div class="terminal-log">History cleared.</div>';
     } else if (base === '/exit') {
         toggleTerminal();
     } else {
-        log(`ERROR: Unknown command sequence "${base}".`, 'terminal-error');
+        terminalLog(`ERROR: Unknown command sequence "${base}".`, 'terminal-error');
     }
 }
 
@@ -1045,10 +1083,15 @@ function keyPressed() {
       toggleTerminal();
       return false;
   }
+
+  if (activeTutorial && !isTerminalOpen) {
+      activeTutorial = null;
+      return false;
+  }
+
   if (isTerminalOpen) return; // Disable other inputs while terminal is open
 
-  if (isGameOver) return;
-  if (key === ' ' && !isJumping && !isMoving) {
+  if (keyCode === userControls.JUMP.code && !isJumping && !isMoving) {
     
     isJumping = true;
     jumpFrame = 0;
@@ -1056,10 +1099,10 @@ function keyPressed() {
 
     
     try {
-      const nowA = (typeof keyIsDown === 'function') ? keyIsDown(65) : false;
-      const nowD = (typeof keyIsDown === 'function') ? keyIsDown(68) : false;
-      const nowW = (typeof keyIsDown === 'function') ? keyIsDown(87) : false;
-      const nowS = (typeof keyIsDown === 'function') ? keyIsDown(83) : false;
+      const nowA = keyIsDown(userControls.LEFT.code);
+      const nowD = keyIsDown(userControls.RIGHT.code);
+      const nowW = keyIsDown(userControls.UP.code);
+      const nowS = keyIsDown(userControls.DOWN.code);
       const dx = (nowD ? 1 : 0) - (nowA ? 1 : 0);
       const dy = (nowS ? 1 : 0) - (nowW ? 1 : 0);
       
@@ -1093,7 +1136,6 @@ function keyPressed() {
     } catch (e) { console.warn('[game] jump-forward movement failed', e); }
     return;
   }
-  if (key === 'Escape' || keyCode === 27) { togglePauseMenuFromEscape(); return false; }
 
   if (key === 'm' || key === 'M') {
       showMinimap = !showMinimap;
@@ -1162,22 +1204,18 @@ function keyPressed() {
 }
 
 
-try {
-  window.addEventListener('keydown', (ev) => {
-    if (ev && ev.key === 'Escape') {
-      ev.preventDefault();
-      togglePauseMenuFromEscape();
-    }
-  }, { capture: true });
-} catch (e) {
-  console.warn('[game] failed to attach global Escape handler', e);
-}
+function _dummy() {}
 
 
 
 function generateMap() {
   clearPreviousGameState();
   genPhase = 1;
+  
+  if (!hasShownWelcomeTutorial) {
+      showTutorial('welcome');
+      hasShownWelcomeTutorial = true;
+  }
 }
 
 function generateMap_Part1() {
@@ -2949,8 +2987,8 @@ function createBeetle(startX, startY) {
         frameCount = 6;
         frame = Math.min(this.attackFrame, 5);
         if (this.direction === 'S') row = 0;
-        else if (this.direction === 'E') row = 1;
-        else if (this.direction === 'W') row = 2;
+        else if (this.direction === 'W') row = 1;
+        else if (this.direction === 'E') row = 2;
         else if (this.direction === 'N') row = 3;
         // Fallback to move sprite if attack sprite didn't load
         if (!sprite) {
@@ -2965,8 +3003,8 @@ function createBeetle(startX, startY) {
         else frame = 0;
 
         if (this.direction === 'S') row = 0;
-        else if (this.direction === 'E') row = 1;
-        else if (this.direction === 'W') row = 2;
+        else if (this.direction === 'W') row = 1;
+        else if (this.direction === 'E') row = 2;
         else if (this.direction === 'N') row = 3;
       }
 
@@ -3260,8 +3298,8 @@ function createMantis(startX, startY) {
         
         let row = 0;
         if (this.direction === 'S') row = 0;
-        else if (this.direction === 'E') row = 1;
-        else if (this.direction === 'W') row = 2;
+        else if (this.direction === 'W') row = 1;
+        else if (this.direction === 'E') row = 2;
         else if (this.direction === 'N') row = 3;
         
         const fw = sprite.width / cols;
@@ -3818,11 +3856,11 @@ function handleMovement() {
   }
 
   if (isJumping || (isMoving && (millis() - lastMoveTime < getActiveMoveCooldownMs()))) return;
-  const nowA = keyIsDown(65);
-  const nowD = keyIsDown(68);
-  const nowW = keyIsDown(87);
-  const nowS = keyIsDown(83);
-  const shiftHeld = keyIsDown(16);
+  const nowA = keyIsDown(userControls.LEFT.code);
+  const nowD = keyIsDown(userControls.RIGHT.code);
+  const nowW = keyIsDown(userControls.UP.code);
+  const nowS = keyIsDown(userControls.DOWN.code);
+  const shiftHeld = keyIsDown(userControls.DASH.code);
   const now = millis();
 
   // Dash trigger
@@ -3859,10 +3897,18 @@ function handleMovement() {
   const D_trig = keyTriggered(nowD, prevKeyD, holdState.D);
   const W_trig = keyTriggered(nowW, prevKeyW, holdState.W);
   const S_trig = keyTriggered(nowS, prevKeyS, holdState.S);
+  
   if (A_trig) { facing = 'left'; targetX--; moved = true; }
   else if (D_trig) { facing = 'right'; targetX++; moved = true; }
-  if (W_trig) { targetY--; moved = true; }
-  else if (S_trig) { targetY++; moved = true; }
+  
+  // INVERT Y AXIS LOGIC
+  if (invertYAxis) {
+    if (W_trig) { targetY++; moved = true; }
+    else if (S_trig) { targetY--; moved = true; }
+  } else {
+    if (W_trig) { targetY--; moved = true; }
+    else if (S_trig) { targetY++; moved = true; }
+  }
   if (targetX < 0) targetX = 0;
   if (targetY < 0) targetY = 0;
   if (targetX > maxTileX) targetX = maxTileX;
@@ -3897,10 +3943,15 @@ function tryMoveDirection(keyChar) {
   const k = keyChar ? keyChar.toUpperCase() : '';
   let targetX = playerPosition.x;
   let targetY = playerPosition.y;
-  if (k === 'A') { facing = 'left'; targetX--; }
-  else if (k === 'D') { facing = 'right'; targetX++; }
-  else if (k === 'W') { targetY--; }
-  else if (k === 'S') { targetY++; }
+  
+  if (k === userControls.LEFT.key) { facing = 'left'; targetX--; }
+  else if (k === userControls.RIGHT.key) { facing = 'right'; targetX++; }
+  else if (k === userControls.UP.key) { 
+    if (invertYAxis) targetY++; else targetY--; 
+  }
+  else if (k === userControls.DOWN.key) { 
+    if (invertYAxis) targetY--; else targetY++; 
+  }
   else return;
   const maxTileX = (logicalW || 0) - 1;
   const maxTileY = (logicalH || 0) - 1;
@@ -4128,7 +4179,7 @@ function updateMovementInterpolation() {
 
 function updateSprintState() {
   const now = millis();
-  const shiftHeld = keyIsDown(16);
+  const shiftHeld = keyIsDown(userControls.DASH.code);
 
   if (typeof sprintLastUpdate !== 'number' || sprintLastUpdate <= 0) sprintLastUpdate = now;
   const dt = Math.max(0, now - sprintLastUpdate);
@@ -4174,7 +4225,9 @@ function getActiveMoveDurationMs() {
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
     multiplier = 1.5;
   }
-  return Math.max(1, Math.round(base * multiplier * getCellSizeSpeedScale()));
+  // Apply sensitivity (1-10 range, default 5 = 1.0x)
+  const sensitivityFactor = map(sensitivitySetting, 1, 10, 1.5, 0.5);
+  return Math.max(1, Math.round(base * multiplier * getCellSizeSpeedScale() * sensitivityFactor));
 }
 
 function getActiveMoveCooldownMs() {
@@ -4183,7 +4236,8 @@ function getActiveMoveCooldownMs() {
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
     multiplier = 1.5;
   }
-  return Math.max(0, Math.round(base * multiplier * getCellSizeSpeedScale()));
+  const sensitivityFactor = map(sensitivitySetting, 1, 10, 1.5, 0.5);
+  return Math.max(0, Math.round(base * multiplier * getCellSizeSpeedScale() * sensitivityFactor));
 }
 
 function getCellSizeSpeedScale() {
@@ -4202,10 +4256,10 @@ function drawPlayer() {
 }
 
 function _drawPlayerInternal() {
-  const inputLeft  = keyIsDown && keyIsDown(65);
-  const inputRight = keyIsDown && keyIsDown(68);
-  const inputUp    = keyIsDown && keyIsDown(87);
-  const inputDown  = keyIsDown && keyIsDown(83);
+  const inputLeft  = keyIsDown && keyIsDown(userControls.LEFT.code);
+  const inputRight = keyIsDown && keyIsDown(userControls.RIGHT.code);
+  const inputUp    = keyIsDown && keyIsDown(userControls.UP.code);
+  const inputDown  = keyIsDown && keyIsDown(userControls.DOWN.code);
   const inputWalking = !!(inputLeft || inputRight || inputUp || inputDown);
   const drawTileX = isMoving ? renderX : playerPosition.x;
   const drawTileY = isMoving ? renderY : playerPosition.y;
@@ -5210,36 +5264,37 @@ function drawBossHealthBar() {
   const barW = 400;
   const barH = 20;
   const x = (vW - barW) / 2;
-  const y = 40;
+  const y = 55; // Pushed down slightly from top
 
   push();
-  // Main Container
-  fill(0, 180);
+  
+  // Main Container (encloses text and bar)
+  fill(20, 20, 25, 220);
   stroke(0);
   strokeWeight(4);
-  rect(x - 5, y - 5, barW + 10, barH + 30, 4);
-
-  // Name
-  if (uiFont) textFont(uiFont);
-  fill(255, 50, 50);
-  noStroke();
-  textAlign(CENTER, BOTTOM);
-  gTextSize(18);
-  text("ELITE BEETLE ALPHA", x + barW/2, y - 8);
-
-  // Red Glow behind the bar
-  noStroke();
-  fill(255, 0, 0, 40);
-  rect(x, y, barW, barH);
+  rect(x - 10, y - 35, barW + 20, barH + 45, 6);
 
   // Inner Border
   stroke(MENU_GOLD_BORDER);
   strokeWeight(2);
   noFill();
-  rect(x - 2, y - 2, barW + 4, barH + 4, 2);
+  rect(x - 6, y - 31, barW + 12, barH + 37, 4);
+
+  // Name (drawn inside the container)
+  if (uiFont) textFont(uiFont);
+  fill(255, 50, 50);
+  noStroke();
+  textAlign(CENTER, TOP);
+  gTextSize(18);
+  text("ELITE BEETLE ALPHA", x + barW/2, y - 25);
+
+  // Red Glow behind the empty part of the bar
+  noStroke();
+  fill(255, 0, 0, 40);
+  rect(x, y, barW, barH);
 
   // Health Fill
-  const hpPct = boss.health / boss.maxHealth;
+  const hpPct = Math.max(0, boss.health / boss.maxHealth);
   fill(200, 0, 0);
   noStroke();
   rect(x, y, barW * hpPct, barH);
@@ -5669,11 +5724,18 @@ function showSubSettings(label) {
   const labelX = panelLeft + paddingX;
   const controlX = panelLeft + panelW * 0.42;
   const controlWidth = panelRight - paddingX - controlX;
-  const spacingY = panelH * 0.14;
+  
+  let spacingY = panelH * 0.14;
+  let startY = cy - panelH / 2 + panelH * 0.18;
+
+  if (label === 'Controls') {
+    spacingY = panelH * 0.09;
+    startY = cy - panelH / 2 + panelH * 0.14;
+  }
 
   const ctx = createSettingsContext({
     labelX, controlX, controlWidth, panelH,
-    startY: cy - panelH / 2 + panelH * 0.18,
+    startY,
     spacingY
   });
 
@@ -5871,6 +5933,13 @@ let gameMusic;
 let masterVol = 0.8;
 let musicVol = 0.6;
 let sfxVol = 0.7;
+
+let sensitivitySetting = 5;
+let invertYAxis = false;
+let showTutorials = true;
+let showHUD = true;
+let languageSetting = 'English';
+let colorModeSetting = 'None';
 
 let pendingGameMusicStart = false;
 let gameMusicStarted = false;
@@ -6653,28 +6722,41 @@ function injectCustomStyles() {
       /* Game Terminal */
       #game-terminal {
         position: fixed;
-        top: -35%; /* Start hidden for animation */
+        top: -40%; 
         left: 0;
         width: 100%;
-        height: 35%;
-        background: rgba(5, 15, 5, 0.85);
-        backdrop-filter: blur(8px);
-        border-bottom: 2px solid #00ff41;
+        height: 40%;
+        background: rgba(15, 15, 20, 0.98);
+        backdrop-filter: blur(12px);
+        border-bottom: 3px solid #ffcc00;
         z-index: 200000;
         display: none;
         flex-direction: column;
-        padding: 15px;
-        color: #00ff41;
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 16px;
-        box-shadow: 0 10px 30px rgba(0, 255, 65, 0.2);
+        padding: 0;
+        color: white;
+        font-family: 'MyFont', Courier, monospace;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
         overflow: hidden;
         transition: top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
       }
       #game-terminal.open {
         top: 0;
         display: flex;
+      }
+      #terminal-header {
+        background: #ffcc00;
+        color: #000;
+        padding: 8px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: bold;
+        letter-spacing: 1px;
+        font-size: 14px;
+      }
+      #terminal-close {
+        opacity: 0.7;
+        font-size: 12px;
       }
       #game-terminal::after {
         content: " ";
@@ -6688,42 +6770,47 @@ function injectCustomStyles() {
       #terminal-history {
         flex: 1;
         overflow-y: auto;
-        margin-bottom: 10px;
-        padding-right: 15px;
+        margin: 0;
+        padding: 20px;
         scrollbar-width: thin;
-        scrollbar-color: #00ff41 transparent;
+        scrollbar-color: #ffcc00 transparent;
+        font-size: 16px;
+        line-height: 1.4;
       }
       #terminal-history::-webkit-scrollbar { width: 6px; }
-      #terminal-history::-webkit-scrollbar-thumb { background: #00ff41; border-radius: 3px; }
+      #terminal-history::-webkit-scrollbar-thumb { background: #ffcc00; border-radius: 3px; }
+      
       #terminal-input-row {
         display: flex;
         align-items: center;
-        border-top: 1px solid rgba(0, 255, 65, 0.2);
-        padding-top: 10px;
+        border-top: 2px solid rgba(255,204,0,0.3);
+        padding: 15px 20px;
+        background: rgba(0,0,0,0.3);
       }
       #terminal-prompt {
         margin-right: 12px;
-        white-space: nowrap;
-        color: #00ff41;
+        color: #ffcc00;
         font-weight: bold;
-        opacity: 0.8;
+        font-size: 20px;
       }
       #terminal-input {
         flex: 1;
         background: transparent;
         border: none;
         outline: none;
-        color: #00ff41;
+        color: white;
         font-family: inherit;
         font-size: 18px;
-        text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+      }
+      #terminal-input::placeholder {
+        color: rgba(255,255,255,0.2);
       }
       .terminal-log {
-        margin: 4px 0;
-        line-height: 1.4;
+        margin-bottom: 6px;
+        color: rgba(255,255,255,0.9);
       }
-      .terminal-error { color: #ff3333; text-shadow: 0 0 5px rgba(255, 51, 51, 0.5); }
-      .terminal-success { color: #33ff33; text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); }
+      .terminal-error { color: #ff4444; font-weight: bold; }
+      .terminal-success { color: #ffff00; font-weight: bold; text-shadow: 0 0 5px rgba(255,255,0,0.3); }
       .terminal-hint { color: #888; font-style: italic; font-size: 12px; }
     `));
     document.head.appendChild(style);
@@ -7711,7 +7798,7 @@ function draw() {
               radius: 300 + Math.sin(millis() / 200) * 10 // Breathing light effect
           });
       }
-      
+       
       // Add lights from VFX (like fireflies)
       if (vfx && vfx.length) {
           for (const effect of vfx) {
@@ -7836,6 +7923,107 @@ function draw() {
     pop();
   }
 
+  if (showHUD) {
+    drawHUD();
+  }
+
+  drawTutorial();
+
+  if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
+
+  pop(); // End Top level Push
+
+  drawVignette();
+}
+
+let activeTutorial = null;
+let hasShownWelcomeTutorial = (localStorage.getItem('hasShownWelcomeTutorial') === 'true');
+
+function showTutorial(id) {
+  if (!showTutorials) return;
+  const tutorials = {
+    'welcome': {
+      title: 'WELCOME TO THE GRID',
+      lines: [
+        `• ${userControls.UP.key}${userControls.LEFT.key}${userControls.DOWN.key}${userControls.RIGHT.key}: Move`,
+        `• ${userControls.DASH.key === 'SHIFT' ? 'SHIFT' : userControls.DASH.key} (Hold): Sprint`,
+        `• ${userControls.JUMP.key === ' ' ? 'SPACE' : userControls.JUMP.key}: Jump over obstacles`,
+        `• ${userControls.ATTACK.key === 'MOUSE0' ? 'LEFT CLICK' : userControls.ATTACK.key}: Attack`,
+        '• [1] / [2]: Use Inventory Items',
+        '',
+        'OBJECTIVE:',
+        'Clear all ENEMIES and collect all COINS',
+        'to activate the PORTAL!'
+      ]
+    }
+  };
+  activeTutorial = tutorials[id] || null;
+  if (activeTutorial) {
+      verboseLog('[game] showing tutorial:', id);
+  }
+}
+
+function drawTutorial() {
+  if (!activeTutorial) return;
+
+  const vW = virtualW || (width / gameScale);
+  const vH = virtualH || (height / gameScale);
+  
+  const panelW = 450;
+  const panelH = 380;
+  const x = (vW - panelW) / 2;
+  const y = (vH - panelH) / 2;
+
+  push();
+  // Fade background
+  fill(0, 150);
+  noStroke();
+  rect(0, 0, vW, vH);
+
+  // Main Panel
+  if (BUTTON_BG) {
+      image(BUTTON_BG, x - 20, y - 20, panelW + 40, panelH + 40);
+  } else {
+      fill(20, 20, 25, 240);
+      stroke(0); strokeWeight(4);
+      rect(x - 10, y - 10, panelW + 20, panelH + 20, 8);
+  }
+  
+  // Gold Border
+  stroke(MENU_GOLD_BORDER);
+  strokeWeight(2); noFill();
+  rect(x - 5, y - 5, panelW + 10, panelH + 10, 4);
+
+  // Title
+  if (uiFont) textFont(uiFont);
+  fill(255, 215, 0); // Gold
+  noStroke();
+  textAlign(CENTER, TOP);
+  gTextSize(32);
+  text(activeTutorial.title, x + panelW/2, y + 25);
+
+  // Lines
+  fill(255);
+  textAlign(LEFT, TOP);
+  gTextSize(18);
+  let lineY = y + 85;
+  for (const line of activeTutorial.lines) {
+      text(line, x + 40, lineY);
+      lineY += 28;
+  }
+
+  // Dismiss Hint
+  textAlign(CENTER, BOTTOM);
+  fill(255, 255, 255, 180);
+  gTextSize(14);
+  text("Press any key or click to continue", x + panelW/2, y + panelH - 25);
+  
+  pop();
+}
+
+function drawHUD() {
+  if (!showHUD) return;
+
   drawDifficultyBadge();
   drawHealthBar();
   drawBossHealthBar();
@@ -7852,12 +8040,6 @@ function draw() {
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
   } catch (e) {}
-  
-  if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
-
-  pop(); // End Top level Push
-
-  drawVignette();
 }
 
 
@@ -7949,7 +8131,11 @@ let _settingsSaveTimer = null;
 function persistSavedSettings(immediate = false) {
   const commit = () => {
     try {
-      const settings = { masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting };
+      const settings = { 
+        masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting,
+        sensitivitySetting, invertYAxis, showTutorials, showHUD, 
+        languageSetting, colorModeSetting, userControls
+      };
       localStorage.setItem('menuSettings', JSON.stringify(settings));
       verboseLog('[game] persisted settings', settings);
       if (window.parent && window.parent !== window) {
@@ -7993,6 +8179,16 @@ function loadLocalSettings() {
     if (typeof parsed.musicVol === 'number') musicVol = parsed.musicVol;
     if (typeof parsed.sfxVol === 'number') sfxVol = parsed.sfxVol;
     if (typeof parsed.textSizeSetting === 'number') textSizeSetting = parsed.textSizeSetting;
+    
+    // New Settings
+    if (typeof parsed.sensitivitySetting === 'number') sensitivitySetting = parsed.sensitivitySetting;
+    if (typeof parsed.invertYAxis === 'boolean') invertYAxis = parsed.invertYAxis;
+    if (typeof parsed.showTutorials === 'boolean') showTutorials = parsed.showTutorials;
+    if (typeof parsed.showHUD === 'boolean') showHUD = parsed.showHUD;
+    if (typeof parsed.languageSetting === 'string') languageSetting = parsed.languageSetting;
+    if (typeof parsed.colorModeSetting === 'string') colorModeSetting = parsed.colorModeSetting;
+    if (parsed.userControls) userControls = parsed.userControls;
+
     if (typeof parsed.difficulty === 'string') {
       const normalized = normalizeDifficultyValue(parsed.difficulty);
       if (normalized) {
@@ -8241,7 +8437,7 @@ function attemptStartGameMusic(reason = 'unknown') {
 try {
   window.addEventListener('keydown', (e) => {
     try {
-      if (e.key === 'Escape' || e.keyCode === 27) {
+      if (e.keyCode === userControls.MENU.code) {
         
         const active = document && document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
@@ -8786,7 +8982,7 @@ function ensureLoopFallbackBuffer() {
 
 window.addEventListener('keydown', (ev) => {
   const k = ev.key ? ev.key.toUpperCase() : '';
-  if (k === 'W' || k === 'A' || k === 'S' || k === 'D') {
+  if (k === userControls.UP.key || k === userControls.DOWN.key || k === userControls.LEFT.key || k === userControls.RIGHT.key) {
     try { tryMoveDirection(k); } catch (e) {  }
   }
   if (k === 'P') {
@@ -8962,38 +9158,6 @@ function floodReachable(options = {}) {
 let _resizeConfirmTimer = null;
 let _lastRequestedSize = { w: 0, h: 0 };
 
-
-try {
-  window.addEventListener('keydown', (e) => {
-    try {
-      if (e.key === 'Escape' || e.keyCode === 27) {
-        
-        const active = document && document.activeElement;
-        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-
-        try {
-          if (settingsOverlayDiv) {
-             if (settingsOverlayDiv.closeZoomPanel) settingsOverlayDiv.closeZoomPanel();
-             else settingsOverlayDiv.remove();
-             settingsOverlayDiv = null;
-             openInGameMenu();
-             e.preventDefault();
-             return;
-          }
-        } catch (err) {  }
-
-        try {
-          if (inGameMenuVisible) closeInGameMenu();
-          else openInGameMenu();
-          e.preventDefault();
-        } catch (err) {
-          console.warn('[game] toggling inGameMenuVisible (global handler) failed', err);
-        }
-      }
-    } catch (err) {  }
-  }, false);
-} catch (e) { console.warn('[game] failed to attach global Escape handler', e); }
-
 function getColorForState(state) {
   
   if (typeof COLORS !== 'undefined' && COLORS[state]) {
@@ -9001,15 +9165,6 @@ function getColorForState(state) {
   }
   
   return [255, 0, 255]; 
-}
-
-function buildControlsSettings(ctx) {
-  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {})
-     .addCheckboxRow("Invert Y Axis", false);
-}
-
-function buildLanguageSettings(ctx) {
-  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
 }
 
 function stylePixelButton(btn) {
@@ -9101,29 +9256,55 @@ function spawnCloud(forceX) {
 
 function buildGameplaySettings(ctx) {
   ctx
-    .addCheckboxRow("Show Tutorials", true)
-    .addCheckboxRow("Enable HUD", true)
+    .addCheckboxRow("Show Tutorials", showTutorials, v => {
+        showTutorials = v;
+        saveLocalSettingsDebounced();
+    })
+    .addCheckboxRow("Enable HUD", showHUD, v => {
+        showHUD = v;
+        saveLocalSettingsDebounced();
+    })
     .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
       value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
       onChange: (val) => {
         difficultySetting = val.toLowerCase();
-        
         if(typeof setDifficulty === 'function') setDifficulty(difficultySetting, { regenerate: false });
-        
-        saveLocalSettings(); 
+        saveLocalSettingsDebounced();
       }
     });
 }
 
 function buildControlsSettings(ctx) {
-  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {})
-     .addCheckboxRow("Invert Y Axis", false);
+  ctx.addSliderRow("Sensitivity", 1, 10, sensitivitySetting, v => {
+        sensitivitySetting = v;
+        saveLocalSettingsDebounced();
+     })
+     .addCheckboxRow("Invert Y Axis", invertYAxis, v => {
+        invertYAxis = v;
+        saveLocalSettingsDebounced();
+     });
+
+  // Movement
+  ctx.addControlRow("Move Up", userControls.UP.key === ' ' ? 'SPACE' : userControls.UP.key, (k, c) => { userControls.UP = { key: k, code: c }; saveLocalSettingsDebounced(); });
+  ctx.addControlRow("Move Down", userControls.DOWN.key === ' ' ? 'SPACE' : userControls.DOWN.key, (k, c) => { userControls.DOWN = { key: k, code: c }; saveLocalSettingsDebounced(); });
+  ctx.addControlRow("Move Left", userControls.LEFT.key === ' ' ? 'SPACE' : userControls.LEFT.key, (k, c) => { userControls.LEFT = { key: k, code: c }; saveLocalSettingsDebounced(); });
+  ctx.addControlRow("Move Right", userControls.RIGHT.key === ' ' ? 'SPACE' : userControls.RIGHT.key, (k, c) => { userControls.RIGHT = { key: k, code: c }; saveLocalSettingsDebounced(); });
+  
+  // Actions
+  ctx.addControlRow("Jump", userControls.JUMP.key === ' ' ? 'SPACE' : userControls.JUMP.key, (k, c) => { userControls.JUMP = { key: k, code: c }; saveLocalSettingsDebounced(); });
+  ctx.addControlRow("Dash", userControls.DASH.key === ' ' ? 'SPACE' : userControls.DASH.key, (k, c) => { userControls.DASH = { key: k, code: c }; saveLocalSettingsDebounced(); });
+  ctx.addControlRow("Attack", userControls.ATTACK.key === ' ' ? 'SPACE' : userControls.ATTACK.key, (k, c) => { userControls.ATTACK = { key: k, code: c }; saveLocalSettingsDebounced(); });
 }
 
 function buildAccessibilitySettings(ctx) {
-  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
-  
-  
+  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"], {
+      value: colorModeSetting,
+      onChange: (v) => {
+          colorModeSetting = v;
+          saveLocalSettingsDebounced();
+      }
+  });
+
   const row = createDiv('');
   row.parent(ctx.container);
   row.style('display', 'flex');
@@ -9149,39 +9330,35 @@ function buildAccessibilitySettings(ctx) {
   btnGroup.style('gap', '5px');
   btnGroup.style('flex', '1');
 
-  const presetSource = (typeof window !== 'undefined' && Array.isArray(window.MENU_TEXT_SIZE_PRESETS)) ? window.MENU_TEXT_SIZE_PRESETS : null;
-  const presets = presetSource || [ { label: 'Small', value: 60 }, { label: 'Default', value: 75 }, { label: 'Big', value: 90 } ];
+  const presets = [ { label: 'Small', value: 50 }, { label: 'Default', value: 75 }, { label: 'Big', value: 100 } ];
 
   presets.forEach(p => {
-      const label = p && p.label ? String(p.label) : String(p);
-      const val = p && typeof p.value === 'number' ? Number(p.value) : (label === 'Default' ? 75 : (label === 'Small' ? 60 : 90));
-      const btn = createButton(label);
+      const btn = createButton(p.label);
       btn.parent(btnGroup);
-      btn.attribute('data-text-size-val', String(val));
+      btn.attribute('data-text-size-val', String(p.value));
       btn.style('flex', '1');
       btn.style('height', '30px');
       stylePixelButton(btn);
       btn.style('font-size', '14px');
       btn.style('padding', '0');
       btn.mousePressed(() => {
-        try { textSizeSetting = Number(val); } catch(e) { textSizeSetting = val; }
-        try { applyCurrentTextSize(); } catch(e) {}
-        try { updateTextSizeButtonStyles(); } catch(e) {}
-        try {
-          if (typeof persistSavedSettings === 'function') {
-            persistSavedSettings(true);
-          } else if (typeof saveLocalSettings === 'function') {
-            saveLocalSettings();
-          } else {
-            try { localStorage.setItem('menuSettings', JSON.stringify({ masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting })); } catch(e){}
-          }
-        } catch(e) {}
+        textSizeSetting = p.value;
+        applyCurrentTextSize();
+        updateTextSizeButtonStyles();
+        saveLocalSettingsDebounced();
       });
+      activeSettingElements.push(btn);
   });
 }
 
 function buildLanguageSettings(ctx) {
-  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
+  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"], {
+      value: languageSetting,
+      onChange: (v) => {
+          languageSetting = v;
+          saveLocalSettingsDebounced();
+      }
+  });
 }
 
 function createSettingsContext({ container }) {
@@ -9245,6 +9422,7 @@ function createSettingsContext({ container }) {
       
       const slider = createSlider(min, max, val);
       slider.parent(row);
+      slider.class('setting-slider');
       slider.style('width', '100%'); 
       styleInput(slider);
       if (opts && opts.isAudio) {
@@ -9254,23 +9432,13 @@ function createSettingsContext({ container }) {
       recordElement(slider);
       
       slider.input(() => {
-        try {
-          callback(slider.value());
-        } catch(e) { try { callback(slider.value()); } catch(e){} }
-        try {
-          if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
-            const keyName = String(name || '').toLowerCase();
-            if (/sensitivity/.test(keyName)) {
-              try { window.showError1(name); } catch(e){}
-            }
-          }
-        } catch(e) {}
+          if (callback) callback(slider.value());
       });
       
       return ctx;
     },
 
-    addCheckboxRow(name, state = false, options = {}) {
+    addCheckboxRow(name, state = false, callback) {
       const row = createRow();
 
       const lbl = createDiv(name);
@@ -9278,49 +9446,19 @@ function createSettingsContext({ container }) {
       styleLabel(lbl);
       recordElement(lbl);
 
-      const toggle = createDiv('');
-      toggle.parent(row);
-      toggle.style('width', '36px');
-      toggle.style('height', '36px');
-      toggle.style('display', 'flex');
-      toggle.style('align-items', 'center');
-      toggle.style('justify-content', 'center');
-      toggle.style('border', `2px solid ${MENU_GOLD_BORDER}`);
-      toggle.style('border-radius', '6px');
-      toggle.style('box-shadow', `inset 0 0 0 2px rgba(0,0,0,0.4)`);
-      toggle.style('cursor', 'pointer');
-      toggle.style('font-size', '24px');
-      toggle.style('font-family', 'MyFont, sans-serif');
-      toggle.style('color', MENU_GOLD_COLOR);
-      toggle.style('background', 'rgba(255,255,255,0.05)');
-      toggle.style('transition', 'background 0.2s ease, transform 0.2s ease');
-      recordElement(toggle);
+      const cb = createCheckbox('', !!state);
+      cb.parent(row);
+      cb.class('setting-checkbox');
+      styleInput(cb);
+      recordElement(cb);
 
-      let checked = !!state;
-      const updateVisual = (value) => {
-        toggle.html(value ? '✔' : '');
-        toggle.style('background', value ? `rgba(184,134,11,0.35)` : 'rgba(255,255,255,0.05)');
-        toggle.style('box-shadow', value ? `0 0 12px ${MENU_GOLD_GLOW}` : 'inset 0 0 0 2px rgba(0,0,0,0.4)');
-        toggle.style('transform', value ? 'scale(1.05)' : 'none');
-      };
-      updateVisual(checked);
-
-      const toggleHandler = () => {
-        checked = !checked;
-        updateVisual(checked);
-        if (typeof options.onChange === 'function') {
-          options.onChange(checked);
-        }
-        try {
-        if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
-          const keyName = String(name || '').toLowerCase();
-          if (/show\s*tutorials?/.test(keyName) || /enable\s*hud/.test(keyName) || /enabled\s*hub/.test(keyName) || /invert\s*y/.test(keyName) || /invert\s*y\s*axis/.test(keyName)) {
-            try { window.showError1(name); } catch(e){}
+      cb.changed(() => {
+          if (callback && typeof callback === 'function') {
+            callback(cb.checked());
+          } else if (callback && typeof callback.onChange === 'function') {
+            callback.onChange(cb.checked());
           }
-        }
-        } catch(e) {}
-      };
-      toggle.mousePressed(toggleHandler);
+      });
 
       return ctx;
     },
@@ -9335,32 +9473,62 @@ function createSettingsContext({ container }) {
 
       const sel = createSelect();
       sel.parent(row);
-      sel.style('font-size', '16px');
-      sel.style('background', '#222');
-      sel.style('color', 'white');
-      sel.style('border', '1px solid #555'); 
-      sel.style('border-radius', '4px');
-      sel.style('padding', '5px');
       styleInput(sel);
       
       opts.forEach(opt => sel.option(opt));
       
       if (options.value) sel.value(options.value);
       sel.changed(() => {
-        try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e) { try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e){} }
-        try {
-          if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
-            const keyName = String(name || '').toLowerCase();
-            if (/color\s*mode/.test(keyName) || /difficulty/.test(keyName)) {
-              try { window.showError1(name); } catch(e){}
-            } else if (/language/.test(keyName)) {
-              try { window.showError1(name + ' — ONLY English is supported now'); } catch(e){}
-            }
-          }
-        } catch(e) {}
+        if (typeof options.onChange === 'function') options.onChange(sel.value());
       });
       recordElement(sel);
 
+      return ctx;
+    },
+
+    addControlRow(labelText, currentKey, onRebind) {
+      const row = createRow();
+
+      const lbl = createDiv(labelText);
+      lbl.parent(row);
+      styleLabel(lbl);
+      recordElement(lbl);
+
+      const btn = createButton(currentKey);
+      btn.parent(row);
+      btn.style('flex', '1');
+      btn.style('height', '36px');
+      stylePixelButton(btn);
+      btn.style('font-size', '16px');
+      btn.style('padding', '0');
+      
+      btn.mousePressed(() => {
+        const previousLabel = btn.html();
+        btn.html('...');
+        btn.style('filter', 'brightness(1.5)');
+        
+        const keyHandler = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          if (e.key === 'Escape') {
+            btn.html(previousLabel);
+            btn.style('filter', 'none');
+            window.removeEventListener('keydown', keyHandler, true);
+            return;
+          }
+
+          const newKey = e.key.toUpperCase();
+          const newKeyCode = e.keyCode;
+          onRebind(newKey, newKeyCode);
+          btn.html(newKey === ' ' ? 'SPACE' : newKey);
+          btn.style('filter', 'none');
+          window.removeEventListener('keydown', keyHandler, true);
+        };
+        window.addEventListener('keydown', keyHandler, true);
+      });
+
+      recordElement(btn);
       return ctx;
     }
   };
