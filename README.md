@@ -91,6 +91,21 @@ System / Debug:
   [T]            : Toggle Assets (Switch between sprite textures and raw colors)
   [Space]        : Jump (Experimental physics)
   [F]            : Fullscreen NOTE: Currently has a problem 
+  [Ctrl + ']     : Open Terminal Cheat Console (Works in Menu & Game)
+
+TERMINAL COMMANDS
+-----------------
+*Open the console with `Ctrl + '` to execute these commands:*
+
+- `/kill all`        : Purge all enemy neural signatures from the current grid.
+- `/collect all`     : Instantly sequester all gold units on the map.
+- `/scan boss`       : Detect active elite signatures and check boss health.
+- `/locate boss`     : Lock onto boss coordinates and calculate distance.
+- `/spawn boss`      : Force an Elite Beetle signature into the local grid.
+- `/tutorial welcome`: Manually trigger the Welcome Protocol panel.
+- `/tutorial reset`  : Clear user experience flags (shows tutorial on next load).
+- `/clear`           : Wipe the terminal log history.
+- `/exit`            : Disconnect from the command interface.
 
 
 ENGINE FEATURES
