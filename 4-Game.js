@@ -13,6 +13,9 @@ let acidBlobSprite = null;
 let acidSplatSprite = null;
 let eggsplosionSprite = null;
 let powerupSprite = null;
+let healthPotionSprite = null;
+let powerupPotionSprite = null;
+let chestSprite = null;
 let portalActiveSheet = null;
 let portalInactiveSheet = null;
 let portalPos = null;
@@ -482,8 +485,71 @@ function preload() {
   } catch (e) {}
 }
 
+
+function createChestGraphics() {
+  let pg = createGraphics(32, 32);
+  pg.clear();
+  
+  // Chest body
+  pg.stroke(40);
+  pg.strokeWeight(2);
+  pg.fill(139, 69, 19); // Brown
+  pg.rect(4, 12, 24, 16, 2);
+  
+  // Lid
+  pg.fill(160, 82, 45);
+  pg.rect(4, 6, 24, 8, 4);
+  
+  // Banding
+  pg.fill(218, 165, 32); // Gold
+  pg.noStroke();
+  pg.rect(8, 6, 4, 22);
+  pg.rect(20, 6, 4, 22);
+  
+  // Lock
+  pg.fill(50);
+  pg.rect(14, 14, 4, 4, 1);
+  
+  return pg;
+}
+
+function createPotionGraphics(liquidColor) {
+  let pg = createGraphics(32, 32);
+  pg.clear();
+  
+  // Bottle outline/body
+  pg.stroke(40);
+  pg.strokeWeight(2);
+  pg.fill(220, 220, 220, 180); // Glass
+  
+  // Body
+  pg.rect(8, 12, 16, 16, 4);
+  // Neck
+  pg.rect(12, 6, 8, 6);
+  // Stopper
+  pg.fill(139, 69, 19);
+  pg.noStroke();
+  pg.rect(11, 4, 10, 3);
+  
+  // Liquid
+  pg.fill(liquidColor);
+  pg.rect(10, 16, 12, 10, 2);
+  
+  // Shine
+  pg.fill(255, 255, 255, 100);
+  pg.noStroke();
+  pg.rect(10, 14, 4, 4);
+  
+  return pg;
+}
+
 function setup() {
   verboseLog("!!! NEW VERSION LOADED !!! - FIXED_VIRTUAL_HEIGHT = " + FIXED_VIRTUAL_HEIGHT);
+  
+  // Initialize procedural sprites
+  healthPotionSprite = createPotionGraphics([255, 50, 50]); // Red Potion
+  powerupPotionSprite = createPotionGraphics([50, 50, 255]); // Blue Potion
+  chestSprite = createChestGraphics();
   
   W = windowWidth;
   H = windowHeight;
@@ -907,15 +973,64 @@ function processTerminalCommand(cmd) {
             const count = enemies.length;
             enemies = [];
             log(`SUCCESS: ${count} neural signatures purged from local grid.`, 'terminal-success');
-            if (typeof triggerVictory === 'function') triggerVictory();
         } else {
             log('NOTICE: Scan complete. No enemy signatures detected.', 'terminal-log');
         }
+    } else if (base === '/collect' && parts[1] === 'all') {
+        if (!mapStates) {
+            log('ERROR: Neural map not initialized.', 'terminal-error');
+        } else {
+            let collected = 0;
+            for (let i = 0; i < mapStates.length; i++) {
+                if (mapStates[i] === TILE_TYPES.COIN) {
+                    const underlyingTerrain = (terrainLayer && terrainLayer[i]) || TILE_TYPES.GRASS;
+                    mapStates[i] = underlyingTerrain;
+                    playerScore += 10;
+                    collected++;
+                    // Optional: Redraw only if necessary, but for /collect all we can just rebuild mapImage once
+                }
+            }
+            if (collected > 0) {
+                lastScoreChange = millis();
+                createMapImage(logicalW, logicalH); // Refresh the whole map image
+                log(`SUCCESS: ${collected} gold units sequestered into player storage.`, 'terminal-success');
+            } else {
+                log('NOTICE: No loose currency detected on current grid.', 'terminal-log');
+            }
+        }
+    } else if (base === '/scan' && parts[1] === 'boss') {
+        const boss = (enemies || []).find(e => e.type === 'beetle');
+        if (boss) {
+            log(`CRITICAL THREAT DETECTED: [Beetle Boss] status: ACTIVE, health: ${Math.floor(boss.health)}/${boss.maxHealth}`, 'terminal-error');
+        } else {
+            log('NOTICE: No elite signatures detected in current sector.', 'terminal-log');
+        }
+    } else if (base === '/locate' && parts[1] === 'boss') {
+        const boss = (enemies || []).find(e => e.type === 'beetle');
+        if (boss) {
+            const dx = Math.floor(boss.x - playerPosition.x);
+            const dy = Math.floor(boss.y - playerPosition.y);
+            const distStr = Math.sqrt(dx*dx + dy*dy).toFixed(1);
+            log(`SIGNAL STRENGTH: Boss coordinates confirmed. Sector: [${Math.floor(boss.x)}, ${Math.floor(boss.y)}]. Distance: ${distStr}m.`, 'terminal-success');
+        } else {
+            log('ERROR: Unable to lock on. No boss signature found.', 'terminal-error');
+        }
+    } else if (base === '/spawn' && parts[1] === 'boss') {
+        const angle = Math.random() * TWO_PI;
+        const dist = 10;
+        const ex = Math.floor(playerPosition.x + Math.cos(angle) * dist);
+        const ey = Math.floor(playerPosition.y + Math.sin(angle) * dist);
+        spawnEnemy('beetle', ex, ey);
+        log(`CRITICAL: Boss Beetle signature forced into local grid at [${ex}, ${ey}].`, 'terminal-error');
     } else if (base === '/help') {
         log('SYSTEM COMMANDS:');
-        log('  <span style="color:#fff">/kill all</span> - Wipe all enemies and force victory.');
-        log('  <span style="color:#fff">/clear</span>    - Wipe terminal log history.');
-        log('  <span style="color:#fff">/exit</span>     - Disconnect from console.');
+        log('  <span style="color:#fff">/kill all</span>    - Wipe all enemies.');
+        log('  <span style="color:#fff">/collect all</span> - Collect all coins on the map.');
+        log('  <span style="color:#fff">/scan boss</span>   - Check for active boss signatures.');
+        log('  <span style="color:#fff">/locate boss</span> - Get precise boss coordinates.');
+        log('  <span style="color:#fff">/spawn boss</span>  - Force a boss beetle to spawn near you.');
+        log('  <span style="color:#fff">/clear</span>       - Wipe terminal log history.');
+        log('  <span style="color:#fff">/exit</span>        - Disconnect from console.');
     } else if (base === '/clear') {
         history.innerHTML = '<div class="terminal-log">History cleared.</div>';
     } else if (base === '/exit') {
@@ -1082,7 +1197,8 @@ function generateMap_Part1() {
       WeatherSystem.reset();
   }
 
-  // Randomly choose between noise-based and scatter-based generation  const generationStyle = Math.random();
+  // Randomly choose between noise-based and scatter-based generation
+  const generationStyle = Math.random();
   if (generationStyle < 0.5) {
       verboseLog('[game] Style: Noise-based Forest');
       applyNoiseTerrain(clearArea.centerX, clearArea.centerY, clearArea.baseClearWidth, clearArea.baseClearHeight);
@@ -1858,6 +1974,8 @@ function applyLoadedMap(obj) {
                 enemy = createMantis(eData.x, eData.y);
             } else if (eData.type === 'maggot') {
                 enemy = createMaggot(eData.x, eData.y);
+            } else if (eData.type === 'beetle') {
+                enemy = createBeetle(eData.x, eData.y);
             }
             if (enemy) {
                 if (eData.direction) enemy.direction = eData.direction;
@@ -1972,6 +2090,8 @@ function loadMapFromStorage() {
                 enemy = createMantis(eData.x, eData.y);
             } else if (eData.type === 'maggot') {
                 enemy = createMaggot(eData.x, eData.y);
+            } else if (eData.type === 'beetle') {
+                enemy = createBeetle(eData.x, eData.y);
             }
             if (enemy) {
                 if (eData.direction) enemy.direction = eData.direction;
@@ -2059,12 +2179,16 @@ function drawTileToMap(lx, ly) {
   let imgDestW = cellSize;
   let imgDestH = cellSize;
 
-  if (tileState === TILE_TYPES.HEALTH && heartImage) {
-    img = heartImage;
+  if (tileState === TILE_TYPES.HEALTH && healthPotionSprite) {
+    img = healthPotionSprite;
     imgDestW = cellSize * 0.7;
     imgDestH = cellSize * 0.7;
-  } else if (tileState === TILE_TYPES.POWERUP && powerupSprite) {
-    img = powerupSprite;
+  } else if (tileState === TILE_TYPES.POWERUP && powerupPotionSprite) {
+    img = powerupPotionSprite;
+    imgDestW = cellSize * 0.8;
+    imgDestH = cellSize * 0.8;
+  } else if (tileState === TILE_TYPES.CHEST && chestSprite) {
+    img = chestSprite;
     imgDestW = cellSize * 0.8;
     imgDestH = cellSize * 0.8;
   } else if (TILE_IMAGES[tileState]) {
@@ -2153,12 +2277,16 @@ function createMapImage() {
         img = TILE_IMAGES['bridge_1'] || TILE_IMAGES[TILE_TYPES.RAMP] || TILE_IMAGES[TILE_TYPES.LOG];
         imgDestW = cellSize;
         imgDestH = cellSize;
-      } else if (tileState === TILE_TYPES.HEALTH && heartImage) {
-        img = heartImage;
+      } else if (tileState === TILE_TYPES.HEALTH && healthPotionSprite) {
+        img = healthPotionSprite;
         imgDestW = cellSize * 0.7;
         imgDestH = cellSize * 0.7;
-      } else if (tileState === TILE_TYPES.POWERUP && powerupSprite) {
-        img = powerupSprite;
+      } else if (tileState === TILE_TYPES.POWERUP && powerupPotionSprite) {
+        img = powerupPotionSprite;
+        imgDestW = cellSize * 0.8;
+        imgDestH = cellSize * 0.8;
+      } else if (tileState === TILE_TYPES.CHEST && chestSprite) {
+        img = chestSprite;
         imgDestW = cellSize * 0.8;
         imgDestH = cellSize * 0.8;
       } else if (TILE_IMAGES[tileState]) {
@@ -2519,6 +2647,9 @@ function clearPreviousGameState() {
   overlayProgressLastUpdate = 0;
   showLoadingOverlay = true;
   mapLoadComplete = false;
+  portalPos = null;
+  isPortalActive = false;
+  victoryShown = false;
 }
 
 
@@ -2636,8 +2767,12 @@ function createBeetle(startX, startY) {
     attacking: false,
     attackFrame: 0,
     attackTimer: 0,
-    aggro: false,
+    aggro: true, // Always aggressive - hunts the player from spawn
     speed: 0.02,
+    hurtTimer: 0,
+    attackCooldown: 0,
+    stuckTimer: 0,
+    lastDist: 0,
 
     update: function() {
       const now = millis();
@@ -2646,13 +2781,44 @@ function createBeetle(startX, startY) {
       const targetY = playerPosition.y;
       const d = dist(this.x, this.y, targetX, targetY);
 
-      if (d < 15) this.aggro = true;
+      // --- STUCK / LONG-RANGE TELEPORT FALLBACK ---
+      if (d > 40) {
+          this.stuckTimer += dt;
+          if (this.stuckTimer > 5000) { // If far away for 5 seconds
+              const angle = Math.random() * TWO_PI;
+              const r = 15;
+              const tx = constrain(targetX + Math.cos(angle) * r, 1, logicalW - 2);
+              const ty = constrain(targetY + Math.sin(angle) * r, 1, logicalH - 2);
+              if (!isSolid(getTileState(Math.round(tx), Math.round(ty)))) {
+                  this.x = tx; this.y = ty;
+                  this.renderX = tx; this.renderY = ty;
+                  this.stuckTimer = 0;
+                  verboseLog('[game] Boss Beetle teleported closer to player');
+              }
+          }
+      } else if (Math.abs(d - (this.lastDist || 0)) < 0.01) {
+          this.stuckTimer += dt;
+          if (this.stuckTimer > 3000) { // If stuck for 3 seconds
+              // Force move in random direction to unstick
+              const angle = Math.random() * TWO_PI;
+              this.x += Math.cos(angle) * 2;
+              this.y += Math.sin(angle) * 2;
+              this.renderX = this.x;
+              this.renderY = this.y;
+              this.stuckTimer = 0;
+          }
+      } else {
+          this.stuckTimer = 0;
+      }
+      this.lastDist = d;
 
       this.moving = false;
 
+      if (this.attackCooldown > 0) this.attackCooldown -= dt;
+
       if (this.aggro && !this.attacking) {
-        // Increase attack range to 2.2 tiles for more reliability
-        if (d < 2.2) {
+        // Melee attack range
+        if (d < 1.4 && this.attackCooldown <= 0) {
           this.attacking = true;
           this.attackFrame = 0;
           this.attackTimer = 0;
@@ -2661,8 +2827,8 @@ function createBeetle(startX, startY) {
           let dy = targetY - this.y;
           const canMoveDirect = d < 8 && !isSolid(getTileState(Math.round(this.x + dx * 0.5), Math.round(this.y + dy * 0.5)));
           
-          // Higher chase speed
-          const moveSpeed = (d < 6) ? 0.05 : 0.03;
+          // Higher chase speed for the Boss
+          const moveSpeed = (d < 6) ? 0.08 : 0.06;
 
           if (canMoveDirect) {
             const mag = Math.sqrt(dx*dx + dy*dy) || 1;
@@ -2670,7 +2836,8 @@ function createBeetle(startX, startY) {
             this.y += (dy / mag) * moveSpeed;
             this.moving = true;
           } else {
-            const step = findNextStep(Math.round(this.x), Math.round(this.y), Math.round(targetX), Math.round(targetY));
+            // Increased pathfinding limit for the Boss
+            const step = findNextStep(Math.round(this.x), Math.round(this.y), Math.round(targetX), Math.round(targetY), 40); 
             if (step) {
                 const stepDX = step.x - this.x;
                 const stepDY = step.y - this.y;
@@ -2678,6 +2845,27 @@ function createBeetle(startX, startY) {
                 this.x += (stepDX / mag) * moveSpeed;
                 this.y += (stepDY / mag) * moveSpeed;
                 this.moving = true;
+            } else {
+                // LONG-RANGE FALLBACK: Walk in the general direction of the player
+                // Use a larger collision check to prevent getting stuck on corners
+                const mag = Math.sqrt(dx*dx + dy*dy) || 1;
+                const nextX = this.x + (dx / mag) * moveSpeed;
+                const nextY = this.y + (dy / mag) * moveSpeed;
+                
+                if (!isSolid(getTileState(Math.round(nextX), Math.round(nextY)))) {
+                    this.x = nextX;
+                    this.y = nextY;
+                    this.moving = true;
+                } else {
+                    // Try to slide along walls
+                    if (!isSolid(getTileState(Math.round(nextX), Math.round(this.y)))) {
+                        this.x = nextX;
+                        this.moving = true;
+                    } else if (!isSolid(getTileState(Math.round(this.x), Math.round(nextY)))) {
+                        this.y = nextY;
+                        this.moving = true;
+                    }
+                }
             }
           }
           if (Math.abs(dx) > Math.abs(dy)) this.direction = dx > 0 ? 'E' : 'W';
@@ -2704,24 +2892,50 @@ function createBeetle(startX, startY) {
           
           if (this.attackFrame === 4) {
             const currentDist = dist(this.renderX, this.renderY, playerPosition.x, playerPosition.y);
-            if (currentDist < 2.5) { // Generous hit-box for the boss
-                playerHealth = Math.max(0, playerHealth - 4); // Massive 4 hearts damage
-                spawnDamageText("-4", playerPosition.x, playerPosition.y, [255, 0, 0]);
-                playerHurtTimer = 600;
+            // Check for i-frames (playerHurtTimer)
+            if (currentDist < 1.8 && playerHurtTimer <= 0) { // Reduced hitbox from 2.5 to 1.8
+                playerHealth = Math.max(0, playerHealth - 1);
+                spawnDamageText("-1", playerPosition.x, playerPosition.y, [255, 0, 0]);
+                playerHurtTimer = 800; // Longer i-frames for boss hit
                 screenShakeTimer = 400;
                 screenShakeAmount = 20;
+                
+                // Add knockback - snap to nearest valid tile to prevent movement lock
+                const kx = playerPosition.x - this.x;
+                const ky = playerPosition.y - this.y;
+                const km = Math.sqrt(kx*kx + ky*ky) || 1;
+                const knockX = Math.round(playerPosition.x + (kx/km) * 1.5);
+                const knockY = Math.round(playerPosition.y + (ky/km) * 1.5);
+                if (knockX >= 0 && knockX < logicalW && knockY >= 0 && knockY < logicalH
+                    && !isSolid(getTileState(knockX, knockY))) {
+                    playerPosition.x = knockX;
+                    playerPosition.y = knockY;
+                } else {
+                    // Fallback: try rounding without knockback distance
+                    const fallbackX = Math.round(playerPosition.x + (kx/km) * 0.5);
+                    const fallbackY = Math.round(playerPosition.y + (ky/km) * 0.5);
+                    if (fallbackX >= 0 && fallbackX < logicalW && fallbackY >= 0 && fallbackY < logicalH
+                        && !isSolid(getTileState(fallbackX, fallbackY))) {
+                        playerPosition.x = fallbackX;
+                        playerPosition.y = fallbackY;
+                    }
+                }
             }
           }
           
           if (this.attackFrame >= 6) {
             this.attacking = false;
             this.attackFrame = 0;
+            this.attackCooldown = 1200; // 1.2s cooldown between attacks
           }
         }
       }
 
-      this.renderX = lerp(this.renderX, this.x, 0.2);
-      this.renderY = lerp(this.renderY, this.y, 0.2);
+      // Beetle is large and fast — always render at actual position to prevent invisibility
+      this.renderX = this.x;
+      this.renderY = this.y;
+      
+      if (this.hurtTimer > 0) this.hurtTimer -= dt;
     },
 
     draw: function() {
@@ -2738,6 +2952,12 @@ function createBeetle(startX, startY) {
         else if (this.direction === 'E') row = 1;
         else if (this.direction === 'W') row = 2;
         else if (this.direction === 'N') row = 3;
+        // Fallback to move sprite if attack sprite didn't load
+        if (!sprite) {
+          sprite = beetleMoveSprite;
+          frameCount = 4;
+          frame = 0;
+        }
       } else {
         sprite = beetleMoveSprite;
         frameCount = 4;
@@ -2745,30 +2965,46 @@ function createBeetle(startX, startY) {
         else frame = 0;
 
         if (this.direction === 'S') row = 0;
-        else if (this.direction === 'W') row = 1;
-        else if (this.direction === 'E') row = 2;
+        else if (this.direction === 'E') row = 1;
+        else if (this.direction === 'W') row = 2;
         else if (this.direction === 'N') row = 3;
       }
-      
+
       if (!sprite) return;
-      
+
       const tw = 32, th = 32;
       const sx = frame * tw;
       const sy = row * th;
 
-      const rx = (this.renderX - playerPosition.x) * cellSize + width / 2;
-      const ry = (this.renderY - playerPosition.y) * cellSize + height / 2;
+      // Use world coordinates (same as mantis/maggot) — the camera translate handles the rest
+      const destX = this.renderX * cellSize;
+      const destY = this.renderY * cellSize;
+
+      // Center the 80x80 boss sprite on its tile
+      const drawSize = 80;
+      const drawX = destX + (cellSize / 2) - (drawSize / 2);
+      const drawY = destY + cellSize - drawSize; // anchor bottom
 
       push();
+      // Hit flash visual
+      if (this.hurtTimer > 0) {
+          tint(255, 100, 100);
+      }
       // Draw 32x32 source frame scaled up to 80x80 (Boss size)
-      image(sprite, rx - 40, ry - 40, 80, 80, sx, sy, tw, th);
+      image(sprite, drawX, drawY, drawSize, drawSize, sx, sy, tw, th);
+      noTint();
       pop();
-      
+
+      // Health bar
       noStroke();
+      const barW = 60;
+      const barH = 6;
+      const barX = destX + (cellSize - barW) / 2;
+      const barY = drawY - 8;
       fill(0, 100);
-      rect(rx - 30, ry - 50, 60, 6);
+      rect(barX, barY, barW, barH);
       fill(255, 0, 0);
-      rect(rx - 30, ry - 50, (this.health / this.maxHealth) * 60, 6);
+      rect(barX, barY, barW * (this.health / this.maxHealth), barH);
     }
   };
 }
@@ -2813,11 +3049,24 @@ function createMantis(startX, startY) {
              if (this.attackFrame === 4 && !this.hasDealtDamage) {
                  if (playerPosition) {
                      const dist = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
-                     if (dist < 1.5) { // Still in range
+                     // Check for i-frames
+                     if (dist < 1.5 && playerHurtTimer <= 0) { 
                          playerHealth = Math.max(0, playerHealth - 1);
                          this.hasDealtDamage = true;
-                         playerHurtTimer = 500; // Flash red for 500ms
+                         playerHurtTimer = 600; // Standard i-frames
                          spawnDamageText("-1", playerPosition.x, playerPosition.y, [255, 0, 0]);
+                         
+                         // Add knockback - snap to nearest valid tile
+                         const kx = playerPosition.x - this.x;
+                         const kdy = playerPosition.y - this.y;
+                         const km = Math.sqrt(kx*kx + kdy*kdy) || 1;
+                         const knockX = Math.round(playerPosition.x + (kx/km) * 0.8);
+                         const knockY = Math.round(playerPosition.y + (kdy/km) * 0.8);
+                         if (knockX >= 0 && knockX < logicalW && knockY >= 0 && knockY < logicalH
+                             && !isSolid(getTileState(knockX, knockY))) {
+                             playerPosition.x = knockX;
+                             playerPosition.y = knockY;
+                         }
                      }
                  }
              }
@@ -3312,10 +3561,25 @@ function spawnAcidBlob(startX, startY, targetX, targetY, initialDir) {
             // Check collision with player
             if (playerPosition) {
                 const d = Math.hypot(this.x - playerPosition.x, this.y - playerPosition.y);
-                if (d < 0.6) {
+                if (d < 0.6 && playerHurtTimer <= 0) {
                     playerHealth = Math.max(0, playerHealth - 1);
-                    playerHurtTimer = 500;
+                    playerHurtTimer = 600; // Standard i-frames
+                    spawnDamageText("-1", playerPosition.x, playerPosition.y, [255, 0, 0]);
+                    
+                    // Small knockback from projectile - snap to valid tile
+                    const km = Math.hypot(this.vx, this.vy) || 1;
+                    const knockX = Math.round(playerPosition.x + (this.vx / km) * 0.5);
+                    const knockY = Math.round(playerPosition.y + (this.vy / km) * 0.5);
+                    if (knockX >= 0 && knockX < logicalW && knockY >= 0 && knockY < logicalH
+                        && !isSolid(getTileState(knockX, knockY))) {
+                        playerPosition.x = knockX;
+                        playerPosition.y = knockY;
+                    }
+                    
                     return true; // Remove
+                } else if (d < 0.6) {
+                    // If in i-frames, projectile just vanishes without extra damage
+                    return true;
                 }
             }
             
@@ -3507,6 +3771,9 @@ function updateEnemies() {
     if (e.update) e.update();
 
     // Environmental Hazard Check (Glitch into trees/walls)
+    // Boss Beetle is immune to crushing due to its size
+    if (e.type === 'beetle') continue;
+
     const tx = Math.floor(e.x + 0.5); // Check center of enemy
     const ty = Math.floor(e.y + 0.5);
     
@@ -3983,23 +4250,28 @@ function _drawPlayerInternal() {
     } else {
         // HIT DETECTION (Damage frames 1 or 2)
         if ((playerAttackFrame === 1 || playerAttackFrame === 2) && !hasDealtPlayerDamage) {
-            const attackRange = 1.8; // Increased range
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const e = enemies[i];
                 const dist = Math.hypot(e.x - playerPosition.x, e.y - playerPosition.y);
+                
+                // ADJUSTMENT: Boss Beetle is large (80px), so it needs a bigger hit-range than normal mobs
+                const attackRange = (e.type === 'beetle') ? 3.0 : 1.8; 
                 
                 if (dist < attackRange) {
                     const dx = e.x - playerPosition.x;
                     const dy = e.y - playerPosition.y;
                     const dir = lastDirection || 'S';
                     let angleMatches = false;
-                    
-                    // Wider tolerance (1.2 instead of 1.0) for better "feel"
-                    if (dist < 0.7) angleMatches = true; // Always hit if extremely close
-                    else if (dir === 'N' && dy < 0 && Math.abs(dx) < 1.2) angleMatches = true;
-                    else if (dir === 'S' && dy > 0 && Math.abs(dx) < 1.2) angleMatches = true;
-                    else if (dir === 'W' && dx < 0 && Math.abs(dy) < 1.2) angleMatches = true;
-                    else if (dir === 'E' && dx > 0 && Math.abs(dy) < 1.2) angleMatches = true;
+
+                    // Boss Beetle is large — wider auto-hit and angle tolerance
+                    const autoHitDist = (e.type === 'beetle') ? 2.0 : 0.7;
+                    const angleTolerance = (e.type === 'beetle') ? 2.5 : 1.2;
+
+                    if (dist < autoHitDist) angleMatches = true; // Always hit if close enough
+                    else if (dir === 'N' && dy < 0 && Math.abs(dx) < angleTolerance) angleMatches = true;
+                    else if (dir === 'S' && dy > 0 && Math.abs(dx) < angleTolerance) angleMatches = true;
+                    else if (dir === 'W' && dx < 0 && Math.abs(dy) < angleTolerance) angleMatches = true;
+                    else if (dir === 'E' && dx > 0 && Math.abs(dy) < angleTolerance) angleMatches = true;
                     else if (dir === 'NE' && dx > 0 && dy < 0) angleMatches = true;
                     else if (dir === 'NW' && dx < 0 && dy < 0) angleMatches = true;
                     else if (dir === 'SE' && dx > 0 && dy > 0) angleMatches = true;
@@ -4407,11 +4679,11 @@ function neighbors(x, y) {
   return out;
 }
 
-function findNextStep(startX, startY, targetX, targetY) {
+function findNextStep(startX, startY, targetX, targetY, maxDist = 12, maxNodes = 250) {
     if (startX === targetX && startY === targetY) return null;
     
     const dist = Math.hypot(startX - targetX, startY - targetY);
-    if (dist > 12) return null; // Performance limit: only pathfind if close
+    if (dist > maxDist) return null; 
 
     const q = [{ x: targetX, y: targetY }];
     const cameFrom = new Map();
@@ -4441,7 +4713,7 @@ function findNextStep(startX, startY, targetX, targetY) {
                 }
             }
         }
-        if (q.length > 250) break; // Safety break for performance
+        if (q.length > maxNodes) break; 
     }
     return null;
 }
@@ -4927,6 +5199,55 @@ function drawHealthBar() {
     }
   }
   noTint();
+  pop();
+}
+
+function drawBossHealthBar() {
+  const boss = (enemies || []).find(e => e.type === 'beetle');
+  if (!boss) return;
+
+  const vW = virtualW || (width / gameScale);
+  const barW = 400;
+  const barH = 20;
+  const x = (vW - barW) / 2;
+  const y = 40;
+
+  push();
+  // Main Container
+  fill(0, 180);
+  stroke(0);
+  strokeWeight(4);
+  rect(x - 5, y - 5, barW + 10, barH + 30, 4);
+
+  // Name
+  if (uiFont) textFont(uiFont);
+  fill(255, 50, 50);
+  noStroke();
+  textAlign(CENTER, BOTTOM);
+  gTextSize(18);
+  text("ELITE BEETLE ALPHA", x + barW/2, y - 8);
+
+  // Red Glow behind the bar
+  noStroke();
+  fill(255, 0, 0, 40);
+  rect(x, y, barW, barH);
+
+  // Inner Border
+  stroke(MENU_GOLD_BORDER);
+  strokeWeight(2);
+  noFill();
+  rect(x - 2, y - 2, barW + 4, barH + 4, 2);
+
+  // Health Fill
+  const hpPct = boss.health / boss.maxHealth;
+  fill(200, 0, 0);
+  noStroke();
+  rect(x, y, barW * hpPct, barH);
+
+  // Animated Highlight
+  fill(255, 255, 255, 40);
+  rect(x, y, barW * hpPct, barH / 2);
+  
   pop();
 }
 
@@ -7517,6 +7838,7 @@ function draw() {
 
   drawDifficultyBadge();
   drawHealthBar();
+  drawBossHealthBar();
   drawSprintMeter();
   drawInventory();
   drawScore();
