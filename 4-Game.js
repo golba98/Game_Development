@@ -31,6 +31,20 @@ let heartImage = null;
 let playerHurtTimer = 0;
 let isGameOver = false;
 let playerScore = 0;
+let isTutorialMap = (localStorage.getItem('tutorialComplete') !== 'true');
+let tutorialStep = 0;
+let tutorialMoved = false;
+let tutorialAttacked = false;
+let tutorialCollected = false;
+let tutorialStepTimer = 0;
+let tutorialSprintDetected = false;
+let tutorialHitLanded = false;
+let tutorialCoinSnapshot = 0;
+let tutorialMessage = '';
+let tutorialMessageTimer = 0;
+let tutorialArrowBlink = 0;
+let activeTutorial = null;
+let hasShownWelcomeTutorial = (localStorage.getItem('hasShownWelcomeTutorial') === 'true');
 let initialSpawnPosition = { x: 0, y: 0 };
 let gameOverOverlay = null;
 let victoryOverlay = null;
@@ -97,6 +111,12 @@ let inGameMenuPrevHovered = null;
 let activeSettingElements = [];
 let textSizeSetting = 75;
 let difficultySetting = 'normal';
+let sensitivitySetting = 5;
+let invertYAxis = false;
+let hudEnabled = true;
+let showTutorialsSetting = true;
+let colorModeSetting = 'None';
+let languageSetting = 'English';
 let settingsOverlayDiv = null;
 let settingsOverlayPanel = null;
 
@@ -110,6 +130,24 @@ const SETTINGS_CATEGORIES = Object.freeze(["Audio", "Gameplay", "Controls", "Acc
 const DEFAULT_SETTINGS = Object.freeze({
   masterVol: 0.8, musicVol: 0.6, sfxVol: 0.7, textSize: 75, difficulty: 'normal'
 });
+
+const DEFAULT_KEYBINDS = Object.freeze({
+  moveUp: 87, moveDown: 83, moveLeft: 65, moveRight: 68,
+  sprint: 16, jump: 32, cut: 69
+});
+let playerKeybinds = { ...DEFAULT_KEYBINDS };
+
+function keyCodeToLabel(code) {
+  if (code === 32) return 'Space';
+  if (code === 16) return 'Shift';
+  if (code === 27) return 'Esc';
+  if (code === 13) return 'Enter';
+  if (code === 9)  return 'Tab';
+  if (code >= 65 && code <= 90) return String.fromCharCode(code);
+  if (code >= 48 && code <= 57) return String.fromCharCode(code);
+  if (code >= 112 && code <= 123) return `F${code - 111}`;
+  return `[${code}]`;
+}
 
 const ALLOW_ACTIVE_MAP_FETCH = false;
 
@@ -516,12 +554,12 @@ function createChestGraphics() {
 function createPotionGraphics(liquidColor) {
   let pg = createGraphics(32, 32);
   pg.clear();
-  
+
   // Bottle outline/body
   pg.stroke(40);
   pg.strokeWeight(2);
   pg.fill(220, 220, 220, 180); // Glass
-  
+
   // Body
   pg.rect(8, 12, 16, 16, 4);
   // Neck
@@ -530,16 +568,74 @@ function createPotionGraphics(liquidColor) {
   pg.fill(139, 69, 19);
   pg.noStroke();
   pg.rect(11, 4, 10, 3);
-  
+
   // Liquid
   pg.fill(liquidColor);
   pg.rect(10, 16, 12, 10, 2);
-  
+
   // Shine
   pg.fill(255, 255, 255, 100);
   pg.noStroke();
   pg.rect(10, 14, 4, 4);
-  
+
+  return pg;
+}
+
+function createSpeedPotionGraphics() {
+  let pg = createGraphics(32, 32);
+  pg.clear();
+
+  // Shadow beneath bottle
+  pg.noStroke();
+  pg.fill(0, 0, 0, 50);
+  pg.ellipse(16, 30, 14, 4);
+
+  // Glass body — taller and narrower than health potion
+  pg.stroke(30, 30, 60);
+  pg.strokeWeight(1.5);
+  pg.fill(200, 220, 255, 160);
+  pg.rect(10, 13, 12, 15, 3);
+
+  // Neck — slim
+  pg.stroke(30, 30, 60);
+  pg.strokeWeight(1.5);
+  pg.fill(180, 210, 255, 160);
+  pg.rect(13, 7, 6, 7);
+
+  // Gold stopper / cork
+  pg.noStroke();
+  pg.fill(218, 165, 32);
+  pg.rect(12, 5, 8, 3, 1);
+  // Cork highlight
+  pg.fill(255, 220, 80, 180);
+  pg.rect(13, 5, 3, 1);
+
+  // Cyan liquid fill
+  pg.fill(0, 210, 240, 220);
+  pg.noStroke();
+  pg.rect(11, 17, 10, 9, 2);
+
+  // Liquid inner glow (lighter cyan stripe)
+  pg.fill(120, 245, 255, 160);
+  pg.rect(12, 18, 3, 6, 1);
+
+  // Speed motion streaks inside liquid
+  pg.stroke(255, 255, 255, 140);
+  pg.strokeWeight(1);
+  pg.line(14, 19, 18, 22);
+  pg.line(13, 22, 17, 24);
+
+  // Glass shine on body
+  pg.noStroke();
+  pg.fill(255, 255, 255, 110);
+  pg.rect(11, 14, 3, 6, 1);
+
+  // Tiny sparkle top-right of bottle
+  pg.stroke(180, 240, 255, 200);
+  pg.strokeWeight(1);
+  pg.line(22, 10, 24, 8);
+  pg.line(21, 8, 25, 10);
+
   return pg;
 }
 
@@ -548,7 +644,7 @@ function setup() {
   
   // Initialize procedural sprites
   healthPotionSprite = createPotionGraphics([255, 50, 50]); // Red Potion
-  powerupPotionSprite = createPotionGraphics([50, 50, 255]); // Blue Potion
+  powerupPotionSprite = createSpeedPotionGraphics(); // Speed Potion
   chestSprite = createChestGraphics();
   
   W = windowWidth;
@@ -682,11 +778,16 @@ function setup() {
     const runAutoGenerator = () => { generateMap(); };
 
     serverFetchPromise.then((serverLoaded) => {
+      if (isTutorialMap) {
+          verboseLog('[game] Tutorial map active, bypassing server and local saves.');
+          runAutoGenerator();
+          return;
+      }
       if (serverLoaded) {
          if (persistentGameId && persistentGameId.startsWith('server_default_')) {
              runAutoGenerator();
          }
-         return; 
+         return;
       }
       if (loadMapFromStorage()) return;
       runAutoGenerator();
@@ -781,7 +882,7 @@ function createFullWindowCanvas() {
 
 function startPlayerAttack() {
   if (isAttacking || playerAttackCooldownTimer > 0 || isDashing) return;
-  
+
   // Check stamina
   if (typeof sprintRemainingMs === 'number') {
       const staminaCostMs = (PLAYER_ATTACK_STAMINA_COST / 100) * SPRINT_MAX_DURATION_MS;
@@ -791,6 +892,38 @@ function startPlayerAttack() {
       }
       sprintRemainingMs -= staminaCostMs;
   }
+
+  // Determine attack direction: held keys → mouse position → lastDirection
+  const nowLeft  = keyIsDown(playerKeybinds.moveLeft);
+  const nowRight = keyIsDown(playerKeybinds.moveRight);
+  const nowUp    = keyIsDown(playerKeybinds.moveUp);
+  const nowDown  = keyIsDown(playerKeybinds.moveDown);
+
+  let attackDir = null;
+  if (nowLeft || nowRight || nowUp || nowDown) {
+    const dx = (nowRight ? 1 : 0) - (nowLeft ? 1 : 0);
+    const dy = (nowDown ? 1 : 0) - (nowUp ? 1 : 0);
+    if (dx !== 0 || dy !== 0) attackDir = deltaToDirection(dx, dy);
+  }
+
+  if (!attackDir && playerPosition) {
+    try {
+      const camX = Math.floor(smoothCamX || 0);
+      const camY = Math.floor(smoothCamY || 0);
+      const mx = (mouseX / gameScale + camX) / cellSize;
+      const my = (mouseY / gameScale + camY) / cellSize;
+      const dx = mx - playerPosition.x;
+      const dy = my - playerPosition.y;
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) attackDir = deltaToDirection(dx, dy);
+    } catch(e) {}
+  }
+
+  if (!attackDir) attackDir = lastDirection || 'S';
+
+  // Lock in direction so hit detection and animation are in sync
+  lastDirection = attackDir;
+  if (attackDir.includes('W')) facing = 'left';
+  else if (attackDir.includes('E')) facing = 'right';
 
   const now = millis();
   // Combo window: 800ms
@@ -826,7 +959,9 @@ function mousePressed() {
 
   if (isTerminalOpen) return;
   if (isGameOver) return;
-  
+
+  if (activeTutorial) { activeTutorial = null; return; }
+
   // Ignore clicks if interacting with DOM UI
   try {
     if (typeof event !== 'undefined' && event.target) {
@@ -836,13 +971,9 @@ function mousePressed() {
   } catch(e) {}
 
   try {
-    const mx = mouseX / gameScale;
-    const my = mouseY / gameScale;
-
     if (mouseButton === LEFT) {
         startPlayerAttack();
     }
-    
   } catch (e) {}
 }
 
@@ -874,14 +1005,10 @@ function toggleTerminal() {
     if (!terminalEl) createTerminalUI();
     
     if (isTerminalOpen) {
-        terminalEl.classList.remove('open');
-        setTimeout(() => { if (!isTerminalOpen) terminalEl.style.display = 'none'; }, 300);
+        terminalEl.style.display = 'none';
         isTerminalOpen = false;
     } else {
         terminalEl.style.display = 'flex';
-        // Trigger reflow for animation
-        terminalEl.offsetHeight;
-        terminalEl.classList.add('open');
         isTerminalOpen = true;
         const input = document.getElementById('terminal-input');
         if (input) setTimeout(() => input.focus(), 50);
@@ -889,18 +1016,103 @@ function toggleTerminal() {
 }
 
 function createTerminalUI() {
+    // Inject terminal styles once
+    if (!document.getElementById('game-terminal-styles')) {
+        const style = document.createElement('style');
+        style.id = 'game-terminal-styles';
+        style.textContent = `
+            #game-terminal {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 700px;
+                height: 450px;
+                background: rgba(15, 15, 20, 0.98);
+                border: 3px solid #ffcc00;
+                box-shadow: 0 0 30px rgba(0,0,0,0.9), inset 0 0 15px rgba(255,204,0,0.1);
+                padding: 0;
+                display: none;
+                flex-direction: column;
+                font-family: 'MyFont', Courier, monospace;
+                color: white;
+                z-index: 20000;
+                pointer-events: auto;
+                border-radius: 8px;
+                overflow: hidden;
+            }
+            #terminal-header {
+                background: #ffcc00;
+                color: #000;
+                padding: 8px 15px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-weight: bold;
+                letter-spacing: 1px;
+                font-size: 14px;
+            }
+            #terminal-close { opacity: 0.7; font-size: 12px; }
+            #terminal-history {
+                flex: 1;
+                overflow-y: auto;
+                margin: 0;
+                padding: 20px;
+                scrollbar-width: thin;
+                scrollbar-color: #ffcc00 transparent;
+                font-size: 16px;
+                line-height: 1.4;
+            }
+            #terminal-history::-webkit-scrollbar { width: 6px; }
+            #terminal-history::-webkit-scrollbar-thumb { background: #ffcc00; border-radius: 3px; }
+            #terminal-input-row {
+                display: flex;
+                align-items: center;
+                border-top: 2px solid rgba(255,204,0,0.3);
+                padding: 15px 20px;
+                background: rgba(0,0,0,0.3);
+            }
+            #terminal-prompt {
+                margin-right: 12px;
+                font-weight: bold;
+                color: #ffcc00;
+                font-size: 20px;
+            }
+            #terminal-input {
+                background: transparent;
+                border: none;
+                color: white;
+                font-family: 'MyFont', monospace;
+                font-size: 18px;
+                width: 100%;
+                outline: none;
+            }
+            #terminal-input::placeholder { color: rgba(255,255,255,0.2); }
+            .terminal-log { margin-bottom: 6px; color: rgba(255,255,255,0.9); }
+            .terminal-success { margin-bottom: 6px; color: #ffff00; font-weight: bold; text-shadow: 0 0 5px rgba(255,255,0,0.3); }
+            .terminal-error { margin-bottom: 6px; color: #ff4444; font-weight: bold; }
+            .terminal-input-echo { margin-bottom: 6px; color: #ffcc00; opacity: 0.8; }
+            .terminal-hint { margin-bottom: 6px; color: rgba(255,255,255,0.45); font-style: italic; }
+        `;
+        document.head.appendChild(style);
+    }
+
     terminalEl = document.createElement('div');
     terminalEl.id = 'game-terminal';
     terminalEl.innerHTML = `
+        <div id="terminal-header">
+            <span id="terminal-title">SYSTEM COMMAND INTERFACE</span>
+            <span id="terminal-close">ESC to Close</span>
+        </div>
         <div id="terminal-history">
             <div class="terminal-log">CORE OS [Version 1.0.42]</div>
             <div class="terminal-log">Initializing secure connection... OK.</div>
             <div class="terminal-log">Welcome back, Administrator.</div>
-            <div class="terminal-log terminal-hint">Tip: Use Up/Down arrows to cycle history. Press ESC to close.</div>
+            <div class="terminal-hint">Tip: Use Up/Down arrows to cycle history. Type /help for commands.</div>
         </div>
         <div id="terminal-input-row">
-            <span id="terminal-prompt">SYS_ADMIN@GAME:~$</span>
-            <input type="text" id="terminal-input" spellcheck="false" autocomplete="off">
+            <span id="terminal-prompt">&gt;</span>
+            <input type="text" id="terminal-input" spellcheck="false" autocomplete="off" placeholder="Enter command...">
         </div>
     `;
     document.body.appendChild(terminalEl);
@@ -1022,15 +1234,32 @@ function processTerminalCommand(cmd) {
         const ey = Math.floor(playerPosition.y + Math.sin(angle) * dist);
         spawnEnemy('beetle', ex, ey);
         log(`CRITICAL: Boss Beetle signature forced into local grid at [${ex}, ${ey}].`, 'terminal-error');
+    } else if (base === '/tutorial') {
+        if (parts[1] === 'reset' || parts[1] === 'welcome') {
+            hasShownWelcomeTutorial = false;
+            isTutorialMap = true;
+            tutorialStep = 0;
+            tutorialMoved = false; tutorialAttacked = false; tutorialCollected = false;
+            tutorialSprintDetected = false; tutorialHitLanded = false; tutorialStepTimer = 0;
+            tutorialMessage = ''; tutorialMessageTimer = 0;
+            localStorage.setItem('hasShownWelcomeTutorial', 'false');
+            localStorage.setItem('tutorialComplete', 'false');
+            log('SUCCESS: Tutorial state reset. Loading Training Glade...', 'terminal-success');
+            try { toggleTerminal(); } catch(e) {}
+            setTimeout(() => generateMap(), 300);
+        } else {
+            log('USAGE: /tutorial [reset|welcome]', 'terminal-log');
+        }
     } else if (base === '/help') {
         log('SYSTEM COMMANDS:');
-        log('  <span style="color:#fff">/kill all</span>    - Wipe all enemies.');
-        log('  <span style="color:#fff">/collect all</span> - Collect all coins on the map.');
-        log('  <span style="color:#fff">/scan boss</span>   - Check for active boss signatures.');
-        log('  <span style="color:#fff">/locate boss</span> - Get precise boss coordinates.');
-        log('  <span style="color:#fff">/spawn boss</span>  - Force a boss beetle to spawn near you.');
-        log('  <span style="color:#fff">/clear</span>       - Wipe terminal log history.');
-        log('  <span style="color:#fff">/exit</span>        - Disconnect from console.');
+        log('  <span style="color:#fff">/kill all</span>       - Wipe all enemies.');
+        log('  <span style="color:#fff">/collect all</span>    - Collect all coins on the map.');
+        log('  <span style="color:#fff">/scan boss</span>      - Check for active boss signatures.');
+        log('  <span style="color:#fff">/locate boss</span>    - Get precise boss coordinates.');
+        log('  <span style="color:#fff">/spawn boss</span>     - Force a boss beetle to spawn near you.');
+        log('  <span style="color:#fff">/tutorial reset</span> - Reset tutorial (shows on next reload).');
+        log('  <span style="color:#fff">/clear</span>          - Wipe terminal log history.');
+        log('  <span style="color:#fff">/exit</span>           - Disconnect from console.');
     } else if (base === '/clear') {
         history.innerHTML = '<div class="terminal-log">History cleared.</div>';
     } else if (base === '/exit') {
@@ -1047,19 +1276,21 @@ function keyPressed() {
   }
   if (isTerminalOpen) return; // Disable other inputs while terminal is open
 
+  if (activeTutorial) { activeTutorial = null; return false; }
+
   if (isGameOver) return;
-  if (key === ' ' && !isJumping && !isMoving) {
-    
+  if (keyCode === playerKeybinds.jump && !isJumping && !isMoving) {
+
     isJumping = true;
     jumpFrame = 0;
     jumpTimer = 0;
 
-    
+
     try {
-      const nowA = (typeof keyIsDown === 'function') ? keyIsDown(65) : false;
-      const nowD = (typeof keyIsDown === 'function') ? keyIsDown(68) : false;
-      const nowW = (typeof keyIsDown === 'function') ? keyIsDown(87) : false;
-      const nowS = (typeof keyIsDown === 'function') ? keyIsDown(83) : false;
+      const nowA = (typeof keyIsDown === 'function') ? keyIsDown(playerKeybinds.moveLeft) : false;
+      const nowD = (typeof keyIsDown === 'function') ? keyIsDown(playerKeybinds.moveRight) : false;
+      const nowW = (typeof keyIsDown === 'function') ? keyIsDown(playerKeybinds.moveUp) : false;
+      const nowS = (typeof keyIsDown === 'function') ? keyIsDown(playerKeybinds.moveDown) : false;
       const dx = (nowD ? 1 : 0) - (nowA ? 1 : 0);
       const dy = (nowS ? 1 : 0) - (nowW ? 1 : 0);
       
@@ -1142,7 +1373,7 @@ function keyPressed() {
               spawnDamageText("+2 HP", playerPosition.x, playerPosition.y, [0, 255, 0]);
               try { playClickSFX(); } catch(e) {}
           } else {
-              spawnDamageText("FULL HP", playerPosition.x, playerPosition.y, [200, 200, 200]);
+              spawnDamageText(t('full_hp'), playerPosition.x, playerPosition.y, [200, 200, 200]);
           }
       }
       return;
@@ -1152,12 +1383,17 @@ function keyPressed() {
           playerInventory['speed']--;
           if (typeof sprintRemainingMs === 'number') {
              sprintRemainingMs = SPRINT_MAX_DURATION_MS;
-             sprintActive = true; 
+             sprintActive = true;
           }
-          spawnDamageText("SPEED UP!", playerPosition.x, playerPosition.y, [255, 215, 0]);
+          spawnDamageText(t('speed_up'), playerPosition.x, playerPosition.y, [255, 215, 0]);
           try { playClickSFX(); } catch(e) {}
       }
       return;
+  }
+
+  if (keyCode === playerKeybinds.cut) {
+    startPlayerAttack();
+    return;
   }
 }
 
@@ -1176,7 +1412,16 @@ try {
 
 
 function generateMap() {
+  genPhase = 0;
   clearPreviousGameState();
+
+  isTutorialMap = (localStorage.getItem('tutorialComplete') !== 'true');
+
+  if (isTutorialMap) {
+    loadTutorialMap();
+    return;
+  }
+
   genPhase = 1;
 }
 
@@ -1370,7 +1615,7 @@ function generateMap_Part1() {
      createMapImage();
 
      try {
-         showToast('OBJECTIVE: Collect all Coins and Eliminate all Threats!', 'warn', 5000);
+         showToast(t('objective'), 'warn', 5000);
      } catch(e) {}
   } catch(e) {}
 
@@ -1389,14 +1634,87 @@ function generateMap_Part1() {
   
   
   genTempData = {};
-  
+
   redraw();
   autosaveMap();
   persistActiveMapToServer('generated');
-  
+
   try {
       showToast('OBJECTIVE: Collect all Coins and Eliminate all Threats!', 'warn', 5000);
   } catch(e) {}
+}
+
+function loadTutorialMap() {
+  verboseLog('[game] Loading Tutorial Map...');
+  try {
+    logicalW = 20;
+    logicalH = 20;
+    mapStates = new Uint8Array(logicalW * logicalH);
+    terrainLayer = new Uint8Array(logicalW * logicalH);
+
+    const W = logicalW, H = logicalH;
+    const _s = (x, y, t) => { mapStates[y * W + x] = t; };
+
+    // 1. Fill with Grass, fence the border
+    for (let i = 0; i < mapStates.length; i++) {
+      const x = i % W, y = Math.floor(i / W);
+      mapStates[i] = (x === 0 || x === W-1 || y === 0 || y === H-1)
+        ? TILE_TYPES.FOREST : TILE_TYPES.GRASS;
+    }
+
+    // 2. Internal Zone Walls
+    // Vertical wall x=10 from y=10 down to border (separates bottom halves)
+    for (let y = 10; y < H; y++) _s(10, y, TILE_TYPES.FOREST);
+    // Horizontal wall y=10 across full width (separates top from bottom)
+    for (let x = 0; x < W; x++) _s(x, 10, TILE_TYPES.FOREST);
+    // Gaps: north passage at x=5 and x=15
+    _s(5, 10, TILE_TYPES.GRASS);
+    _s(15, 10, TILE_TYPES.GRASS);
+
+    // 3. Snapshot terrain BEFORE placing items/coins
+    terrainLayer = mapStates.slice();
+
+    // 4. Spawns
+    playerPosition = { x: 3, y: 15 };
+    initialSpawnPosition = { x: 3, y: 15 };
+
+    // Training Dummy (Passive Beetle)
+    const dummy = createBeetle(5, 5);
+    dummy.aggro = false;
+    dummy.health = 5;
+    enemies.push(dummy);
+
+    // Coins (placed AFTER terrainLayer snapshot so terrain underneath is GRASS)
+    _s(15, 5, TILE_TYPES.COIN);
+    _s(16, 4, TILE_TYPES.COIN);
+    _s(14, 6, TILE_TYPES.COIN);
+
+    // Portal (Top Right)
+    portalPos = { x: 17, y: 3 };
+    isPortalActive = false;
+
+    // 5. Reset tutorial state
+    tutorialStep = 0;
+    tutorialMoved = false; tutorialAttacked = false; tutorialCollected = false;
+    tutorialSprintDetected = false; tutorialHitLanded = false;
+    tutorialStepTimer = 0; tutorialCoinSnapshot = 3;
+    tutorialMessage = ''; tutorialMessageTimer = 0; tutorialArrowBlink = 0;
+
+    renderX = playerPosition.x; renderY = playerPosition.y;
+    renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY;
+
+    smoothCamX = playerPosition.x * cellSize - (width || 640) / 2;
+    smoothCamY = playerPosition.y * cellSize - (height || 480) / 2;
+
+    createMapImage();
+    verboseLog('[game] Tutorial Map Ready.');
+  } catch (e) {
+    console.warn('[game] loadTutorialMap error:', e);
+  } finally {
+    showLoadingOverlay = false;
+    mapLoadComplete = true;
+    completeLoadingProgress();
+  }
 }
 
 function computeClearArea() {
@@ -1812,7 +2130,7 @@ function saveMap(name) {
       console.warn('[game] localStorage unavailable, skipping save');
     }
     try {
-      try { showToast('Map saved locally', 'info', 2200); } catch (e) {}
+      try { showToast(t('map_saved'), 'info', 2200); } catch (e) {}
     } catch (e) {}
     downloadMapJSON(payload, key + '.json');
     persistActiveMapToServer('manual-save');
@@ -1854,7 +2172,7 @@ function autosaveMap() {
         if (typeof localStorage === 'undefined') throw new Error('localStorage undefined');
         localStorage.setItem(key, JSON.stringify(payload));
         verboseLog('[game] map autosaved to localStorage as', key);
-        try { showToast('Map autosaved', 'info', 2200); } catch (e) {}
+        try { showToast(t('map_autosaved'), 'info', 2200); } catch (e) {}
     
       } catch (err) {
         
@@ -2185,8 +2503,8 @@ function drawTileToMap(lx, ly) {
     imgDestH = cellSize * 0.7;
   } else if (tileState === TILE_TYPES.POWERUP && powerupPotionSprite) {
     img = powerupPotionSprite;
-    imgDestW = cellSize * 0.8;
-    imgDestH = cellSize * 0.8;
+    imgDestW = cellSize * 0.7;
+    imgDestH = cellSize * 0.7;
   } else if (tileState === TILE_TYPES.CHEST && chestSprite) {
     img = chestSprite;
     imgDestW = cellSize * 0.8;
@@ -2949,8 +3267,8 @@ function createBeetle(startX, startY) {
         frameCount = 6;
         frame = Math.min(this.attackFrame, 5);
         if (this.direction === 'S') row = 0;
-        else if (this.direction === 'E') row = 1;
-        else if (this.direction === 'W') row = 2;
+        else if (this.direction === 'W') row = 1;
+        else if (this.direction === 'E') row = 2;
         else if (this.direction === 'N') row = 3;
         // Fallback to move sprite if attack sprite didn't load
         if (!sprite) {
@@ -2965,8 +3283,8 @@ function createBeetle(startX, startY) {
         else frame = 0;
 
         if (this.direction === 'S') row = 0;
-        else if (this.direction === 'E') row = 1;
-        else if (this.direction === 'W') row = 2;
+        else if (this.direction === 'W') row = 1;
+        else if (this.direction === 'E') row = 2;
         else if (this.direction === 'N') row = 3;
       }
 
@@ -3782,7 +4100,7 @@ function updateEnemies() {
          if (isSolid(ts)) {
              e.health = 0;
              spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
-             spawnDamageText("CRUSH!", e.x, e.y, [150, 150, 150]);
+             spawnDamageText(t('crush'), e.x, e.y, [150, 150, 150]);
              enemies.splice(i, 1);
          }
     }
@@ -3818,11 +4136,11 @@ function handleMovement() {
   }
 
   if (isJumping || (isMoving && (millis() - lastMoveTime < getActiveMoveCooldownMs()))) return;
-  const nowA = keyIsDown(65);
-  const nowD = keyIsDown(68);
-  const nowW = keyIsDown(87);
-  const nowS = keyIsDown(83);
-  const shiftHeld = keyIsDown(16);
+  const nowA = keyIsDown(playerKeybinds.moveLeft);
+  const nowD = keyIsDown(playerKeybinds.moveRight);
+  const nowW = keyIsDown(playerKeybinds.moveUp);
+  const nowS = keyIsDown(playerKeybinds.moveDown);
+  const shiftHeld = keyIsDown(playerKeybinds.sprint);
   const now = millis();
 
   // Dash trigger
@@ -3861,8 +4179,10 @@ function handleMovement() {
   const S_trig = keyTriggered(nowS, prevKeyS, holdState.S);
   if (A_trig) { facing = 'left'; targetX--; moved = true; }
   else if (D_trig) { facing = 'right'; targetX++; moved = true; }
-  if (W_trig) { targetY--; moved = true; }
-  else if (S_trig) { targetY++; moved = true; }
+  const upTrig   = invertYAxis ? S_trig : W_trig;
+  const downTrig = invertYAxis ? W_trig : S_trig;
+  if (upTrig)   { targetY--; moved = true; }
+  else if (downTrig) { targetY++; moved = true; }
   if (targetX < 0) targetX = 0;
   if (targetY < 0) targetY = 0;
   if (targetX > maxTileX) targetX = maxTileX;
@@ -3937,7 +4257,7 @@ function handleItemInteraction(targetX, targetY) {
 
   switch (tileState) {
     case TILE_TYPES.CHEST:
-      spawnDamageText("EMPTY", targetX, targetY, [200, 200, 200]);
+      spawnDamageText(t('empty'), targetX, targetY, [200, 200, 200]);
       consumed = true;
       break;
     case TILE_TYPES.HEALTH:
@@ -3950,7 +4270,7 @@ function handleItemInteraction(targetX, targetY) {
           // Inventory
           if (!playerInventory) playerInventory = { 'potion': 0, 'speed': 0 };
           playerInventory['potion'] = (playerInventory['potion'] || 0) + 1;
-          spawnDamageText("GOT POTION", targetX, targetY, [100, 255, 255]);
+          spawnDamageText(t('got_potion'), targetX, targetY, [100, 255, 255]);
           consumed = true;
       }
       screenShakeTimer = 100; screenShakeAmount = 3;
@@ -3959,7 +4279,7 @@ function handleItemInteraction(targetX, targetY) {
       // Inventory
       if (!playerInventory) playerInventory = { 'potion': 0, 'speed': 0 };
       playerInventory['speed'] = (playerInventory['speed'] || 0) + 1;
-      spawnDamageText("GOT BOOST", targetX, targetY, [255, 215, 0]);
+      spawnDamageText(t('got_boost'), targetX, targetY, [255, 215, 0]);
       consumed = true;
       screenShakeTimer = 150; screenShakeAmount = 5;
       break;
@@ -4128,7 +4448,7 @@ function updateMovementInterpolation() {
 
 function updateSprintState() {
   const now = millis();
-  const shiftHeld = keyIsDown(16);
+  const shiftHeld = keyIsDown(playerKeybinds.sprint);
 
   if (typeof sprintLastUpdate !== 'number' || sprintLastUpdate <= 0) sprintLastUpdate = now;
   const dt = Math.max(0, now - sprintLastUpdate);
@@ -4174,7 +4494,8 @@ function getActiveMoveDurationMs() {
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
     multiplier = 1.5;
   }
-  return Math.max(1, Math.round(base * multiplier * getCellSizeSpeedScale()));
+  const sensMultiplier = 1.0 - (sensitivitySetting - 5) * 0.06;
+  return Math.max(1, Math.round(base * multiplier * getCellSizeSpeedScale() * sensMultiplier));
 }
 
 function getActiveMoveCooldownMs() {
@@ -4183,7 +4504,8 @@ function getActiveMoveCooldownMs() {
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
     multiplier = 1.5;
   }
-  return Math.max(0, Math.round(base * multiplier * getCellSizeSpeedScale()));
+  const sensMultiplier = 1.0 - (sensitivitySetting - 5) * 0.06;
+  return Math.max(0, Math.round(base * multiplier * getCellSizeSpeedScale() * sensMultiplier));
 }
 
 function getCellSizeSpeedScale() {
@@ -4202,10 +4524,10 @@ function drawPlayer() {
 }
 
 function _drawPlayerInternal() {
-  const inputLeft  = keyIsDown && keyIsDown(65);
-  const inputRight = keyIsDown && keyIsDown(68);
-  const inputUp    = keyIsDown && keyIsDown(87);
-  const inputDown  = keyIsDown && keyIsDown(83);
+  const inputLeft  = keyIsDown && keyIsDown(playerKeybinds.moveLeft);
+  const inputRight = keyIsDown && keyIsDown(playerKeybinds.moveRight);
+  const inputUp    = keyIsDown && keyIsDown(playerKeybinds.moveUp);
+  const inputDown  = keyIsDown && keyIsDown(playerKeybinds.moveDown);
   const inputWalking = !!(inputLeft || inputRight || inputUp || inputDown);
   const drawTileX = isMoving ? renderX : playerPosition.x;
   const drawTileY = isMoving ? renderY : playerPosition.y;
@@ -4310,7 +4632,7 @@ function _drawPlayerInternal() {
                             if (isSolid(ts)) {
                                 // Knocked into wall -> Instant Death
                                 e.health = 0;
-                                spawnDamageText("SPLAT!", e.x, e.y, [255, 50, 50]);
+                                spawnDamageText(t('splat'), e.x, e.y, [255, 50, 50]);
                             } else if (ts !== TILE_TYPES.RIVER) {
                                 e.x = targetX;
                                 e.y = targetY;
@@ -4901,7 +5223,7 @@ function openInGameMenu() {
   inGameMenuOverlay = { close, container };
 
   // Title positioned well above the panel box
-  let title = createDiv('PAUSED');
+  let title = createDiv(t('paused'));
   title.parent(panel);
   title.style('position', 'absolute');
   title.style('width', '100%');
@@ -4910,7 +5232,7 @@ function openInGameMenu() {
   title.style('left', '0');
   title.style('font-size', '48px');
   title.style('font-weight', 'bold');
-  title.style('color', '#000'); 
+  title.style('color', '#000');
   title.style('text-shadow', 'none');
 
   const createMenuBtn = (label, onClick) => {
@@ -4922,17 +5244,17 @@ function openInGameMenu() {
     return btn;
   };
 
-  createMenuBtn('RESUME', () => {
+  createMenuBtn(t('resume'), () => {
     closeInGameMenu();
   });
 
-  createMenuBtn('SETTINGS', () => {
+  createMenuBtn(t('settings'), () => {
     inGameMenuOverlay.close();
     inGameMenuOverlay = null;
     openInGameSettings({ masterVol, musicVol, sfxVol, difficulty: currentDifficulty });
   });
 
-  createMenuBtn('EXIT', () => {
+  createMenuBtn(t('exit'), () => {
     try {
       if (window.parent && window.parent !== window) {
         window.parent.postMessage({ type: 'close-game-overlay' }, '*');
@@ -4955,7 +5277,7 @@ function startLevelTransition() {
   isTransitioning = true;
   transitionAlpha = 0;
   
-  try { showToast(`Level ${currentLevel} Clear! Entering Level ${currentLevel + 1}...`, 'info', 4000); } catch(e) {}
+  try { showToast(t('level_clear', currentLevel, currentLevel + 1), 'info', 4000); } catch(e) {}
 }
 
 function handleTransitionLogic() {
@@ -5028,19 +5350,19 @@ function showVictoryScreen() {
   const { container, panel, close } = createZoomStablePanel(420, 320, 'gd-victory-menu');
   victoryOverlay = { close, container };
 
-  let title = createDiv('VICTORY');
+  let title = createDiv(t('victory'));
   title.parent(panel);
   title.style('position', 'absolute');
   title.style('width', '100%');
   title.style('text-align', 'center');
-  title.style('top', '-100px'); 
+  title.style('top', '-100px');
   title.style('left', '0');
   title.style('font-size', '48px');
   title.style('font-weight', 'bold');
   title.style('color', '#000');
   title.style('text-shadow', 'none');
 
-  let msg = createDiv(`All threats eliminated.<br>Final Gold: ${playerScore}<br>Find the portal to escape.`);
+  let msg = createDiv(t('victory_msg', playerScore));
   msg.parent(panel);
   msg.style('text-align', 'center');
   msg.style('margin-bottom', '30px');
@@ -5056,7 +5378,7 @@ function showVictoryScreen() {
     return btn;
   };
 
-  createMenuBtn('CONTINUE', () => {
+  createMenuBtn(t('continue_btn'), () => {
     if (victoryOverlay) {
         victoryOverlay.close();
         victoryOverlay = null;
@@ -5074,19 +5396,19 @@ function showGameOverScreen() {
   gameOverOverlay = { close, container };
 
   // Title positioned well above the panel box
-  let title = createDiv('GAME OVER');
+  let title = createDiv(t('game_over'));
   title.parent(panel);
   title.style('position', 'absolute');
   title.style('width', '100%');
   title.style('text-align', 'center');
-  title.style('top', '-100px'); // 100px above the top of the box
+  title.style('top', '-100px');
   title.style('left', '0');
   title.style('font-size', '48px');
   title.style('font-weight', 'bold');
   title.style('color', '#000');
   title.style('text-shadow', 'none');
 
-  let msg = createDiv(`Your journey has ended.<br>Final Gold: ${playerScore}`);
+  let msg = createDiv(t('gameover_msg', playerScore));
   msg.parent(panel);
   msg.style('text-align', 'center');
   msg.style('margin-bottom', '30px');
@@ -5102,11 +5424,11 @@ function showGameOverScreen() {
     return btn;
   };
 
-  createMenuBtn('RESTART', () => {
+  createMenuBtn(t('restart'), () => {
     restartGame();
   });
 
-  createMenuBtn('EXIT TO MENU', () => {
+  createMenuBtn(t('exit_to_menu'), () => {
     exitToMenu();
   });
 }
@@ -5225,7 +5547,7 @@ function drawBossHealthBar() {
   noStroke();
   textAlign(CENTER, BOTTOM);
   gTextSize(18);
-  text("ELITE BEETLE ALPHA", x + barW/2, y - 8);
+  text(t('boss_name'), x + barW/2, y - 8);
 
   // Red Glow behind the bar
   noStroke();
@@ -5350,7 +5672,7 @@ function drawScore() {
   fill(255, 255, 255);
   textSize(16);
   textAlign(LEFT, CENTER);
-  text(`GOLD: ${playerScore}`, x + 5, y - 5);
+  text(t('gold_hud', playerScore), x + 5, y - 5);
   pop();
 }
 
@@ -5368,7 +5690,7 @@ function drawInventory() {
   const slots = [];
 
   if (potions > 0) slots.push({ label: 'P', count: potions, col: [0, 200, 80] });
-  if (speeds > 0) slots.push({ label: 'S', count: speeds, col: [255, 215, 0] });
+  if (speeds > 0) slots.push({ label: 'S', count: speeds, col: [0, 210, 240] });
 
   const containerW = slots.length * (slotW + slotSpacing) + slotSpacing + 10;
   const containerH = slotH + 20;
@@ -7364,8 +7686,8 @@ function draw() {
       genPhase = 2; return; 
     }
     if (genPhase === 2) {
-      background(0); 
-      if (millis() < genTimer) return; 
+      background(0);
+      if (millis() < genTimer) return;
       generateMap_Part1();
       overlayMessage = 'Roughening & Eroding...';
       updateLoadingOverlayDom();
@@ -7373,8 +7695,8 @@ function draw() {
       genPhase = 3; return;
     }
     if (genPhase === 3) {
-      background(0); 
-      if (millis() < genTimer) return; 
+      background(0);
+      if (millis() < genTimer) return;
       generateMap_Part2();
       genPhase = 0;
       showLoadingOverlay = false;
@@ -7493,7 +7815,7 @@ function draw() {
               isPortalActive = false;
               victoryShown = false;
               generateMap(); // Create a whole new world
-              try { showToast('World Cleared! Traveling to next area...', 'info', 3500); } catch(e) {}
+              try { showToast(t('world_cleared'), 'info', 3500); } catch(e) {}
           }
       }
     }
@@ -7835,30 +8157,312 @@ function draw() {
     pop();
   }
 
-  drawDifficultyBadge();
-  drawHealthBar();
-  drawBossHealthBar();
-  drawSprintMeter();
-  drawInventory();
-  drawScore();
-  drawCompass();
-  if (showMinimap) drawMinimap();
-
-  if (typeof WeatherSystem !== 'undefined') {
+  if (hudEnabled) {
+    drawDifficultyBadge();
+    drawHealthBar();
+    drawBossHealthBar();
+    drawSprintMeter();
+    drawInventory();
+    drawScore();
+    drawCompass();
+    if (showMinimap) drawMinimap();
+    if (typeof WeatherSystem !== 'undefined') {
       WeatherSystem.drawClock(width / 2, 40, 25);
+    }
   }
 
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
   } catch (e) {}
-  
+
   if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
+
+  if (showTutorialsSetting) {
+    handleTutorialLogic();
+    drawTutorial();
+  }
 
   pop(); // End Top level Push
 
   drawVignette();
 }
 
+
+// ── Tutorial helpers ──
+function _countCoins() {
+  if (!mapStates) return 0;
+  let c = 0;
+  for (let i = 0; i < mapStates.length; i++) {
+    if (mapStates[i] === TILE_TYPES.COIN) c++;
+  }
+  return c;
+}
+function _sprintKeyLabel() { return 'SHIFT'; }
+function _attackKeyLabel() { return 'LEFT CLICK or E'; }
+function _advanceTutorial(nextStep, msg) {
+  tutorialStep = nextStep;
+  tutorialStepTimer = 0;
+  tutorialArrowBlink = 0;
+  if (msg) _setTutorialMsg(msg, 2500);
+  if (nextStep === 3) tutorialCoinSnapshot = _countCoins();
+  verboseLog('[tutorial] Advanced to step', nextStep);
+}
+function _setTutorialMsg(msg, durationMs) {
+  if (tutorialMessageTimer > 500 && tutorialMessage !== msg) return;
+  tutorialMessage = msg;
+  tutorialMessageTimer = durationMs || 2500;
+}
+
+function showTutorial(id) {
+  const tutorials = {
+    'welcome': {
+      title: t('tut_title'),
+      lines: [
+        t('tut_move'),
+        t('tut_sprint'),
+        t('tut_jump'),
+        t('tut_attack'),
+        t('tut_items'),
+        '',
+        t('tut_objective'),
+        t('tut_objective_text'),
+      ]
+    }
+  };
+  activeTutorial = tutorials[id] || null;
+}
+
+function handleTutorialLogic() {
+  if (!isTutorialMap) return;
+  if (!playerPosition) return;
+
+  const pX = playerPosition.x;
+  const pY = playerPosition.y;
+  const dt = gameDelta || 16.67;
+  tutorialStepTimer += dt;
+  tutorialArrowBlink += dt;
+
+  if (tutorialMessageTimer > 0) {
+    tutorialMessageTimer -= dt;
+    if (tutorialMessageTimer <= 0) { tutorialMessage = ''; tutorialMessageTimer = 0; }
+  }
+
+  // Step 0: MOVEMENT — head north through gap at (5,10)
+  if (tutorialStep === 0) {
+    if (pX !== 3 || pY !== 15) tutorialMoved = true;
+    if (pY < 10) _advanceTutorial(1, t('tut_made_it'));
+  }
+  // Step 1: SPRINT — brief sprint lesson in top zone
+  else if (tutorialStep === 1) {
+    if (sprintActive) tutorialSprintDetected = true;
+    if (tutorialSprintDetected || tutorialStepTimer > 6000) {
+      _advanceTutorial(2, tutorialSprintDetected ? t('tut_fast2') : '');
+    }
+    if (pY >= 10) _setTutorialMsg(t('tut_come_back_sprint', _sprintKeyLabel()), 2500);
+  }
+  // Step 2: COMBAT — defeat the beetle at (5,5)
+  else if (tutorialStep === 2) {
+    if (isAttacking && !tutorialHitLanded) tutorialAttacked = true;
+    if (enemies.length > 0 && enemies[0].health < (enemies[0].maxHealth || 999)) tutorialHitLanded = true;
+    if (enemies.length === 0) _advanceTutorial(3, t('tut_pest_eliminated'));
+    if (enemies.length > 0 && pX > 12 && pY < 10) _setTutorialMsg(t('tut_defeat_first'), 2500);
+    if (pY >= 10) _setTutorialMsg(t('tut_pest_north'), 2500);
+  }
+  // Step 3: COLLECT COINS
+  else if (tutorialStep === 3) {
+    const coinCount = _countCoins();
+    if (tutorialCoinSnapshot > 0 && coinCount < tutorialCoinSnapshot) {
+      tutorialCoinSnapshot = coinCount;
+      if (coinCount > 0) _setTutorialMsg(t('tut_coins_left', coinCount), 2000);
+    }
+    if (!hasAnyCoins()) {
+      isPortalActive = true;
+      localStorage.setItem('tutorialComplete', 'true');
+      _advanceTutorial(4, t('tut_coins_collected'));
+    }
+    if (pX < 5 && pY < 10) _setTutorialMsg(t('tut_coins_east'), 2500);
+    if (pY >= 10) _setTutorialMsg(t('tut_collect_north'), 2500);
+  }
+  // Step 4: ENTER PORTAL
+  else if (tutorialStep === 4) {
+    if (pY >= 10) _setTutorialMsg(t('tut_portal_north'), 2500);
+    else if (pX < 8 && pY < 10) _setTutorialMsg(t('tut_portal_east'), 2500);
+  }
+}
+
+function drawTutorial() {
+  if (activeTutorial) { drawLegacyTutorial(); return; }
+  if (!isTutorialMap) return;
+  if (!playerPosition) return;
+
+  push();
+  const camX = Math.floor(smoothCamX || 0);
+  const camY = Math.floor(smoothCamY || 0);
+  const pX = playerPosition.x;
+  const pY = playerPosition.y;
+  const t = millis();
+
+  textAlign(CENTER, CENTER);
+  if (uiFont) textFont(uiFont);
+
+  const drawTooltip = (txt, tx, ty, opts) => {
+    const col = (opts && opts.color) || [255, 215, 0];
+    const sz = (opts && opts.size) || 20;
+    gTextSize(sz);
+    const px = tx * cellSize + cellSize / 2 - camX;
+    const py = ty * cellSize - 40 - camY + Math.sin(t * 0.004) * 5;
+    const tw = textWidth(txt) + 24;
+    const th = sz + 14;
+    fill(0, 0, 0, 180); noStroke();
+    rect(px - tw/2, py - th/2, tw, th, 6);
+    stroke(col[0], col[1], col[2], 120); strokeWeight(1);
+    rect(px - tw/2, py - th/2, tw, th, 6);
+    noStroke();
+    fill(col[0], col[1], col[2]);
+    text(txt, px, py);
+  };
+
+  const drawPlayerTooltip = (txt, opts) => {
+    const rX = isMoving ? renderX : pX;
+    const rY = isMoving ? renderY : pY;
+    drawTooltip(txt, rX, rY - 0.5, opts);
+  };
+
+  const drawArrow = (tx, ty, label) => {
+    const px = tx * cellSize + cellSize / 2 - camX;
+    const py = ty * cellSize - camY;
+    const bounce = Math.sin(t * 0.006) * 8;
+    const alpha = 180 + Math.sin(t * 0.008) * 75;
+    push();
+    translate(px, py - 55 + bounce);
+    fill(255, 215, 0, alpha); noStroke();
+    triangle(0, 18, -10, 0, 10, 0);
+    if (label) {
+      gTextSize(14);
+      const lw = textWidth(label) + 12;
+      fill(0, 0, 0, 160); noStroke();
+      rect(-lw/2, -26, lw, 20, 4);
+      fill(255, 215, 0, alpha);
+      text(label, 0, -16);
+    }
+    pop();
+  };
+
+  // Step list panel (left margin)
+  const stepNames = [t('tut_step_move'), t('tut_step_sprint'), t('tut_step_fight'), t('tut_step_collect'), t('tut_step_portal')];
+  const listX = 15, listY = 80, rowH = 22, panelW = 110;
+  const panelH = stepNames.length * rowH + 16;
+  fill(0, 0, 0, 150); noStroke();
+  rect(listX, listY, panelW, panelH, 6);
+  stroke(255, 215, 0, 60); strokeWeight(1);
+  rect(listX, listY, panelW, panelH, 6);
+  noStroke();
+  for (let i = 0; i < stepNames.length; i++) {
+    const sy = listY + 12 + i * rowH;
+    let icon, col;
+    if (i < tutorialStep)      { icon = '\u2713'; col = [100, 220, 100]; }
+    else if (i === tutorialStep) { icon = '\u25B6'; col = [255, 215, 0]; }
+    else                         { icon = '\u00B7'; col = [140, 140, 140]; }
+    gTextSize(13); textAlign(LEFT, CENTER);
+    fill(col[0], col[1], col[2]);
+    text(icon + '  ' + stepNames[i], listX + 10, sy);
+  }
+  textAlign(CENTER, CENTER);
+
+  const warningActive = tutorialMessage && tutorialMessageTimer > 0;
+
+  if (tutorialStep === 0 && !warningActive) {
+    if (!tutorialMoved) drawPlayerTooltip(t('tut_wasd'));
+    else { drawPlayerTooltip(t('tut_head_north'), { size: 18 }); drawArrow(5, 10, t('tut_gap')); }
+  }
+  else if (tutorialStep === 1 && !warningActive) {
+    if (!tutorialSprintDetected) drawPlayerTooltip(t('tut_sprint_prompt', _sprintKeyLabel()));
+    else drawPlayerTooltip(t('tut_fast'), { color: [100, 255, 100] });
+  }
+  else if (tutorialStep === 2 && !warningActive) {
+    if (enemies.length > 0) {
+      const beetle = enemies[0];
+      drawArrow(beetle.x, beetle.y, t('tut_target'));
+      if (!tutorialHitLanded) {
+        drawPlayerTooltip(t('tut_attack_prompt', _attackKeyLabel()));
+        drawTooltip(t('tut_approach'), beetle.x, beetle.y + 2, { size: 16, color: [255, 100, 100] });
+      } else {
+        drawPlayerTooltip(t('tut_keep_attacking'), { color: [255, 150, 50] });
+      }
+    }
+  }
+  else if (tutorialStep === 3 && !warningActive) {
+    const coinCount = _countCoins();
+    if (coinCount > 0) {
+      drawPlayerTooltip(t('tut_collect_coins', coinCount), { size: 18 });
+      if (mapStates) {
+        let shown = 0;
+        for (let i = 0; i < mapStates.length && shown < 3; i++) {
+          if (mapStates[i] === TILE_TYPES.COIN) {
+            drawArrow(i % logicalW, Math.floor(i / logicalW), null);
+            shown++;
+          }
+        }
+      }
+    }
+  }
+  else if (tutorialStep === 4 && !warningActive) {
+    if (portalPos) {
+      drawArrow(portalPos.x, portalPos.y, t('tut_portal'));
+      drawPlayerTooltip(t('tut_enter_portal'), { color: [100, 200, 255] });
+    }
+  }
+
+  // Floating celebration / warning message
+  if (tutorialMessage && tutorialMessageTimer > 0) {
+    const msgAlpha = Math.min(255, tutorialMessageTimer * 0.5);
+    gTextSize(26);
+    const mw = textWidth(tutorialMessage) + 30;
+    const mx = (virtualW || (width / gameScale)) / 2;
+    const my = (virtualH || (height / gameScale)) * 0.35 + Math.sin(t * 0.003) * 3;
+    fill(0, 0, 0, msgAlpha * 0.7); noStroke();
+    rect(mx - mw/2, my - 20, mw, 42, 8);
+    stroke(255, 215, 0, msgAlpha * 0.5); strokeWeight(1);
+    rect(mx - mw/2, my - 20, mw, 42, 8);
+    noStroke();
+    fill(255, 255, 255, msgAlpha);
+    text(tutorialMessage, mx, my);
+  }
+
+  pop();
+}
+
+function drawLegacyTutorial() {
+  if (!activeTutorial) return;
+  const vW = virtualW || (width / gameScale);
+  const vH = virtualH || (height / gameScale);
+  const panelW = 450, panelH = 340;
+  const x = (vW - panelW) / 2;
+  const y = (vH - panelH) / 2;
+
+  push();
+  fill(0, 150); noStroke();
+  rect(0, 0, vW, vH);
+  fill(20, 20, 25, 240);
+  stroke(0); strokeWeight(4);
+  rect(x - 10, y - 10, panelW + 20, panelH + 20, 8);
+  stroke(184, 134, 11); strokeWeight(2); noFill();
+  rect(x - 5, y - 5, panelW + 10, panelH + 10, 4);
+  if (uiFont) textFont(uiFont);
+  fill(255, 215, 0); noStroke(); textAlign(CENTER, TOP);
+  gTextSize(28);
+  text(activeTutorial.title, x + panelW/2, y + 25);
+  fill(255); textAlign(LEFT, TOP); gTextSize(18);
+  let lineY = y + 80;
+  for (const line of activeTutorial.lines) {
+    text(line, x + 40, lineY);
+    lineY += 28;
+  }
+  textAlign(CENTER, BOTTOM);
+  fill(255, 255, 255, 180); gTextSize(14);
+  text('Press any key or click to continue', x + panelW/2, y + panelH - 25);
+  pop();
+}
 
 window.addEventListener('message', (ev) => {
   if (!ev || !ev.data) return;
@@ -7948,8 +8552,9 @@ let _settingsSaveTimer = null;
 function persistSavedSettings(immediate = false) {
   const commit = () => {
     try {
-      const settings = { masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting };
+      const settings = { masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting, sensitivitySetting, invertYAxis, hudEnabled, showTutorialsSetting, colorModeSetting, languageSetting };
       localStorage.setItem('menuSettings', JSON.stringify(settings));
+      localStorage.setItem('playerKeybinds', JSON.stringify(playerKeybinds));
       verboseLog('[game] persisted settings', settings);
       if (window.parent && window.parent !== window) {
         window.parent.postMessage({ type: 'sync-settings', ...settings }, '*');
@@ -7999,8 +8604,18 @@ function loadLocalSettings() {
         setDifficulty(normalized, { regenerate: false, reason: 'load-local-settings' });
       }
     }
+    if (typeof parsed.sensitivitySetting === 'number') sensitivitySetting = parsed.sensitivitySetting;
+    if (typeof parsed.invertYAxis === 'boolean') invertYAxis = parsed.invertYAxis;
+    if (typeof parsed.hudEnabled === 'boolean') hudEnabled = parsed.hudEnabled;
+    if (typeof parsed.showTutorialsSetting === 'boolean') showTutorialsSetting = parsed.showTutorialsSetting;
+    if (typeof parsed.colorModeSetting === 'string') { colorModeSetting = parsed.colorModeSetting; applyColorMode(colorModeSetting); }
+    if (typeof parsed.languageSetting === 'string') languageSetting = parsed.languageSetting;
     if (typeof applyVolumes === 'function') applyVolumes();
     verboseLog('[game] loaded saved settings', parsed);
+    try {
+      const storedKeys = localStorage.getItem('playerKeybinds');
+      if (storedKeys) playerKeybinds = { ...DEFAULT_KEYBINDS, ...JSON.parse(storedKeys) };
+    } catch (e) { console.warn('[game] loadLocalSettings keybinds failed', e); }
   } catch (err) {
     console.warn('[game] loadLocalSettings failed', err);
   }
@@ -9002,15 +9617,6 @@ function getColorForState(state) {
   return [255, 0, 255]; 
 }
 
-function buildControlsSettings(ctx) {
-  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {})
-     .addCheckboxRow("Invert Y Axis", false);
-}
-
-function buildLanguageSettings(ctx) {
-  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
-}
-
 function stylePixelButton(btn) {
   
   btn.style('background-color', 'transparent');
@@ -9100,8 +9706,8 @@ function spawnCloud(forceX) {
 
 function buildGameplaySettings(ctx) {
   ctx
-    .addCheckboxRow("Show Tutorials", true)
-    .addCheckboxRow("Enable HUD", true)
+    .addCheckboxRow("Show Tutorials", showTutorialsSetting, { onChange: v => { showTutorialsSetting = v; persistSavedSettings(); } })
+    .addCheckboxRow("Enable HUD", hudEnabled, { onChange: v => { hudEnabled = v; persistSavedSettings(); } })
     .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
       value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
       onChange: (val) => {
@@ -9115,12 +9721,97 @@ function buildGameplaySettings(ctx) {
 }
 
 function buildControlsSettings(ctx) {
-  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {})
-     .addCheckboxRow("Invert Y Axis", false);
+  const KEYBIND_ACTIONS = [
+    { key: 'moveUp',    label: 'Move Up' },
+    { key: 'moveDown',  label: 'Move Down' },
+    { key: 'moveLeft',  label: 'Move Left' },
+    { key: 'moveRight', label: 'Move Right' },
+    { key: 'sprint',    label: 'Sprint' },
+    { key: 'jump',      label: 'Jump' },
+    { key: 'cut',       label: 'Cut / Attack' },
+  ];
+
+  KEYBIND_ACTIONS.forEach(({ key, label }) => {
+    const row = createDiv('');
+    row.parent(ctx.container);
+    row.style('display', 'flex');
+    row.style('align-items', 'center');
+    row.style('justify-content', 'space-between');
+    row.style('width', '100%');
+    row.style('margin-bottom', '10px');
+    activeSettingElements.push(row);
+
+    const lbl = createDiv(label);
+    lbl.parent(row);
+    lbl.class('setting-label');
+    lbl.style('color', 'white');
+    lbl.style('font-size', '20px');
+    lbl.style('text-align', 'right');
+    lbl.style('text-shadow', '1px 1px 0 #000');
+    lbl.style('margin-right', '10px');
+    lbl.style('flex', '1');
+
+    const btn = createButton(keyCodeToLabel(playerKeybinds[key]));
+    btn.parent(row);
+    btn.style('flex', '1');
+    btn.style('height', '30px');
+    stylePixelButton(btn);
+    btn.style('font-size', '14px');
+    btn.style('padding', '0');
+    activeSettingElements.push(btn);
+
+    btn.mousePressed(() => {
+      btn.html('Press a key...');
+      const capture = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        playerKeybinds[key] = e.keyCode;
+        btn.html(keyCodeToLabel(e.keyCode));
+        document.removeEventListener('keydown', capture, true);
+        try { saveLocalSettings(); } catch (err) {}
+      };
+      document.addEventListener('keydown', capture, true);
+    });
+  });
+
+  ctx.addSliderRow("Sensitivity", 1, 10, sensitivitySetting, v => { sensitivitySetting = Number(v); persistSavedSettings(); });
+  ctx.addCheckboxRow("Invert Y Axis", invertYAxis, { onChange: v => { invertYAxis = v; persistSavedSettings(); } });
+}
+
+function applyColorMode(mode) {
+  // Inject SVG filter definitions once
+  if (!document.getElementById('game-cb-filters')) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'game-cb-filters';
+    svg.setAttribute('style', 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none');
+    svg.innerHTML = `<defs>
+      <filter id="game-cb-protanopia">
+        <feColorMatrix type="matrix" values="0.567 0.433 0 0 0  0.558 0.442 0 0 0  0 0.242 0.758 0 0  0 0 0 1 0"/>
+      </filter>
+      <filter id="game-cb-deuteranopia">
+        <feColorMatrix type="matrix" values="0.625 0.375 0 0 0  0.7 0.3 0 0 0  0 0.3 0.7 0 0  0 0 0 1 0"/>
+      </filter>
+      <filter id="game-cb-tritanopia">
+        <feColorMatrix type="matrix" values="0.95 0.05 0 0 0  0 0.433 0.567 0 0  0 0.475 0.525 0 0  0 0 0 1 0"/>
+      </filter>
+    </defs>`;
+    document.body.appendChild(svg);
+  }
+
+  const filterMap = {
+    'Protanopia':   'url(#game-cb-protanopia)',
+    'Deuteranopia': 'url(#game-cb-deuteranopia)',
+    'Tritanopia':   'url(#game-cb-tritanopia)',
+  };
+  const canvas = document.querySelector('canvas');
+  if (canvas) canvas.style.filter = filterMap[mode] || '';
 }
 
 function buildAccessibilitySettings(ctx) {
-  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
+  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"], {
+    value: colorModeSetting,
+    onChange: v => { colorModeSetting = v; applyColorMode(v); persistSavedSettings(); }
+  });
   
   
   const row = createDiv('');
@@ -9179,8 +9870,185 @@ function buildAccessibilitySettings(ctx) {
   });
 }
 
+const TRANSLATIONS = {
+  en: {
+    paused:'PAUSED', resume:'RESUME', settings:'SETTINGS', exit:'EXIT',
+    victory:'VICTORY',
+    victory_msg:(g)=>`All threats eliminated.<br>Final Gold: ${g}<br>Find the portal to escape.`,
+    continue_btn:'CONTINUE',
+    game_over:'GAME OVER',
+    gameover_msg:(g)=>`Your journey has ended.<br>Final Gold: ${g}`,
+    restart:'RESTART', exit_to_menu:'EXIT TO MENU',
+    gold_hud:(n)=>`GOLD: ${n}`,
+    boss_name:'ELITE BEETLE ALPHA',
+    got_potion:'GOT POTION', got_boost:'GOT BOOST',
+    speed_up:'SPEED UP!', full_hp:'FULL HP', crush:'CRUSH!', empty:'EMPTY', splat:'SPLAT!',
+    objective:'OBJECTIVE: Collect all Coins and Eliminate all Threats!',
+    map_saved:'Map saved locally', map_autosaved:'Map autosaved',
+    level_clear:(l,n)=>`Level ${l} Clear! Entering Level ${n}...`,
+    world_cleared:'World Cleared! Traveling to next area...',
+    tut_title:'WELCOME TO THE TRAINING GLADE',
+    tut_move:'• W/A/S/D: Move', tut_sprint:'• SHIFT (Hold): Sprint',
+    tut_jump:'• SPACE: Jump', tut_attack:'• LEFT CLICK or E: Attack',
+    tut_items:'• [1] / [2]: Use Items',
+    tut_objective:'OBJECTIVE:', tut_objective_text:'Fight, collect coins, then enter the Portal!',
+    tut_step_move:'Move', tut_step_sprint:'Sprint', tut_step_fight:'Fight',
+    tut_step_collect:'Collect', tut_step_portal:'Portal',
+    tut_wasd:'Use W A S D to move!', tut_head_north:'Head North through the gap!', tut_gap:'Gap',
+    tut_sprint_prompt:(k)=>`Hold ${k} to Sprint!`, tut_fast:'Fast! Keep going!',
+    tut_target:'Target', tut_attack_prompt:(k)=>`${k} to Attack!`,
+    tut_approach:'Approach and attack!', tut_keep_attacking:'Keep attacking!',
+    tut_collect_coins:(n)=>`Collect all coins! (${n} left)`,
+    tut_portal:'Portal', tut_enter_portal:'Enter the Portal!',
+    tut_made_it:'Nice! You made it through!', tut_fast2:'Fast!',
+    tut_pest_eliminated:'Pest eliminated! Good work!',
+    tut_coins_collected:'All coins collected! The Portal is open!',
+    tut_coins_left:(n)=>`${n} coin${n===1?'':'s'} left!`,
+    tut_come_back_sprint:(k)=>`Come back up! Hold ${k} to sprint!`,
+    tut_pest_north:'Come back! The pest is to the North!',
+    tut_defeat_first:'Defeat the pest first! Head back West!',
+    tut_coins_east:'The coins are to the East!',
+    tut_collect_north:'Come back! Collect the coins up North!',
+    tut_portal_north:'The Portal is up North! Head back!',
+    tut_portal_east:'The Portal is to the East!',
+  },
+  es: {
+    paused:'PAUSADO', resume:'REANUDAR', settings:'AJUSTES', exit:'SALIR',
+    victory:'VICTORIA',
+    victory_msg:(g)=>`Todas las amenazas eliminadas.<br>Oro final: ${g}<br>Encuentra el portal para escapar.`,
+    continue_btn:'CONTINUAR',
+    game_over:'FIN DEL JUEGO',
+    gameover_msg:(g)=>`Tu aventura ha terminado.<br>Oro final: ${g}`,
+    restart:'REINICIAR', exit_to_menu:'SALIR AL MENÚ',
+    gold_hud:(n)=>`ORO: ${n}`,
+    boss_name:'ESCARABAJO ÉLITE ALFA',
+    got_potion:'¡POCIÓN!', got_boost:'¡IMPULSO!',
+    speed_up:'¡VELOZ!', full_hp:'HP LLENO', crush:'¡APLASTADO!', empty:'VACÍO', splat:'¡PLAS!',
+    objective:'OBJETIVO: ¡Recoge todas las monedas y elimina las amenazas!',
+    map_saved:'Mapa guardado', map_autosaved:'Autoguardado',
+    level_clear:(l,n)=>`¡Nivel ${l} superado! Entrando al nivel ${n}...`,
+    world_cleared:'¡Mundo completado! Viajando a la siguiente zona...',
+    tut_title:'BIENVENIDO AL CLARO DE ENTRENAMIENTO',
+    tut_move:'• W/A/S/D: Moverse', tut_sprint:'• SHIFT (Mantener): Correr',
+    tut_jump:'• ESPACIO: Saltar', tut_attack:'• CLIC o E: Atacar',
+    tut_items:'• [1] / [2]: Usar objetos',
+    tut_objective:'OBJETIVO:', tut_objective_text:'¡Lucha, recoge monedas y entra al portal!',
+    tut_step_move:'Mover', tut_step_sprint:'Correr', tut_step_fight:'Luchar',
+    tut_step_collect:'Recoger', tut_step_portal:'Portal',
+    tut_wasd:'¡Usa W A S D para moverte!', tut_head_north:'¡Ve al Norte por el hueco!', tut_gap:'Hueco',
+    tut_sprint_prompt:(k)=>`¡Mantén ${k} para correr!`, tut_fast:'¡Rápido! ¡Sigue así!',
+    tut_target:'Objetivo', tut_attack_prompt:(k)=>`¡${k} para atacar!`,
+    tut_approach:'¡Acércate y ataca!', tut_keep_attacking:'¡Sigue atacando!',
+    tut_collect_coins:(n)=>`¡Recoge todas las monedas! (${n} restantes)`,
+    tut_portal:'Portal', tut_enter_portal:'¡Entra al portal!',
+    tut_made_it:'¡Muy bien! ¡Lo lograste!', tut_fast2:'¡Rápido!',
+    tut_pest_eliminated:'¡Plaga eliminada! ¡Buen trabajo!',
+    tut_coins_collected:'¡Monedas recogidas! ¡El portal está abierto!',
+    tut_coins_left:(n)=>`¡Quedan ${n} moneda${n===1?'':'s'}!`,
+    tut_come_back_sprint:(k)=>`¡Vuelve! ¡Mantén ${k} para correr!`,
+    tut_pest_north:'¡Vuelve! ¡La plaga está al Norte!',
+    tut_defeat_first:'¡Derrota la plaga primero! ¡Vuelve al Oeste!',
+    tut_coins_east:'¡Las monedas están al Este!',
+    tut_collect_north:'¡Vuelve! ¡Recoge las monedas al Norte!',
+    tut_portal_north:'¡El portal está al Norte! ¡Vuelve!',
+    tut_portal_east:'¡El portal está al Este!',
+  },
+  fr: {
+    paused:'PAUSE', resume:'REPRENDRE', settings:'OPTIONS', exit:'QUITTER',
+    victory:'VICTOIRE',
+    victory_msg:(g)=>`Toutes les menaces éliminées.<br>Or final: ${g}<br>Trouvez le portail pour fuir.`,
+    continue_btn:'CONTINUER',
+    game_over:'PARTIE TERMINÉE',
+    gameover_msg:(g)=>`Votre aventure est terminée.<br>Or final: ${g}`,
+    restart:'RECOMMENCER', exit_to_menu:'QUITTER',
+    gold_hud:(n)=>`OR: ${n}`,
+    boss_name:'SCARABÉE ÉLITE ALPHA',
+    got_potion:'POTION!', got_boost:'BOOST!',
+    speed_up:'VITESSE!', full_hp:'PV COMPLETS', crush:'ÉCRASÉ!', empty:'VIDE', splat:'PLOUF!',
+    objective:'OBJECTIF: Collectez toutes les pièces et éliminez les menaces!',
+    map_saved:'Carte sauvegardée', map_autosaved:'Sauvegarde auto',
+    level_clear:(l,n)=>`Niveau ${l} terminé! Entrée au niveau ${n}...`,
+    world_cleared:'Monde terminé! Voyage vers la prochaine zone...',
+    tut_title:'BIENVENUE DANS LA CLAIRIÈRE',
+    tut_move:'• W/A/S/D: Se déplacer', tut_sprint:'• SHIFT (Maintenir): Sprinter',
+    tut_jump:'• ESPACE: Sauter', tut_attack:'• CLIC ou E: Attaquer',
+    tut_items:'• [1] / [2]: Utiliser objets',
+    tut_objective:'OBJECTIF:', tut_objective_text:'Combattez, collectez des pièces, puis entrez dans le portail!',
+    tut_step_move:'Bouger', tut_step_sprint:'Sprint', tut_step_fight:'Combat',
+    tut_step_collect:'Collecter', tut_step_portal:'Portail',
+    tut_wasd:'Utilisez W A S D pour vous déplacer!', tut_head_north:"Allez au Nord par l'ouverture!", tut_gap:'Passage',
+    tut_sprint_prompt:(k)=>`Maintenez ${k} pour sprinter!`, tut_fast:'Vite! Continuez!',
+    tut_target:'Cible', tut_attack_prompt:(k)=>`${k} pour attaquer!`,
+    tut_approach:'Approchez et attaquez!', tut_keep_attacking:"Continuez d'attaquer!",
+    tut_collect_coins:(n)=>`Collectez toutes les pièces! (${n} restantes)`,
+    tut_portal:'Portail', tut_enter_portal:'Entrez dans le portail!',
+    tut_made_it:'Bravo! Vous avez réussi!', tut_fast2:'Rapide!',
+    tut_pest_eliminated:'Nuisible éliminé! Bon travail!',
+    tut_coins_collected:'Pièces collectées! Le portail est ouvert!',
+    tut_coins_left:(n)=>`${n} pièce${n===1?'':'s'} restante${n===1?'':'s'}!`,
+    tut_come_back_sprint:(k)=>`Revenez! Maintenez ${k} pour sprinter!`,
+    tut_pest_north:'Revenez! Le nuisible est au Nord!',
+    tut_defeat_first:"Éliminez le nuisible d'abord! Revenez à l'Ouest!",
+    tut_coins_east:"Les pièces sont à l'Est!",
+    tut_collect_north:'Revenez! Collectez les pièces au Nord!',
+    tut_portal_north:'Le portail est au Nord! Revenez!',
+    tut_portal_east:"Le portail est à l'Est!",
+  },
+  de: {
+    paused:'PAUSE', resume:'WEITER', settings:'EINSTELLUNGEN', exit:'BEENDEN',
+    victory:'SIEG',
+    victory_msg:(g)=>`Alle Bedrohungen beseitigt.<br>Endgold: ${g}<br>Finde das Portal zum Entkommen.`,
+    continue_btn:'WEITER',
+    game_over:'SPIEL VORBEI',
+    gameover_msg:(g)=>`Deine Reise ist vorbei.<br>Endgold: ${g}`,
+    restart:'NEU STARTEN', exit_to_menu:'ZUM MENÜ',
+    gold_hud:(n)=>`GOLD: ${n}`,
+    boss_name:'ELITE-KÄFER ALPHA',
+    got_potion:'TRANK!', got_boost:'BOOST!',
+    speed_up:'SCHNELL!', full_hp:'VOLL HP', crush:'ZERQUETSCHT!', empty:'LEER', splat:'PATSCH!',
+    objective:'ZIEL: Sammle alle Münzen und eliminiere alle Bedrohungen!',
+    map_saved:'Karte gespeichert', map_autosaved:'Autospeicherung',
+    level_clear:(l,n)=>`Level ${l} geschafft! Betrete Level ${n}...`,
+    world_cleared:'Welt abgeschlossen! Reise zum nächsten Gebiet...',
+    tut_title:'WILLKOMMEN IN DER TRAINING-LICHTUNG',
+    tut_move:'• W/A/S/D: Bewegen', tut_sprint:'• SHIFT (Halten): Sprinten',
+    tut_jump:'• LEERTASTE: Springen', tut_attack:'• LINKSKLICK oder E: Angreifen',
+    tut_items:'• [1] / [2]: Gegenstände benutzen',
+    tut_objective:'ZIEL:', tut_objective_text:'Kämpfe, sammle Münzen und betrete das Portal!',
+    tut_step_move:'Bewegen', tut_step_sprint:'Sprint', tut_step_fight:'Kampf',
+    tut_step_collect:'Sammeln', tut_step_portal:'Portal',
+    tut_wasd:'Benutze W A S D zum Bewegen!', tut_head_north:'Geh durch die Lücke nach Norden!', tut_gap:'Lücke',
+    tut_sprint_prompt:(k)=>`Halte ${k} zum Sprinten!`, tut_fast:'Schnell! Weiter so!',
+    tut_target:'Ziel', tut_attack_prompt:(k)=>`${k} zum Angreifen!`,
+    tut_approach:'Annähern und angreifen!', tut_keep_attacking:'Weiter angreifen!',
+    tut_collect_coins:(n)=>`Sammle alle Münzen! (${n} übrig)`,
+    tut_portal:'Portal', tut_enter_portal:'Betrete das Portal!',
+    tut_made_it:'Gut! Du hast es geschafft!', tut_fast2:'Schnell!',
+    tut_pest_eliminated:'Schädling besiegt! Gute Arbeit!',
+    tut_coins_collected:'Münzen gesammelt! Das Portal ist offen!',
+    tut_coins_left:(n)=>`${n} Münze${n===1?'':'n'} übrig!`,
+    tut_come_back_sprint:(k)=>`Komm zurück! Halte ${k} zum Sprinten!`,
+    tut_pest_north:'Komm zurück! Der Schädling ist im Norden!',
+    tut_defeat_first:'Besiege den Schädling zuerst! Geh nach Westen!',
+    tut_coins_east:'Die Münzen sind im Osten!',
+    tut_collect_north:'Komm zurück! Sammle die Münzen im Norden!',
+    tut_portal_north:'Das Portal ist im Norden! Komm zurück!',
+    tut_portal_east:'Das Portal ist im Osten!',
+  },
+};
+
+function t(key, ...args) {
+  const code = (languageSetting || 'English').slice(0, 2).toLowerCase();
+  const table = TRANSLATIONS[code] || TRANSLATIONS.en;
+  const val = (table[key] !== undefined ? table[key] : TRANSLATIONS.en[key]) ?? key;
+  return typeof val === 'function' ? val(...args) : val;
+}
+
 function buildLanguageSettings(ctx) {
-  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
+  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"], {
+    value: languageSetting,
+    onChange: v => { languageSetting = v; persistSavedSettings(); }
+  });
 }
 
 function createSettingsContext({ container }) {
