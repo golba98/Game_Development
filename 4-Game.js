@@ -43,19 +43,6 @@ let rippleTimer = 0;
 let transitionAlpha = 0;
 let isTransitioning = false;
 let currentLevel = 1;
-let hasShownWelcomeTutorial = (localStorage.getItem('hasShownWelcomeTutorial') === 'true');
-let isTutorialMap = (localStorage.getItem('tutorialComplete') !== 'true');
-let tutorialStep = 0;
-let tutorialMoved = false;
-let tutorialAttacked = false;
-let tutorialCollected = false;
-let tutorialStepTimer = 0;
-let tutorialSprintDetected = false;
-let tutorialHitLanded = false;
-let tutorialCoinSnapshot = 0;
-let tutorialMessage = '';
-let tutorialMessageTimer = 0;
-let tutorialArrowBlink = 0;
 
 if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
   const canvasProto = HTMLCanvasElement.prototype;
@@ -123,19 +110,6 @@ const SETTINGS_CATEGORIES = Object.freeze(["Audio", "Gameplay", "Controls", "Acc
 const DEFAULT_SETTINGS = Object.freeze({
   masterVol: 0.8, musicVol: 0.6, sfxVol: 0.7, textSize: 75, difficulty: 'normal'
 });
-
-const DEFAULT_CONTROLS = Object.freeze({
-  UP:    { key: 'W', code: 87 },
-  DOWN:  { key: 'S', code: 83 },
-  LEFT:  { key: 'A', code: 65 },
-  RIGHT: { key: 'D', code: 68 },
-  JUMP:  { key: ' ', code: 32 },
-  DASH:  { key: 'SHIFT', code: 16 },
-  ATTACK:{ key: 'MOUSE0', code: -1 }, // Special code for mouse
-  MENU:  { key: 'ESCAPE', code: 27 }
-});
-
-let userControls = JSON.parse(JSON.stringify(DEFAULT_CONTROLS));
 
 const ALLOW_ACTIVE_MAP_FETCH = false;
 
@@ -296,7 +270,7 @@ function completeLoadingProgress() {
 const CONTROL_VERTICAL_NUDGE = 8;
 const SELECT_VERTICAL_NUDGE = 15;
 const TEXTSIZE_BUTTON_Y_OFFSET = 10;
-const BACK_BUTTON_VERTICAL_OFFSET = 0;
+const BACK_BUTTON_VERTICAL_OFFSET = 120;
 
 let genPhase = 0;      
 let genTimer = 0;    
@@ -708,11 +682,6 @@ function setup() {
     const runAutoGenerator = () => { generateMap(); };
 
     serverFetchPromise.then((serverLoaded) => {
-      if (isTutorialMap) {
-          verboseLog('[game] Tutorial map active, bypassing server and local saves.');
-          runAutoGenerator();
-          return;
-      }
       if (serverLoaded) {
          if (persistentGameId && persistentGameId.startsWith('server_default_')) {
              runAutoGenerator();
@@ -744,17 +713,6 @@ function setup() {
   
   if (gameMusic) gameMusic.setVolume(musicVol * masterVol);
   if (pendingGameActivated) { try { _confirmResize(); pendingGameActivated = false; } catch (e) {} }
-
-  // Safety: if the map still hasn't loaded after 6s, force the loading overlay off
-  // and attempt map generation. This prevents a permanent black screen.
-  setTimeout(() => {
-    if (!mapLoadComplete) {
-      console.warn('[game] Safety timeout: map still not loaded after 6s. Forcing generation.');
-      try { generateMap(); } catch (e) { console.warn('[game] safety generateMap failed', e); }
-      showLoadingOverlay = false;
-      mapLoadComplete = true;
-    }
-  }, 6000);
 }
 
 function windowResized() {
@@ -866,11 +824,6 @@ function mousePressed() {
   // Ensure keyboard focus is on this window for WASD input
   try { window.focus(); } catch (e) {}
 
-  if (activeTutorial && !isTerminalOpen) {
-      activeTutorial = null;
-      return;
-  }
-
   if (isTerminalOpen) return;
   if (isGameOver) return;
   
@@ -886,7 +839,7 @@ function mousePressed() {
     const mx = mouseX / gameScale;
     const my = mouseY / gameScale;
 
-    if (userControls.ATTACK.key === 'MOUSE0' && mouseButton === LEFT) {
+    if (mouseButton === LEFT) {
         startPlayerAttack();
     }
     
@@ -939,19 +892,15 @@ function createTerminalUI() {
     terminalEl = document.createElement('div');
     terminalEl.id = 'game-terminal';
     terminalEl.innerHTML = `
-        <div id="terminal-header">
-            <span id="terminal-title">SYSTEM COMMAND INTERFACE</span>
-            <span id="terminal-close">ESC to Close</span>
-        </div>
         <div id="terminal-history">
             <div class="terminal-log">CORE OS [Version 1.0.42]</div>
             <div class="terminal-log">Initializing secure connection... OK.</div>
             <div class="terminal-log">Welcome back, Administrator.</div>
-            <div class="terminal-log terminal-hint">Tip: Use Up/Down arrows to cycle history.</div>
+            <div class="terminal-log terminal-hint">Tip: Use Up/Down arrows to cycle history. Press ESC to close.</div>
         </div>
         <div id="terminal-input-row">
-            <span id="terminal-prompt">></span>
-            <input type="text" id="terminal-input" spellcheck="false" autocomplete="off" placeholder="Enter command...">
+            <span id="terminal-prompt">SYS_ADMIN@GAME:~$</span>
+            <input type="text" id="terminal-input" spellcheck="false" autocomplete="off">
         </div>
     `;
     document.body.appendChild(terminalEl);
@@ -993,23 +942,19 @@ function createTerminalUI() {
     });
 }
 
-function terminalLog(msg, type = '', isHTML = false) {
-    const history = document.getElementById('terminal-history');
-    if (!history) return;
-    const div = document.createElement('div');
-    div.className = 'terminal-log ' + type;
-    if (isHTML) {
-        div.innerHTML = msg;
-    } else {
-        div.textContent = msg;
-    }
-    history.appendChild(div);
-    history.scrollTop = history.scrollHeight;
-}
-
 function processTerminalCommand(cmd) {
     const history = document.getElementById('terminal-history');
-    if (!history) return;
+    const log = (msg, type = '', isHTML = false) => {
+        const div = document.createElement('div');
+        div.className = 'terminal-log ' + type;
+        if (isHTML) {
+            div.innerHTML = msg;
+        } else {
+            div.textContent = msg;
+        }
+        history.appendChild(div);
+        history.scrollTop = history.scrollHeight;
+    };
 
     // Safely log the command by using textContent on a prefix span
     const cmdLine = document.createElement('div');
@@ -1027,13 +972,13 @@ function processTerminalCommand(cmd) {
         if (enemies && enemies.length > 0) {
             const count = enemies.length;
             enemies = [];
-            terminalLog(`SUCCESS: ${count} neural signatures purged from local grid.`, 'terminal-success');
+            log(`SUCCESS: ${count} neural signatures purged from local grid.`, 'terminal-success');
         } else {
-            terminalLog('NOTICE: Scan complete. No enemy signatures detected.', 'terminal-log');
+            log('NOTICE: Scan complete. No enemy signatures detected.', 'terminal-log');
         }
     } else if (base === '/collect' && parts[1] === 'all') {
         if (!mapStates) {
-            terminalLog('ERROR: Neural map not initialized.', 'terminal-error');
+            log('ERROR: Neural map not initialized.', 'terminal-error');
         } else {
             let collected = 0;
             for (let i = 0; i < mapStates.length; i++) {
@@ -1042,22 +987,23 @@ function processTerminalCommand(cmd) {
                     mapStates[i] = underlyingTerrain;
                     playerScore += 10;
                     collected++;
+                    // Optional: Redraw only if necessary, but for /collect all we can just rebuild mapImage once
                 }
             }
             if (collected > 0) {
                 lastScoreChange = millis();
-                createMapImage(logicalW, logicalH);
-                terminalLog(`SUCCESS: ${collected} gold units sequestered into player storage.`, 'terminal-success');
+                createMapImage(logicalW, logicalH); // Refresh the whole map image
+                log(`SUCCESS: ${collected} gold units sequestered into player storage.`, 'terminal-success');
             } else {
-                terminalLog('NOTICE: No loose currency detected on current grid.', 'terminal-log');
+                log('NOTICE: No loose currency detected on current grid.', 'terminal-log');
             }
         }
     } else if (base === '/scan' && parts[1] === 'boss') {
         const boss = (enemies || []).find(e => e.type === 'beetle');
         if (boss) {
-            terminalLog(`CRITICAL THREAT DETECTED: [Beetle Boss] status: ACTIVE, health: ${Math.floor(boss.health)}/${boss.maxHealth}`, 'terminal-error');
+            log(`CRITICAL THREAT DETECTED: [Beetle Boss] status: ACTIVE, health: ${Math.floor(boss.health)}/${boss.maxHealth}`, 'terminal-error');
         } else {
-            terminalLog('NOTICE: No elite signatures detected in current sector.', 'terminal-log');
+            log('NOTICE: No elite signatures detected in current sector.', 'terminal-log');
         }
     } else if (base === '/locate' && parts[1] === 'boss') {
         const boss = (enemies || []).find(e => e.type === 'beetle');
@@ -1065,9 +1011,9 @@ function processTerminalCommand(cmd) {
             const dx = Math.floor(boss.x - playerPosition.x);
             const dy = Math.floor(boss.y - playerPosition.y);
             const distStr = Math.sqrt(dx*dx + dy*dy).toFixed(1);
-            terminalLog(`SIGNAL STRENGTH: Boss coordinates confirmed. Sector: [${Math.floor(boss.x)}, ${Math.floor(boss.y)}]. Distance: ${distStr}m.`, 'terminal-success');
+            log(`SIGNAL STRENGTH: Boss coordinates confirmed. Sector: [${Math.floor(boss.x)}, ${Math.floor(boss.y)}]. Distance: ${distStr}m.`, 'terminal-success');
         } else {
-            terminalLog('ERROR: Unable to lock on. No boss signature found.', 'terminal-error');
+            log('ERROR: Unable to lock on. No boss signature found.', 'terminal-error');
         }
     } else if (base === '/spawn' && parts[1] === 'boss') {
         const angle = Math.random() * TWO_PI;
@@ -1075,51 +1021,22 @@ function processTerminalCommand(cmd) {
         const ex = Math.floor(playerPosition.x + Math.cos(angle) * dist);
         const ey = Math.floor(playerPosition.y + Math.sin(angle) * dist);
         spawnEnemy('beetle', ex, ey);
-        terminalLog(`CRITICAL: Boss Beetle signature forced into local grid at [${ex}, ${ey}].`, 'terminal-error');
-    } else if (base === '/tutorial') {
-        if (parts[1] === 'reset') {
-            hasShownWelcomeTutorial = false;
-            isTutorialMap = true;
-            tutorialStep = 0;
-            tutorialMoved = false; tutorialAttacked = false; tutorialCollected = false;
-            tutorialSprintDetected = false; tutorialHitLanded = false; tutorialStepTimer = 0;
-            tutorialMessage = ''; tutorialMessageTimer = 0;
-            localStorage.setItem('hasShownWelcomeTutorial', 'false');
-            localStorage.setItem('tutorialComplete', 'false');
-            terminalLog('SUCCESS: Tutorial state reset. Loading Training Glade...', 'terminal-success');
-            generateMap();
-        } else if (parts[1] === 'welcome') {
-            hasShownWelcomeTutorial = false;
-            isTutorialMap = true;
-            tutorialStep = 0;
-            tutorialMoved = false; tutorialAttacked = false; tutorialCollected = false;
-            tutorialSprintDetected = false; tutorialHitLanded = false; tutorialStepTimer = 0;
-            tutorialMessage = ''; tutorialMessageTimer = 0;
-            localStorage.setItem('hasShownWelcomeTutorial', 'false');
-            localStorage.setItem('tutorialComplete', 'false');
-            terminalLog('SUCCESS: Welcome protocol reset. Loading Training Glade...', 'terminal-success');
-            generateMap();
-        }
- else {
-            terminalLog('USAGE: /tutorial [welcome|reset]', 'terminal-log');
-        }
+        log(`CRITICAL: Boss Beetle signature forced into local grid at [${ex}, ${ey}].`, 'terminal-error');
     } else if (base === '/help') {
-        terminalLog('SYSTEM COMMANDS:');
-        terminalLog('  /kill all    - Wipe all enemies.', '', true);
-        terminalLog('  /collect all - Collect all coins.', '', true);
-        terminalLog('  /scan boss   - Check boss status.', '', true);
-        terminalLog('  /locate boss - Find boss position.', '', true);
-        terminalLog('  /spawn boss  - Force boss spawn.', '', true);
-        terminalLog('  /tutorial welcome - Show tutorial.', '', true);
-        terminalLog('  /tutorial reset   - Reset tutorial.', '', true);
-        terminalLog('  /clear       - Clear history.', '', true);
-        terminalLog('  /exit        - Close console.', '', true);
+        log('SYSTEM COMMANDS:');
+        log('  <span style="color:#fff">/kill all</span>    - Wipe all enemies.');
+        log('  <span style="color:#fff">/collect all</span> - Collect all coins on the map.');
+        log('  <span style="color:#fff">/scan boss</span>   - Check for active boss signatures.');
+        log('  <span style="color:#fff">/locate boss</span> - Get precise boss coordinates.');
+        log('  <span style="color:#fff">/spawn boss</span>  - Force a boss beetle to spawn near you.');
+        log('  <span style="color:#fff">/clear</span>       - Wipe terminal log history.');
+        log('  <span style="color:#fff">/exit</span>        - Disconnect from console.');
     } else if (base === '/clear') {
         history.innerHTML = '<div class="terminal-log">History cleared.</div>';
     } else if (base === '/exit') {
         toggleTerminal();
     } else {
-        terminalLog(`ERROR: Unknown command sequence "${base}".`, 'terminal-error');
+        log(`ERROR: Unknown command sequence "${base}".`, 'terminal-error');
     }
 }
 
@@ -1128,15 +1045,10 @@ function keyPressed() {
       toggleTerminal();
       return false;
   }
-
-  if (activeTutorial && !isTerminalOpen) {
-      activeTutorial = null;
-      return false;
-  }
-
   if (isTerminalOpen) return; // Disable other inputs while terminal is open
 
-  if (keyCode === userControls.JUMP.code && !isJumping && !isMoving) {
+  if (isGameOver) return;
+  if (key === ' ' && !isJumping && !isMoving) {
     
     isJumping = true;
     jumpFrame = 0;
@@ -1144,10 +1056,10 @@ function keyPressed() {
 
     
     try {
-      const nowA = keyIsDown(userControls.LEFT.code);
-      const nowD = keyIsDown(userControls.RIGHT.code);
-      const nowW = keyIsDown(userControls.UP.code);
-      const nowS = keyIsDown(userControls.DOWN.code);
+      const nowA = (typeof keyIsDown === 'function') ? keyIsDown(65) : false;
+      const nowD = (typeof keyIsDown === 'function') ? keyIsDown(68) : false;
+      const nowW = (typeof keyIsDown === 'function') ? keyIsDown(87) : false;
+      const nowS = (typeof keyIsDown === 'function') ? keyIsDown(83) : false;
       const dx = (nowD ? 1 : 0) - (nowA ? 1 : 0);
       const dy = (nowS ? 1 : 0) - (nowW ? 1 : 0);
       
@@ -1181,6 +1093,7 @@ function keyPressed() {
     } catch (e) { console.warn('[game] jump-forward movement failed', e); }
     return;
   }
+  if (key === 'Escape' || keyCode === 27) { togglePauseMenuFromEscape(); return false; }
 
   if (key === 'm' || key === 'M') {
       showMinimap = !showMinimap;
@@ -1249,104 +1162,24 @@ function keyPressed() {
 }
 
 
-function _dummy() {}
+try {
+  window.addEventListener('keydown', (ev) => {
+    if (ev && ev.key === 'Escape') {
+      ev.preventDefault();
+      togglePauseMenuFromEscape();
+    }
+  }, { capture: true });
+} catch (e) {
+  console.warn('[game] failed to attach global Escape handler', e);
+}
 
 
 
 function generateMap() {
-    genPhase = 0; // Stop any ongoing map generation
-    clearPreviousGameState();
-
-    isTutorialMap = (localStorage.getItem('tutorialComplete') !== 'true');
-
-    if (isTutorialMap) {
-        loadTutorialMap();
-        return;
-    }
-
-    genPhase = 1;
-
-    if (!hasShownWelcomeTutorial && currentLevel === 1) {
-        showTutorial('welcome');
-        hasShownWelcomeTutorial = true;
-        localStorage.setItem('hasShownWelcomeTutorial', 'true');
-    }
+  clearPreviousGameState();
+  genPhase = 1;
 }
-function loadTutorialMap() {
-    verboseLog('[game] Loading Tutorial Map...');
-  try {
-    logicalW = 20;
-    logicalH = 20;
-    mapStates = new Uint8Array(logicalW * logicalH);
-    terrainLayer = new Uint8Array(logicalW * logicalH);
 
-    const W = logicalW, H = logicalH;
-    const _s = (x, y, t) => { mapStates[y * W + x] = t; };
-
-    // ── 1. Fill with Grass, fence the border ──
-    for (let i = 0; i < mapStates.length; i++) {
-        const x = i % W, y = Math.floor(i / W);
-        mapStates[i] = (x === 0 || x === W-1 || y === 0 || y === H-1)
-            ? TILE_TYPES.FOREST : TILE_TYPES.GRASS;
-    }
-
-    // ── 2. Internal Zone Walls ──
-    // Vertical wall x=10 from y=10 down to border (separates bottom halves)
-    for (let y = 10; y < H; y++) _s(10, y, TILE_TYPES.FOREST);
-    // Horizontal wall y=10 across full width (separates top from bottom)
-    for (let x = 0; x < W; x++) _s(x, 10, TILE_TYPES.FOREST);
-    // Gaps: north passage at x=5 and x=15
-    _s(5, 10, TILE_TYPES.GRASS);
-    _s(15, 10, TILE_TYPES.GRASS);
-
-    // (Decorative flowers are handled by spawnDecorativeObjects() in createMapImage)
-
-    // ── 6. Snapshot terrain BEFORE placing items/coins ──
-    // This prevents coins from "respawning" when collected
-    terrainLayer = mapStates.slice();
-
-    // ── 7. Spawns ──
-    playerPosition = { x: 3, y: 15 };
-    initialSpawnPosition = { x: 3, y: 15 };
-
-    // Training Dummy (Passive Beetle)
-    const dummy = createBeetle(5, 5);
-    dummy.aggro = false;
-    dummy.health = 5;
-    enemies.push(dummy);
-
-    // Coins (placed AFTER terrainLayer snapshot so terrain underneath is GRASS)
-    _s(15, 5, TILE_TYPES.COIN);
-    _s(16, 4, TILE_TYPES.COIN);
-    _s(14, 6, TILE_TYPES.COIN);
-
-    // Portal (Top Right)
-    portalPos = { x: 17, y: 3 };
-    isPortalActive = false;
-
-    // ── 8. Reset tutorial state ──
-    tutorialStep = 0;
-    tutorialMoved = false; tutorialAttacked = false; tutorialCollected = false;
-    tutorialSprintDetected = false; tutorialHitLanded = false;
-    tutorialStepTimer = 0; tutorialCoinSnapshot = 3;
-    tutorialMessage = ''; tutorialMessageTimer = 0; tutorialArrowBlink = 0;
-
-    renderX = playerPosition.x; renderY = playerPosition.y;
-    renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY;
-
-    smoothCamX = playerPosition.x * cellSize - (width || 640)/2;
-    smoothCamY = playerPosition.y * cellSize - (height || 480)/2;
-
-    createMapImage();
-    verboseLog('[game] Tutorial Map Ready.');
-  } catch (e) {
-    console.warn('[game] loadTutorialMap error:', e);
-  } finally {
-    showLoadingOverlay = false;
-    mapLoadComplete = true;
-    completeLoadingProgress();
-  }
-}
 function generateMap_Part1() {
   verboseLog('[game] Generating Part 1 (Base)...');
 
@@ -2078,10 +1911,7 @@ function tryFetchActiveMap() {
         }
         return resp.json().then(obj => {
           try { 
-              if (isTutorialMap || localStorage.getItem('tutorialComplete') !== 'true') {
-                  verboseLog('[game] tryFetchActiveMap: Ignoring server map because tutorial is active.');
-                  return false;
-              }
+             
               const success = applyLoadedMap(obj); 
               if (success) {
                   verboseLog('[game] tryFetchActiveMap: Successfully applied map from server.');
@@ -2181,10 +2011,6 @@ function applyLoadedMap(obj) {
 }
 
 function loadMapFromStorage() {
-  if (isTutorialMap) {
-      verboseLog('[game] tutorial map is active, ignoring stored maps.');
-      return false;
-  }
   if (isNewGame) {
     verboseLog('[game] new game detected, ignoring stored maps and generating a new one.');
     return false;
@@ -2885,19 +2711,17 @@ function spawnDecorativeObjects() {
     }
   }
 
-  if (!isTutorialMap) {
-    const anchorX = Math.max(0, Math.min(logicalW - 1, Math.floor(logicalW / 2)));
-    const anchorY = Math.max(0, Math.min(logicalH - 1, Math.floor(logicalH / 2)));
-    const holeCandidates = grassTiles.slice().sort((a, b) => {
-      return (Math.hypot(a.x - anchorX, a.y - anchorY) - Math.hypot(b.x - anchorX, b.y - anchorY));
-    });
-    for (const tile of holeCandidates) {
-      const idx = tile.y * logicalW + tile.x;
-      if (occupied.has(idx)) continue;
-      decorativeObjects.push({ id: DECOR_SPECIAL_NAMES[0], type: 'special', tileX: tile.x, tileY: tile.y });
-      occupied.add(idx);
-      break;
-    }
+  const anchorX = Math.max(0, Math.min(logicalW - 1, Math.floor(logicalW / 2)));
+  const anchorY = Math.max(0, Math.min(logicalH - 1, Math.floor(logicalH / 2)));
+  const holeCandidates = grassTiles.slice().sort((a, b) => {
+    return (Math.hypot(a.x - anchorX, a.y - anchorY) - Math.hypot(b.x - anchorX, b.y - anchorY));
+  });
+  for (const tile of holeCandidates) {
+    const idx = tile.y * logicalW + tile.x;
+    if (occupied.has(idx)) continue;
+    decorativeObjects.push({ id: DECOR_SPECIAL_NAMES[0], type: 'special', tileX: tile.x, tileY: tile.y });
+    occupied.add(idx);
+    break;
   }
 }
 
@@ -2951,9 +2775,8 @@ function createBeetle(startX, startY) {
     lastDist: 0,
 
     update: function() {
-      if (!this.aggro) return;
       const now = millis();
-      const dt = gameDelta || 16.6;
+      const dt = gameDelta || 16.6; 
       const targetX = playerPosition.x;
       const targetY = playerPosition.y;
       const d = dist(this.x, this.y, targetX, targetY);
@@ -3126,8 +2949,8 @@ function createBeetle(startX, startY) {
         frameCount = 6;
         frame = Math.min(this.attackFrame, 5);
         if (this.direction === 'S') row = 0;
-        else if (this.direction === 'W') row = 1;
-        else if (this.direction === 'E') row = 2;
+        else if (this.direction === 'E') row = 1;
+        else if (this.direction === 'W') row = 2;
         else if (this.direction === 'N') row = 3;
         // Fallback to move sprite if attack sprite didn't load
         if (!sprite) {
@@ -3142,8 +2965,8 @@ function createBeetle(startX, startY) {
         else frame = 0;
 
         if (this.direction === 'S') row = 0;
-        else if (this.direction === 'W') row = 1;
-        else if (this.direction === 'E') row = 2;
+        else if (this.direction === 'E') row = 1;
+        else if (this.direction === 'W') row = 2;
         else if (this.direction === 'N') row = 3;
       }
 
@@ -3437,8 +3260,8 @@ function createMantis(startX, startY) {
         
         let row = 0;
         if (this.direction === 'S') row = 0;
-        else if (this.direction === 'W') row = 1;
-        else if (this.direction === 'E') row = 2;
+        else if (this.direction === 'E') row = 1;
+        else if (this.direction === 'W') row = 2;
         else if (this.direction === 'N') row = 3;
         
         const fw = sprite.width / cols;
@@ -3995,11 +3818,11 @@ function handleMovement() {
   }
 
   if (isJumping || (isMoving && (millis() - lastMoveTime < getActiveMoveCooldownMs()))) return;
-  const nowA = keyIsDown(userControls.LEFT.code);
-  const nowD = keyIsDown(userControls.RIGHT.code);
-  const nowW = keyIsDown(userControls.UP.code);
-  const nowS = keyIsDown(userControls.DOWN.code);
-  const shiftHeld = keyIsDown(userControls.DASH.code);
+  const nowA = keyIsDown(65);
+  const nowD = keyIsDown(68);
+  const nowW = keyIsDown(87);
+  const nowS = keyIsDown(83);
+  const shiftHeld = keyIsDown(16);
   const now = millis();
 
   // Dash trigger
@@ -4036,18 +3859,10 @@ function handleMovement() {
   const D_trig = keyTriggered(nowD, prevKeyD, holdState.D);
   const W_trig = keyTriggered(nowW, prevKeyW, holdState.W);
   const S_trig = keyTriggered(nowS, prevKeyS, holdState.S);
-  
   if (A_trig) { facing = 'left'; targetX--; moved = true; }
   else if (D_trig) { facing = 'right'; targetX++; moved = true; }
-  
-  // INVERT Y AXIS LOGIC
-  if (invertYAxis) {
-    if (W_trig) { targetY++; moved = true; }
-    else if (S_trig) { targetY--; moved = true; }
-  } else {
-    if (W_trig) { targetY--; moved = true; }
-    else if (S_trig) { targetY++; moved = true; }
-  }
+  if (W_trig) { targetY--; moved = true; }
+  else if (S_trig) { targetY++; moved = true; }
   if (targetX < 0) targetX = 0;
   if (targetY < 0) targetY = 0;
   if (targetX > maxTileX) targetX = maxTileX;
@@ -4082,15 +3897,10 @@ function tryMoveDirection(keyChar) {
   const k = keyChar ? keyChar.toUpperCase() : '';
   let targetX = playerPosition.x;
   let targetY = playerPosition.y;
-  
-  if (k === userControls.LEFT.key) { facing = 'left'; targetX--; }
-  else if (k === userControls.RIGHT.key) { facing = 'right'; targetX++; }
-  else if (k === userControls.UP.key) { 
-    if (invertYAxis) targetY++; else targetY--; 
-  }
-  else if (k === userControls.DOWN.key) { 
-    if (invertYAxis) targetY--; else targetY++; 
-  }
+  if (k === 'A') { facing = 'left'; targetX--; }
+  else if (k === 'D') { facing = 'right'; targetX++; }
+  else if (k === 'W') { targetY--; }
+  else if (k === 'S') { targetY++; }
   else return;
   const maxTileX = (logicalW || 0) - 1;
   const maxTileY = (logicalH || 0) - 1;
@@ -4318,7 +4128,7 @@ function updateMovementInterpolation() {
 
 function updateSprintState() {
   const now = millis();
-  const shiftHeld = keyIsDown(userControls.DASH.code);
+  const shiftHeld = keyIsDown(16);
 
   if (typeof sprintLastUpdate !== 'number' || sprintLastUpdate <= 0) sprintLastUpdate = now;
   const dt = Math.max(0, now - sprintLastUpdate);
@@ -4364,9 +4174,7 @@ function getActiveMoveDurationMs() {
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
     multiplier = 1.5;
   }
-  // Apply sensitivity (1-10 range, default 5 = 1.0x)
-  const sensitivityFactor = map(sensitivitySetting, 1, 10, 1.5, 0.5);
-  return Math.max(1, Math.round(base * multiplier * getCellSizeSpeedScale() * sensitivityFactor));
+  return Math.max(1, Math.round(base * multiplier * getCellSizeSpeedScale()));
 }
 
 function getActiveMoveCooldownMs() {
@@ -4375,8 +4183,7 @@ function getActiveMoveCooldownMs() {
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
     multiplier = 1.5;
   }
-  const sensitivityFactor = map(sensitivitySetting, 1, 10, 1.5, 0.5);
-  return Math.max(0, Math.round(base * multiplier * getCellSizeSpeedScale() * sensitivityFactor));
+  return Math.max(0, Math.round(base * multiplier * getCellSizeSpeedScale()));
 }
 
 function getCellSizeSpeedScale() {
@@ -4395,10 +4202,10 @@ function drawPlayer() {
 }
 
 function _drawPlayerInternal() {
-  const inputLeft  = keyIsDown && keyIsDown(userControls.LEFT.code);
-  const inputRight = keyIsDown && keyIsDown(userControls.RIGHT.code);
-  const inputUp    = keyIsDown && keyIsDown(userControls.UP.code);
-  const inputDown  = keyIsDown && keyIsDown(userControls.DOWN.code);
+  const inputLeft  = keyIsDown && keyIsDown(65);
+  const inputRight = keyIsDown && keyIsDown(68);
+  const inputUp    = keyIsDown && keyIsDown(87);
+  const inputDown  = keyIsDown && keyIsDown(83);
   const inputWalking = !!(inputLeft || inputRight || inputUp || inputDown);
   const drawTileX = isMoving ? renderX : playerPosition.x;
   const drawTileY = isMoving ? renderY : playerPosition.y;
@@ -4550,9 +4357,9 @@ function _drawPlayerInternal() {
                     mapStates[idx] = TILE_TYPES.GRASS;
                     spawnDamageText("✂", cutX, cutY, [100, 255, 100]);
                     
-                    // 15% chance to drop a coin or heart (disabled in tutorial)
+                    // 15% chance to drop a coin or heart
                     const lootRoll = Math.random();
-                    if (lootRoll < 0.1 && !isTutorialMap) {
+                    if (lootRoll < 0.1) {
                         mapStates[idx] = TILE_TYPES.COIN;
                     } else if (lootRoll < 0.15) {
                         mapStates[idx] = TILE_TYPES.HEALTH;
@@ -5147,12 +4954,8 @@ function startLevelTransition() {
   if (isTransitioning) return;
   isTransitioning = true;
   transitionAlpha = 0;
-
-  if (isTutorialMap) {
-    try { showToast('Training Complete! Entering the Forest...', 'info', 4000); } catch(e) {}
-  } else {
-    try { showToast(`Level ${currentLevel} Clear! Entering Level ${currentLevel + 1}...`, 'info', 4000); } catch(e) {}
-  }
+  
+  try { showToast(`Level ${currentLevel} Clear! Entering Level ${currentLevel + 1}...`, 'info', 4000); } catch(e) {}
 }
 
 function handleTransitionLogic() {
@@ -5165,14 +4968,7 @@ function handleTransitionLogic() {
       transitionAlpha = Math.min(255, transitionAlpha + fadeSpeed);
       if (transitionAlpha === 255) {
           // At peak blackout, swap the world
-          if (isTutorialMap) {
-              isTutorialMap = false;
-              localStorage.setItem('tutorialComplete', 'true');
-              verboseLog('[tutorial] Tutorial complete! Transitioning to Level 1.');
-              currentLevel = 1;
-          } else {
-              currentLevel++;
-          }
+          currentLevel++;
           generateMap();
           // Reset player for the new world
           playerHealth = maxHealth;
@@ -5414,37 +5210,36 @@ function drawBossHealthBar() {
   const barW = 400;
   const barH = 20;
   const x = (vW - barW) / 2;
-  const y = 55; // Pushed down slightly from top
+  const y = 40;
 
   push();
-  
-  // Main Container (encloses text and bar)
-  fill(20, 20, 25, 220);
+  // Main Container
+  fill(0, 180);
   stroke(0);
   strokeWeight(4);
-  rect(x - 10, y - 35, barW + 20, barH + 45, 6);
+  rect(x - 5, y - 5, barW + 10, barH + 30, 4);
+
+  // Name
+  if (uiFont) textFont(uiFont);
+  fill(255, 50, 50);
+  noStroke();
+  textAlign(CENTER, BOTTOM);
+  gTextSize(18);
+  text("ELITE BEETLE ALPHA", x + barW/2, y - 8);
+
+  // Red Glow behind the bar
+  noStroke();
+  fill(255, 0, 0, 40);
+  rect(x, y, barW, barH);
 
   // Inner Border
   stroke(MENU_GOLD_BORDER);
   strokeWeight(2);
   noFill();
-  rect(x - 6, y - 31, barW + 12, barH + 37, 4);
-
-  // Name (drawn inside the container)
-  if (uiFont) textFont(uiFont);
-  fill(255, 50, 50);
-  noStroke();
-  textAlign(CENTER, TOP);
-  gTextSize(18);
-  text("ELITE BEETLE ALPHA", x + barW/2, y - 25);
-
-  // Red Glow behind the empty part of the bar
-  noStroke();
-  fill(255, 0, 0, 40);
-  rect(x, y, barW, barH);
+  rect(x - 2, y - 2, barW + 4, barH + 4, 2);
 
   // Health Fill
-  const hpPct = Math.max(0, boss.health / boss.maxHealth);
+  const hpPct = boss.health / boss.maxHealth;
   fill(200, 0, 0);
   noStroke();
   rect(x, y, barW * hpPct, barH);
@@ -5874,18 +5669,11 @@ function showSubSettings(label) {
   const labelX = panelLeft + paddingX;
   const controlX = panelLeft + panelW * 0.42;
   const controlWidth = panelRight - paddingX - controlX;
-  
-  let spacingY = panelH * 0.14;
-  let startY = cy - panelH / 2 + panelH * 0.18;
-
-  if (label === 'Controls') {
-    spacingY = panelH * 0.09;
-    startY = cy - panelH / 2 + panelH * 0.14;
-  }
+  const spacingY = panelH * 0.14;
 
   const ctx = createSettingsContext({
     labelX, controlX, controlWidth, panelH,
-    startY,
+    startY: cy - panelH / 2 + panelH * 0.18,
     spacingY
   });
 
@@ -6083,13 +5871,6 @@ let gameMusic;
 let masterVol = 0.8;
 let musicVol = 0.6;
 let sfxVol = 0.7;
-
-let sensitivitySetting = 5;
-let invertYAxis = false;
-let showTutorials = true;
-let showHUD = true;
-let languageSetting = 'English';
-let colorModeSetting = 'None';
 
 let pendingGameMusicStart = false;
 let gameMusicStarted = false;
@@ -6872,41 +6653,28 @@ function injectCustomStyles() {
       /* Game Terminal */
       #game-terminal {
         position: fixed;
-        top: -40%; 
+        top: -35%; /* Start hidden for animation */
         left: 0;
         width: 100%;
-        height: 40%;
-        background: rgba(15, 15, 20, 0.98);
-        backdrop-filter: blur(12px);
-        border-bottom: 3px solid #ffcc00;
+        height: 35%;
+        background: rgba(5, 15, 5, 0.85);
+        backdrop-filter: blur(8px);
+        border-bottom: 2px solid #00ff41;
         z-index: 200000;
         display: none;
         flex-direction: column;
-        padding: 0;
-        color: white;
-        font-family: 'MyFont', Courier, monospace;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+        padding: 15px;
+        color: #00ff41;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 16px;
+        box-shadow: 0 10px 30px rgba(0, 255, 65, 0.2);
         overflow: hidden;
         transition: top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
       }
       #game-terminal.open {
         top: 0;
         display: flex;
-      }
-      #terminal-header {
-        background: #ffcc00;
-        color: #000;
-        padding: 8px 20px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-weight: bold;
-        letter-spacing: 1px;
-        font-size: 14px;
-      }
-      #terminal-close {
-        opacity: 0.7;
-        font-size: 12px;
       }
       #game-terminal::after {
         content: " ";
@@ -6920,47 +6688,42 @@ function injectCustomStyles() {
       #terminal-history {
         flex: 1;
         overflow-y: auto;
-        margin: 0;
-        padding: 20px;
+        margin-bottom: 10px;
+        padding-right: 15px;
         scrollbar-width: thin;
-        scrollbar-color: #ffcc00 transparent;
-        font-size: 16px;
-        line-height: 1.4;
+        scrollbar-color: #00ff41 transparent;
       }
       #terminal-history::-webkit-scrollbar { width: 6px; }
-      #terminal-history::-webkit-scrollbar-thumb { background: #ffcc00; border-radius: 3px; }
-      
+      #terminal-history::-webkit-scrollbar-thumb { background: #00ff41; border-radius: 3px; }
       #terminal-input-row {
         display: flex;
         align-items: center;
-        border-top: 2px solid rgba(255,204,0,0.3);
-        padding: 15px 20px;
-        background: rgba(0,0,0,0.3);
+        border-top: 1px solid rgba(0, 255, 65, 0.2);
+        padding-top: 10px;
       }
       #terminal-prompt {
         margin-right: 12px;
-        color: #ffcc00;
+        white-space: nowrap;
+        color: #00ff41;
         font-weight: bold;
-        font-size: 20px;
+        opacity: 0.8;
       }
       #terminal-input {
         flex: 1;
         background: transparent;
         border: none;
         outline: none;
-        color: white;
+        color: #00ff41;
         font-family: inherit;
         font-size: 18px;
-      }
-      #terminal-input::placeholder {
-        color: rgba(255,255,255,0.2);
+        text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
       }
       .terminal-log {
-        margin-bottom: 6px;
-        color: rgba(255,255,255,0.9);
+        margin: 4px 0;
+        line-height: 1.4;
       }
-      .terminal-error { color: #ff4444; font-weight: bold; }
-      .terminal-success { color: #ffff00; font-weight: bold; text-shadow: 0 0 5px rgba(255,255,0,0.3); }
+      .terminal-error { color: #ff3333; text-shadow: 0 0 5px rgba(255, 51, 51, 0.5); }
+      .terminal-success { color: #33ff33; text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); }
       .terminal-hint { color: #888; font-style: italic; font-size: 12px; }
     `));
     document.head.appendChild(style);
@@ -7726,10 +7489,11 @@ function draw() {
       if (isPortalActive && portalPos && playerPosition) {
           const d = dist(playerPosition.x, playerPosition.y, portalPos.x, portalPos.y);
           if (d < 0.8) {
-              verboseLog('[game] Entered Portal! Initiating transition.');
+              verboseLog('[game] Entered Portal! Generating next map.');
               isPortalActive = false;
               victoryShown = false;
-              startLevelTransition();
+              generateMap(); // Create a whole new world
+              try { showToast('World Cleared! Traveling to next area...', 'info', 3500); } catch(e) {}
           }
       }
     }
@@ -7947,7 +7711,6 @@ function draw() {
               radius: 300 + Math.sin(millis() / 200) * 10 // Breathing light effect
           });
       }
-       
       // Add lights from VFX (like fireflies)
       if (vfx && vfx.length) {
           for (const effect of vfx) {
@@ -8072,438 +7835,6 @@ function draw() {
     pop();
   }
 
-  if (showHUD) {
-    drawHUD();
-  }
-
-  handleTutorialLogic();
-  drawTutorial();
-
-  if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
-
-  pop(); // End Top level Push
-
-  drawVignette();
-
-  handleTransitionLogic();
-  if (isTransitioning) {
-      fill(0, transitionAlpha);
-      noStroke();
-      rect(0, 0, width, height);
-  }
-}
-
-let activeTutorial = null;
-
-function showTutorial(id) {
-  if (!showTutorials) return;
-  const tutorials = {
-    'welcome': {
-      title: 'WELCOME TO THE GRID',
-      lines: [
-        `• ${userControls.UP.key}${userControls.LEFT.key}${userControls.DOWN.key}${userControls.RIGHT.key}: Move`,
-        `• ${userControls.DASH.key === 'SHIFT' ? 'SHIFT' : userControls.DASH.key} (Hold): Sprint`,
-        `• ${userControls.JUMP.key === ' ' ? 'SPACE' : userControls.JUMP.key}: Jump over obstacles`,
-        `• ${userControls.ATTACK.key === 'MOUSE0' ? 'LEFT CLICK' : userControls.ATTACK.key}: Attack`,
-        '• [1] / [2]: Use Inventory Items',
-        '',
-        'OBJECTIVE:',
-        'Clear all ENEMIES and collect all COINS',
-        'to activate the PORTAL!'
-      ]
-    }
-  };
-  activeTutorial = tutorials[id] || null;
-  if (activeTutorial) {
-      verboseLog('[game] showing tutorial:', id);
-  }
-}
-
-function handleTutorialLogic() {
-    if (!isTutorialMap) return;
-    if (!playerPosition) return;
-
-    const pX = playerPosition.x;
-    const pY = playerPosition.y;
-    const dt = gameDelta || 16.67;
-    tutorialStepTimer += dt;
-    tutorialArrowBlink += dt;
-
-    // Decay temporary messages
-    if (tutorialMessageTimer > 0) {
-        tutorialMessageTimer -= dt;
-        if (tutorialMessageTimer <= 0) { tutorialMessage = ''; tutorialMessageTimer = 0; }
-    }
-
-    // ── Step 0: MOVEMENT ──
-    // Player starts at (3,15). Learn WASD. Head north through gap at (5,10).
-    if (tutorialStep === 0) {
-        if (pX !== 3 || pY !== 15) tutorialMoved = true;
-        // Transition: player crossed into the top zone (y < 10)
-        if (pY < 10) {
-            _advanceTutorial(1, 'Nice! You made it through!');
-        }
-    }
-    // ── Step 1: SPRINT ──
-    // Brief sprint lesson in the top zone
-    else if (tutorialStep === 1) {
-        if (sprintActive) tutorialSprintDetected = true;
-        // Auto-advance after sprinting or after 6 seconds
-        if (tutorialSprintDetected || tutorialStepTimer > 6000) {
-            _advanceTutorial(2, tutorialSprintDetected ? 'Fast!' : '');
-        }
-        // Warn if player goes back south
-        if (pY >= 10) {
-            _setTutorialMsg('Come back up! Hold ' + _sprintKeyLabel() + ' to sprint!', 2500);
-        }
-    }
-    // ── Step 2: COMBAT ──
-    // Kill the beetle at (5,5)
-    else if (tutorialStep === 2) {
-        if (isAttacking && !tutorialHitLanded) tutorialAttacked = true;
-        // Detect hit: beetle health went down (checked via enemies array)
-        if (enemies.length > 0 && enemies[0].health < (enemies[0].maxHealth || 999)) {
-            tutorialHitLanded = true;
-        }
-        if (enemies.length === 0) {
-            _advanceTutorial(3, 'Pest eliminated! Good work!');
-        }
-        // Warn if player wanders to coin area without killing beetle
-        if (enemies.length > 0 && pX > 12 && pY < 10) {
-            _setTutorialMsg('Defeat the pest first! Head back West!', 2500);
-        }
-        // Warn if player goes back south
-        if (pY >= 10) {
-            _setTutorialMsg('Come back! The pest is to the North!', 2500);
-        }
-    }
-    // ── Step 3: COLLECT COINS ──
-    else if (tutorialStep === 3) {
-        const coinCount = _countCoins();
-        // Detect coin pickup
-        if (tutorialCoinSnapshot > 0 && coinCount < tutorialCoinSnapshot) {
-            const collected = tutorialCoinSnapshot - coinCount;
-            tutorialCoinSnapshot = coinCount;
-            if (coinCount > 0) {
-                _setTutorialMsg(coinCount + ' coin' + (coinCount > 1 ? 's' : '') + ' left!', 2000);
-            }
-        }
-        if (!hasAnyCoins()) {
-            isPortalActive = true;
-            _advanceTutorial(4, 'All coins collected! The Portal is open!');
-        }
-        // Warn if player goes back west to beetle zone
-        if (pX < 5 && pY < 10) {
-            _setTutorialMsg('The coins are to the East!', 2500);
-        }
-        // Warn if player goes south
-        if (pY >= 10) {
-            _setTutorialMsg('Come back! Collect the coins up North!', 2500);
-        }
-    }
-    // ── Step 4: ENTER PORTAL ──
-    else if (tutorialStep === 4) {
-        // Warn if player wanders far from portal
-        if (pY >= 10) {
-            _setTutorialMsg('The Portal is up North! Head back!', 2500);
-        } else if (pX < 8 && pY < 10) {
-            _setTutorialMsg('The Portal is to the East!', 2500);
-        }
-    }
-}
-
-// Helper: advance to next tutorial step with a celebration message
-function _advanceTutorial(nextStep, msg) {
-    tutorialStep = nextStep;
-    tutorialStepTimer = 0;
-    tutorialArrowBlink = 0;
-    if (msg) _setTutorialMsg(msg, 2500);
-    if (nextStep === 3) tutorialCoinSnapshot = _countCoins();
-    verboseLog('[tutorial] Advanced to step', nextStep);
-}
-
-// Helper: set a temporary floating message (throttled)
-function _setTutorialMsg(msg, durationMs) {
-    // Don't overwrite a message that's still showing (unless it's the same one)
-    if (tutorialMessageTimer > 500 && tutorialMessage !== msg) return;
-    tutorialMessage = msg;
-    tutorialMessageTimer = durationMs || 2500;
-}
-
-// Helper: count remaining coins on the map
-function _countCoins() {
-    if (!mapStates) return 0;
-    let c = 0;
-    for (let i = 0; i < mapStates.length; i++) {
-        if (mapStates[i] === TILE_TYPES.COIN) c++;
-    }
-    return c;
-}
-
-// Helper: get the sprint key label
-function _sprintKeyLabel() {
-    const k = userControls.DASH.key;
-    return k === 'SHIFT' ? 'SHIFT' : k;
-}
-
-// Helper: get the attack key label
-function _attackKeyLabel() {
-    const k = userControls.ATTACK.key;
-    return k === 'MOUSE0' ? 'LEFT CLICK' : k;
-}
-
-// ────────────────────────────────────────
-//  TUTORIAL RENDERING
-// ────────────────────────────────────────
-function drawTutorial() {
-    if (activeTutorial) {
-        drawLegacyTutorial();
-        return;
-    }
-    if (!isTutorialMap) return;
-    if (!playerPosition) return;
-
-    push();
-    const camX = Math.floor(smoothCamX || 0);
-    const camY = Math.floor(smoothCamY || 0);
-    const pX = playerPosition.x;
-    const pY = playerPosition.y;
-    const t = millis();
-
-    textAlign(CENTER, CENTER);
-    if (uiFont) textFont(uiFont);
-
-    // ── Tooltip: box with text above a world tile ──
-    const drawTooltip = (txt, tx, ty, opts) => {
-        const col = (opts && opts.color) || [255, 215, 0];
-        const sz = (opts && opts.size) || 20;
-        gTextSize(sz);
-        const px = tx * cellSize + cellSize / 2 - camX;
-        const py = ty * cellSize - 40 - camY + Math.sin(t * 0.004) * 5;
-        const tw = textWidth(txt) + 24;
-        const th = sz + 14;
-        fill(0, 0, 0, 180); noStroke();
-        rect(px - tw/2, py - th/2, tw, th, 6);
-        // Gold border
-        stroke(col[0], col[1], col[2], 120); strokeWeight(1);
-        rect(px - tw/2, py - th/2, tw, th, 6);
-        noStroke();
-        fill(col[0], col[1], col[2]);
-        text(txt, px, py);
-    };
-
-    // ── Tooltip anchored to player ──
-    const drawPlayerTooltip = (txt, opts) => {
-        const rX = isMoving ? renderX : pX;
-        const rY = isMoving ? renderY : pY;
-        drawTooltip(txt, rX, rY - 0.5, opts);
-    };
-
-    // ── Pulsing arrow pointing at a world tile ──
-    const drawArrow = (tx, ty, label) => {
-        const px = tx * cellSize + cellSize / 2 - camX;
-        const py = ty * cellSize - camY;
-        const bounce = Math.sin(t * 0.006) * 8;
-        const alpha = 180 + Math.sin(t * 0.008) * 75;
-
-        // Arrow triangle
-        push();
-        translate(px, py - 55 + bounce);
-        fill(255, 215, 0, alpha); noStroke();
-        triangle(0, 18, -10, 0, 10, 0);
-        // Label above
-        if (label) {
-            gTextSize(14);
-            const lw = textWidth(label) + 12;
-            fill(0, 0, 0, 160); noStroke();
-            rect(-lw/2, -26, lw, 20, 4);
-            fill(255, 215, 0, alpha);
-            text(label, 0, -16);
-        }
-        pop();
-    };
-
-    // ── Step list (left margin) ──
-    const stepNames = ['Move', 'Sprint', 'Fight', 'Collect', 'Portal'];
-    const totalSteps = stepNames.length;
-    const listX = 15;
-    const listY = 80;
-    const rowH = 22;
-    const panelW = 110;
-    const panelH = totalSteps * rowH + 16;
-
-    // Dark panel background
-    fill(0, 0, 0, 150); noStroke();
-    rect(listX, listY, panelW, panelH, 6);
-    stroke(255, 215, 0, 60); strokeWeight(1);
-    rect(listX, listY, panelW, panelH, 6);
-    noStroke();
-
-    for (let i = 0; i < totalSteps; i++) {
-        const sy = listY + 12 + i * rowH;
-        let icon, col;
-        if (i < tutorialStep) {
-            icon = '\u2713'; col = [100, 220, 100];
-        } else if (i === tutorialStep) {
-            icon = '\u25B6'; col = [255, 215, 0];
-        } else {
-            icon = '\u00B7'; col = [140, 140, 140];
-        }
-        gTextSize(13);
-        textAlign(LEFT, CENTER);
-        fill(col[0], col[1], col[2]);
-        text(icon + '  ' + stepNames[i], listX + 10, sy);
-    }
-    textAlign(CENTER, CENTER);
-
-    // ── Per-step guidance (suppressed when a warning message is active) ──
-    const warningActive = tutorialMessage && tutorialMessageTimer > 0;
-
-    if (tutorialStep === 0 && !warningActive) {
-        // Movement tutorial
-        const keys = userControls;
-        if (!tutorialMoved) {
-            drawPlayerTooltip('Use ' + keys.UP.key + keys.LEFT.key + keys.DOWN.key + keys.RIGHT.key + ' to move!');
-        } else {
-            drawPlayerTooltip('Head North through the gap!', { size: 18 });
-            drawArrow(5, 10, 'Gap');
-        }
-    }
-    else if (tutorialStep === 1 && !warningActive) {
-        if (!tutorialSprintDetected) {
-            drawPlayerTooltip('Hold ' + _sprintKeyLabel() + ' to Sprint!');
-            // Show stamina bar hint
-            gTextSize(14);
-            const hintTxt = 'Try sprinting around!';
-            const hw = textWidth(hintTxt) + 16;
-            const rX = (isMoving ? renderX : pX) * cellSize + cellSize/2 - camX;
-            const rY = (isMoving ? renderY : pY) * cellSize - camY - 80;
-            fill(0, 0, 0, 140); noStroke();
-            rect(rX - hw/2, rY - 10, hw, 22, 4);
-            fill(200, 200, 200);
-            text(hintTxt, rX, rY + 1);
-        } else {
-            drawPlayerTooltip('Fast! Keep going!', { color: [100, 255, 100] });
-        }
-    }
-    else if (tutorialStep === 2 && !warningActive) {
-        if (enemies.length > 0) {
-            const beetle = enemies[0];
-            drawArrow(beetle.x, beetle.y, 'Target');
-            if (!tutorialHitLanded) {
-                drawPlayerTooltip(_attackKeyLabel() + ' to Attack!');
-                // Extra hint near beetle
-                drawTooltip('Approach and attack!', beetle.x, beetle.y + 2, { size: 16, color: [255, 100, 100] });
-            } else {
-                drawPlayerTooltip('Keep attacking!', { color: [255, 150, 50] });
-            }
-        }
-    }
-    else if (tutorialStep === 3 && !warningActive) {
-        const coinCount = _countCoins();
-        if (coinCount > 0) {
-            drawPlayerTooltip('Collect all coins! (' + coinCount + ' left)', { size: 18 });
-            // Arrows on coin positions
-            if (mapStates) {
-                let shown = 0;
-                for (let i = 0; i < mapStates.length && shown < 3; i++) {
-                    if (mapStates[i] === TILE_TYPES.COIN) {
-                        const cx = i % logicalW;
-                        const cy = Math.floor(i / logicalW);
-                        drawArrow(cx, cy, null);
-                        shown++;
-                    }
-                }
-            }
-        }
-    }
-    else if (tutorialStep === 4 && !warningActive) {
-        if (portalPos) {
-            drawArrow(portalPos.x, portalPos.y, 'Portal');
-            drawPlayerTooltip('Enter the Portal!', { color: [100, 200, 255] });
-        }
-    }
-
-    // ── Floating message (celebration / warning) ──
-    if (tutorialMessage && tutorialMessageTimer > 0) {
-        const msgAlpha = Math.min(255, tutorialMessageTimer * 0.5);
-        gTextSize(26);
-        const mw = textWidth(tutorialMessage) + 30;
-        const mx = (virtualW || (width / gameScale)) / 2;
-        const my = (virtualH || (height / gameScale)) * 0.35 + Math.sin(t * 0.003) * 3;
-        fill(0, 0, 0, msgAlpha * 0.7); noStroke();
-        rect(mx - mw/2, my - 20, mw, 42, 8);
-        stroke(255, 215, 0, msgAlpha * 0.5); strokeWeight(1);
-        rect(mx - mw/2, my - 20, mw, 42, 8);
-        noStroke();
-        fill(255, 255, 255, msgAlpha);
-        text(tutorialMessage, mx, my);
-    }
-
-    pop();
-}
-
-function drawLegacyTutorial() {
-  if (!activeTutorial) return;
-
-  const vW = virtualW || (width / gameScale);
-  const vH = virtualH || (height / gameScale);
-  
-  const panelW = 450;
-  const panelH = 380;
-  const x = (vW - panelW) / 2;
-  const y = (vH - panelH) / 2;
-
-  push();
-  // Fade background
-  fill(0, 150);
-  noStroke();
-  rect(0, 0, vW, vH);
-
-  // Main Panel
-  if (BUTTON_BG) {
-      image(BUTTON_BG, x - 20, y - 20, panelW + 40, panelH + 40);
-  } else {
-      fill(20, 20, 25, 240);
-      stroke(0); strokeWeight(4);
-      rect(x - 10, y - 10, panelW + 20, panelH + 20, 8);
-  }
-  
-  // Gold Border
-  stroke(MENU_GOLD_BORDER);
-  strokeWeight(2); noFill();
-  rect(x - 5, y - 5, panelW + 10, panelH + 10, 4);
-
-  // Title
-  if (uiFont) textFont(uiFont);
-  fill(255, 215, 0); // Gold
-  noStroke();
-  textAlign(CENTER, TOP);
-  gTextSize(32);
-  text(activeTutorial.title, x + panelW/2, y + 25);
-
-  // Lines
-  fill(255);
-  textAlign(LEFT, TOP);
-  gTextSize(18);
-  let lineY = y + 85;
-  for (const line of activeTutorial.lines) {
-      text(line, x + 40, lineY);
-      lineY += 28;
-  }
-
-  // Dismiss Hint
-  textAlign(CENTER, BOTTOM);
-  fill(255, 255, 255, 180);
-  gTextSize(14);
-  text("Press any key or click to continue", x + panelW/2, y + panelH - 25);
-  
-  pop();
-}
-
-function drawHUD() {
-  if (!showHUD) return;
-
   drawDifficultyBadge();
   drawHealthBar();
   drawBossHealthBar();
@@ -8520,6 +7851,12 @@ function drawHUD() {
   try {
     if (typeof drawInGameMenu === 'function') drawInGameMenu();
   } catch (e) {}
+  
+  if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
+
+  pop(); // End Top level Push
+
+  drawVignette();
 }
 
 
@@ -8529,29 +7866,6 @@ window.addEventListener('message', (ev) => {
     switch (ev.data.type) {
         case 'game-activated': {
           try {
-            // Re-check tutorial state in case it was reset in the menu while iframe was sleeping
-            const wasTutorial = isTutorialMap;
-            const shouldBeTutorial = (localStorage.getItem('tutorialComplete') !== 'true');
-            if (shouldBeTutorial !== wasTutorial || (shouldBeTutorial && localStorage.getItem('hasShownWelcomeTutorial') === 'false')) {
-                isTutorialMap = shouldBeTutorial;
-                hasShownWelcomeTutorial = (localStorage.getItem('hasShownWelcomeTutorial') === 'true');
-                tutorialStep = 0;
-                tutorialMoved = false;
-                tutorialAttacked = false;
-                tutorialCollected = false;
-                tutorialSprintDetected = false;
-                tutorialHitLanded = false;
-                tutorialStepTimer = 0;
-                tutorialMessage = '';
-                tutorialMessageTimer = 0;
-                // Only regenerate if the game has already completed its initial load.
-                // If it hasn't loaded yet, the normal setup() flow will pick up
-                // the updated isTutorialMap flag and generate the correct map.
-                if (mapLoadComplete) {
-                    generateMap();
-                }
-            }
-
             pendingGameActivated = true;
             if (typeof _confirmResize === 'function') {
               try { _confirmResize(); pendingGameActivated = false; } catch (e) { console.warn('[game] _confirmResize failed', e); }
@@ -8634,11 +7948,7 @@ let _settingsSaveTimer = null;
 function persistSavedSettings(immediate = false) {
   const commit = () => {
     try {
-      const settings = { 
-        masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting,
-        sensitivitySetting, invertYAxis, showTutorials, showHUD, 
-        languageSetting, colorModeSetting, userControls
-      };
+      const settings = { masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting };
       localStorage.setItem('menuSettings', JSON.stringify(settings));
       verboseLog('[game] persisted settings', settings);
       if (window.parent && window.parent !== window) {
@@ -8682,16 +7992,6 @@ function loadLocalSettings() {
     if (typeof parsed.musicVol === 'number') musicVol = parsed.musicVol;
     if (typeof parsed.sfxVol === 'number') sfxVol = parsed.sfxVol;
     if (typeof parsed.textSizeSetting === 'number') textSizeSetting = parsed.textSizeSetting;
-    
-    // New Settings
-    if (typeof parsed.sensitivitySetting === 'number') sensitivitySetting = parsed.sensitivitySetting;
-    if (typeof parsed.invertYAxis === 'boolean') invertYAxis = parsed.invertYAxis;
-    if (typeof parsed.showTutorials === 'boolean') showTutorials = parsed.showTutorials;
-    if (typeof parsed.showHUD === 'boolean') showHUD = parsed.showHUD;
-    if (typeof parsed.languageSetting === 'string') languageSetting = parsed.languageSetting;
-    if (typeof parsed.colorModeSetting === 'string') colorModeSetting = parsed.colorModeSetting;
-    if (parsed.userControls) userControls = parsed.userControls;
-
     if (typeof parsed.difficulty === 'string') {
       const normalized = normalizeDifficultyValue(parsed.difficulty);
       if (normalized) {
@@ -8940,7 +8240,7 @@ function attemptStartGameMusic(reason = 'unknown') {
 try {
   window.addEventListener('keydown', (e) => {
     try {
-      if (e.keyCode === userControls.MENU.code) {
+      if (e.key === 'Escape' || e.keyCode === 27) {
         
         const active = document && document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
@@ -9485,7 +8785,7 @@ function ensureLoopFallbackBuffer() {
 
 window.addEventListener('keydown', (ev) => {
   const k = ev.key ? ev.key.toUpperCase() : '';
-  if (k === userControls.UP.key || k === userControls.DOWN.key || k === userControls.LEFT.key || k === userControls.RIGHT.key) {
+  if (k === 'W' || k === 'A' || k === 'S' || k === 'D') {
     try { tryMoveDirection(k); } catch (e) {  }
   }
   if (k === 'P') {
@@ -9661,6 +8961,38 @@ function floodReachable(options = {}) {
 let _resizeConfirmTimer = null;
 let _lastRequestedSize = { w: 0, h: 0 };
 
+
+try {
+  window.addEventListener('keydown', (e) => {
+    try {
+      if (e.key === 'Escape' || e.keyCode === 27) {
+        
+        const active = document && document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+
+        try {
+          if (settingsOverlayDiv) {
+             if (settingsOverlayDiv.closeZoomPanel) settingsOverlayDiv.closeZoomPanel();
+             else settingsOverlayDiv.remove();
+             settingsOverlayDiv = null;
+             openInGameMenu();
+             e.preventDefault();
+             return;
+          }
+        } catch (err) {  }
+
+        try {
+          if (inGameMenuVisible) closeInGameMenu();
+          else openInGameMenu();
+          e.preventDefault();
+        } catch (err) {
+          console.warn('[game] toggling inGameMenuVisible (global handler) failed', err);
+        }
+      }
+    } catch (err) {  }
+  }, false);
+} catch (e) { console.warn('[game] failed to attach global Escape handler', e); }
+
 function getColorForState(state) {
   
   if (typeof COLORS !== 'undefined' && COLORS[state]) {
@@ -9668,6 +9000,15 @@ function getColorForState(state) {
   }
   
   return [255, 0, 255]; 
+}
+
+function buildControlsSettings(ctx) {
+  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {})
+     .addCheckboxRow("Invert Y Axis", false);
+}
+
+function buildLanguageSettings(ctx) {
+  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
 }
 
 function stylePixelButton(btn) {
@@ -9759,55 +9100,29 @@ function spawnCloud(forceX) {
 
 function buildGameplaySettings(ctx) {
   ctx
-    .addCheckboxRow("Show Tutorials", showTutorials, v => {
-        showTutorials = v;
-        saveLocalSettingsDebounced();
-    })
-    .addCheckboxRow("Enable HUD", showHUD, v => {
-        showHUD = v;
-        saveLocalSettingsDebounced();
-    })
+    .addCheckboxRow("Show Tutorials", true)
+    .addCheckboxRow("Enable HUD", true)
     .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
       value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
       onChange: (val) => {
         difficultySetting = val.toLowerCase();
+        
         if(typeof setDifficulty === 'function') setDifficulty(difficultySetting, { regenerate: false });
-        saveLocalSettingsDebounced();
+        
+        saveLocalSettings(); 
       }
     });
 }
 
 function buildControlsSettings(ctx) {
-  ctx.addSliderRow("Sensitivity", 1, 10, sensitivitySetting, v => {
-        sensitivitySetting = v;
-        saveLocalSettingsDebounced();
-     })
-     .addCheckboxRow("Invert Y Axis", invertYAxis, v => {
-        invertYAxis = v;
-        saveLocalSettingsDebounced();
-     });
-
-  // Movement
-  ctx.addControlRow("Move Up", userControls.UP.key === ' ' ? 'SPACE' : userControls.UP.key, (k, c) => { userControls.UP = { key: k, code: c }; saveLocalSettingsDebounced(); });
-  ctx.addControlRow("Move Down", userControls.DOWN.key === ' ' ? 'SPACE' : userControls.DOWN.key, (k, c) => { userControls.DOWN = { key: k, code: c }; saveLocalSettingsDebounced(); });
-  ctx.addControlRow("Move Left", userControls.LEFT.key === ' ' ? 'SPACE' : userControls.LEFT.key, (k, c) => { userControls.LEFT = { key: k, code: c }; saveLocalSettingsDebounced(); });
-  ctx.addControlRow("Move Right", userControls.RIGHT.key === ' ' ? 'SPACE' : userControls.RIGHT.key, (k, c) => { userControls.RIGHT = { key: k, code: c }; saveLocalSettingsDebounced(); });
-  
-  // Actions
-  ctx.addControlRow("Jump", userControls.JUMP.key === ' ' ? 'SPACE' : userControls.JUMP.key, (k, c) => { userControls.JUMP = { key: k, code: c }; saveLocalSettingsDebounced(); });
-  ctx.addControlRow("Dash", userControls.DASH.key === ' ' ? 'SPACE' : userControls.DASH.key, (k, c) => { userControls.DASH = { key: k, code: c }; saveLocalSettingsDebounced(); });
-  ctx.addControlRow("Attack", userControls.ATTACK.key === ' ' ? 'SPACE' : userControls.ATTACK.key, (k, c) => { userControls.ATTACK = { key: k, code: c }; saveLocalSettingsDebounced(); });
+  ctx.addSliderRow("Sensitivity", 1, 10, 5, v => {})
+     .addCheckboxRow("Invert Y Axis", false);
 }
 
 function buildAccessibilitySettings(ctx) {
-  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"], {
-      value: colorModeSetting,
-      onChange: (v) => {
-          colorModeSetting = v;
-          saveLocalSettingsDebounced();
-      }
-  });
-
+  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"]);
+  
+  
   const row = createDiv('');
   row.parent(ctx.container);
   row.style('display', 'flex');
@@ -9833,35 +9148,39 @@ function buildAccessibilitySettings(ctx) {
   btnGroup.style('gap', '5px');
   btnGroup.style('flex', '1');
 
-  const presets = [ { label: 'Small', value: 50 }, { label: 'Default', value: 75 }, { label: 'Big', value: 100 } ];
+  const presetSource = (typeof window !== 'undefined' && Array.isArray(window.MENU_TEXT_SIZE_PRESETS)) ? window.MENU_TEXT_SIZE_PRESETS : null;
+  const presets = presetSource || [ { label: 'Small', value: 60 }, { label: 'Default', value: 75 }, { label: 'Big', value: 90 } ];
 
   presets.forEach(p => {
-      const btn = createButton(p.label);
+      const label = p && p.label ? String(p.label) : String(p);
+      const val = p && typeof p.value === 'number' ? Number(p.value) : (label === 'Default' ? 75 : (label === 'Small' ? 60 : 90));
+      const btn = createButton(label);
       btn.parent(btnGroup);
-      btn.attribute('data-text-size-val', String(p.value));
+      btn.attribute('data-text-size-val', String(val));
       btn.style('flex', '1');
       btn.style('height', '30px');
       stylePixelButton(btn);
       btn.style('font-size', '14px');
       btn.style('padding', '0');
       btn.mousePressed(() => {
-        textSizeSetting = p.value;
-        applyCurrentTextSize();
-        updateTextSizeButtonStyles();
-        saveLocalSettingsDebounced();
+        try { textSizeSetting = Number(val); } catch(e) { textSizeSetting = val; }
+        try { applyCurrentTextSize(); } catch(e) {}
+        try { updateTextSizeButtonStyles(); } catch(e) {}
+        try {
+          if (typeof persistSavedSettings === 'function') {
+            persistSavedSettings(true);
+          } else if (typeof saveLocalSettings === 'function') {
+            saveLocalSettings();
+          } else {
+            try { localStorage.setItem('menuSettings', JSON.stringify({ masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting })); } catch(e){}
+          }
+        } catch(e) {}
       });
-      activeSettingElements.push(btn);
   });
 }
 
 function buildLanguageSettings(ctx) {
-  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"], {
-      value: languageSetting,
-      onChange: (v) => {
-          languageSetting = v;
-          saveLocalSettingsDebounced();
-      }
-  });
+  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"]);
 }
 
 function createSettingsContext({ container }) {
@@ -9925,7 +9244,6 @@ function createSettingsContext({ container }) {
       
       const slider = createSlider(min, max, val);
       slider.parent(row);
-      slider.class('setting-slider');
       slider.style('width', '100%'); 
       styleInput(slider);
       if (opts && opts.isAudio) {
@@ -9935,13 +9253,23 @@ function createSettingsContext({ container }) {
       recordElement(slider);
       
       slider.input(() => {
-          if (callback) callback(slider.value());
+        try {
+          callback(slider.value());
+        } catch(e) { try { callback(slider.value()); } catch(e){} }
+        try {
+          if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
+            const keyName = String(name || '').toLowerCase();
+            if (/sensitivity/.test(keyName)) {
+              try { window.showError1(name); } catch(e){}
+            }
+          }
+        } catch(e) {}
       });
       
       return ctx;
     },
 
-    addCheckboxRow(name, state = false, callback) {
+    addCheckboxRow(name, state = false, options = {}) {
       const row = createRow();
 
       const lbl = createDiv(name);
@@ -9949,19 +9277,49 @@ function createSettingsContext({ container }) {
       styleLabel(lbl);
       recordElement(lbl);
 
-      const cb = createCheckbox('', !!state);
-      cb.parent(row);
-      cb.class('setting-checkbox');
-      styleInput(cb);
-      recordElement(cb);
+      const toggle = createDiv('');
+      toggle.parent(row);
+      toggle.style('width', '36px');
+      toggle.style('height', '36px');
+      toggle.style('display', 'flex');
+      toggle.style('align-items', 'center');
+      toggle.style('justify-content', 'center');
+      toggle.style('border', `2px solid ${MENU_GOLD_BORDER}`);
+      toggle.style('border-radius', '6px');
+      toggle.style('box-shadow', `inset 0 0 0 2px rgba(0,0,0,0.4)`);
+      toggle.style('cursor', 'pointer');
+      toggle.style('font-size', '24px');
+      toggle.style('font-family', 'MyFont, sans-serif');
+      toggle.style('color', MENU_GOLD_COLOR);
+      toggle.style('background', 'rgba(255,255,255,0.05)');
+      toggle.style('transition', 'background 0.2s ease, transform 0.2s ease');
+      recordElement(toggle);
 
-      cb.changed(() => {
-          if (callback && typeof callback === 'function') {
-            callback(cb.checked());
-          } else if (callback && typeof callback.onChange === 'function') {
-            callback.onChange(cb.checked());
+      let checked = !!state;
+      const updateVisual = (value) => {
+        toggle.html(value ? '✔' : '');
+        toggle.style('background', value ? `rgba(184,134,11,0.35)` : 'rgba(255,255,255,0.05)');
+        toggle.style('box-shadow', value ? `0 0 12px ${MENU_GOLD_GLOW}` : 'inset 0 0 0 2px rgba(0,0,0,0.4)');
+        toggle.style('transform', value ? 'scale(1.05)' : 'none');
+      };
+      updateVisual(checked);
+
+      const toggleHandler = () => {
+        checked = !checked;
+        updateVisual(checked);
+        if (typeof options.onChange === 'function') {
+          options.onChange(checked);
+        }
+        try {
+        if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
+          const keyName = String(name || '').toLowerCase();
+          if (/show\s*tutorials?/.test(keyName) || /enable\s*hud/.test(keyName) || /enabled\s*hub/.test(keyName) || /invert\s*y/.test(keyName) || /invert\s*y\s*axis/.test(keyName)) {
+            try { window.showError1(name); } catch(e){}
           }
-      });
+        }
+        } catch(e) {}
+      };
+      toggle.mousePressed(toggleHandler);
 
       return ctx;
     },
@@ -9976,62 +9334,32 @@ function createSettingsContext({ container }) {
 
       const sel = createSelect();
       sel.parent(row);
+      sel.style('font-size', '16px');
+      sel.style('background', '#222');
+      sel.style('color', 'white');
+      sel.style('border', '1px solid #555'); 
+      sel.style('border-radius', '4px');
+      sel.style('padding', '5px');
       styleInput(sel);
       
       opts.forEach(opt => sel.option(opt));
       
       if (options.value) sel.value(options.value);
       sel.changed(() => {
-        if (typeof options.onChange === 'function') options.onChange(sel.value());
+        try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e) { try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e){} }
+        try {
+          if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
+            const keyName = String(name || '').toLowerCase();
+            if (/color\s*mode/.test(keyName) || /difficulty/.test(keyName)) {
+              try { window.showError1(name); } catch(e){}
+            } else if (/language/.test(keyName)) {
+              try { window.showError1(name + ' — ONLY English is supported now'); } catch(e){}
+            }
+          }
+        } catch(e) {}
       });
       recordElement(sel);
 
-      return ctx;
-    },
-
-    addControlRow(labelText, currentKey, onRebind) {
-      const row = createRow();
-
-      const lbl = createDiv(labelText);
-      lbl.parent(row);
-      styleLabel(lbl);
-      recordElement(lbl);
-
-      const btn = createButton(currentKey);
-      btn.parent(row);
-      btn.style('flex', '1');
-      btn.style('height', '36px');
-      stylePixelButton(btn);
-      btn.style('font-size', '16px');
-      btn.style('padding', '0');
-      
-      btn.mousePressed(() => {
-        const previousLabel = btn.html();
-        btn.html('...');
-        btn.style('filter', 'brightness(1.5)');
-        
-        const keyHandler = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-
-          if (e.key === 'Escape') {
-            btn.html(previousLabel);
-            btn.style('filter', 'none');
-            window.removeEventListener('keydown', keyHandler, true);
-            return;
-          }
-
-          const newKey = e.key.toUpperCase();
-          const newKeyCode = e.keyCode;
-          onRebind(newKey, newKeyCode);
-          btn.html(newKey === ' ' ? 'SPACE' : newKey);
-          btn.style('filter', 'none');
-          window.removeEventListener('keydown', keyHandler, true);
-        };
-        window.addEventListener('keydown', keyHandler, true);
-      });
-
-      recordElement(btn);
       return ctx;
     }
   };
