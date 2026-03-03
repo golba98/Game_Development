@@ -43,6 +43,19 @@ let rippleTimer = 0;
 let transitionAlpha = 0;
 let isTransitioning = false;
 let currentLevel = 1;
+let hasShownWelcomeTutorial = (localStorage.getItem('hasShownWelcomeTutorial') === 'true');
+let isTutorialMap = (localStorage.getItem('tutorialComplete') !== 'true');
+let tutorialStep = 0;
+let tutorialMoved = false;
+let tutorialAttacked = false;
+let tutorialCollected = false;
+let tutorialStepTimer = 0;
+let tutorialSprintDetected = false;
+let tutorialHitLanded = false;
+let tutorialCoinSnapshot = 0;
+let tutorialMessage = '';
+let tutorialMessageTimer = 0;
+let tutorialArrowBlink = 0;
 
 if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
   const canvasProto = HTMLCanvasElement.prototype;
@@ -695,6 +708,11 @@ function setup() {
     const runAutoGenerator = () => { generateMap(); };
 
     serverFetchPromise.then((serverLoaded) => {
+      if (isTutorialMap) {
+          verboseLog('[game] Tutorial map active, bypassing server and local saves.');
+          runAutoGenerator();
+          return;
+      }
       if (serverLoaded) {
          if (persistentGameId && persistentGameId.startsWith('server_default_')) {
              runAutoGenerator();
@@ -726,6 +744,17 @@ function setup() {
   
   if (gameMusic) gameMusic.setVolume(musicVol * masterVol);
   if (pendingGameActivated) { try { _confirmResize(); pendingGameActivated = false; } catch (e) {} }
+
+  // Safety: if the map still hasn't loaded after 6s, force the loading overlay off
+  // and attempt map generation. This prevents a permanent black screen.
+  setTimeout(() => {
+    if (!mapLoadComplete) {
+      console.warn('[game] Safety timeout: map still not loaded after 6s. Forcing generation.');
+      try { generateMap(); } catch (e) { console.warn('[game] safety generateMap failed', e); }
+      showLoadingOverlay = false;
+      mapLoadComplete = true;
+    }
+  }, 6000);
 }
 
 function windowResized() {
@@ -1048,14 +1077,30 @@ function processTerminalCommand(cmd) {
         spawnEnemy('beetle', ex, ey);
         terminalLog(`CRITICAL: Boss Beetle signature forced into local grid at [${ex}, ${ey}].`, 'terminal-error');
     } else if (base === '/tutorial') {
-        if (parts[1] === 'welcome') {
-            showTutorial('welcome');
-            terminalLog('SUCCESS: Welcome protocol initialized.', 'terminal-success');
-        } else if (parts[1] === 'reset') {
+        if (parts[1] === 'reset') {
             hasShownWelcomeTutorial = false;
+            isTutorialMap = true;
+            tutorialStep = 0;
+            tutorialMoved = false; tutorialAttacked = false; tutorialCollected = false;
+            tutorialSprintDetected = false; tutorialHitLanded = false; tutorialStepTimer = 0;
+            tutorialMessage = ''; tutorialMessageTimer = 0;
             localStorage.setItem('hasShownWelcomeTutorial', 'false');
-            terminalLog('SUCCESS: User experience flags cleared. Tutorial will show on next initialization.', 'terminal-success');
-        } else {
+            localStorage.setItem('tutorialComplete', 'false');
+            terminalLog('SUCCESS: Tutorial state reset. Loading Training Glade...', 'terminal-success');
+            generateMap();
+        } else if (parts[1] === 'welcome') {
+            hasShownWelcomeTutorial = false;
+            isTutorialMap = true;
+            tutorialStep = 0;
+            tutorialMoved = false; tutorialAttacked = false; tutorialCollected = false;
+            tutorialSprintDetected = false; tutorialHitLanded = false; tutorialStepTimer = 0;
+            tutorialMessage = ''; tutorialMessageTimer = 0;
+            localStorage.setItem('hasShownWelcomeTutorial', 'false');
+            localStorage.setItem('tutorialComplete', 'false');
+            terminalLog('SUCCESS: Welcome protocol reset. Loading Training Glade...', 'terminal-success');
+            generateMap();
+        }
+ else {
             terminalLog('USAGE: /tutorial [welcome|reset]', 'terminal-log');
         }
     } else if (base === '/help') {
@@ -1209,15 +1254,99 @@ function _dummy() {}
 
 
 function generateMap() {
-  clearPreviousGameState();
-  genPhase = 1;
-  
-  if (!hasShownWelcomeTutorial) {
-      showTutorial('welcome');
-      hasShownWelcomeTutorial = true;
+    genPhase = 0; // Stop any ongoing map generation
+    clearPreviousGameState();
+
+    isTutorialMap = (localStorage.getItem('tutorialComplete') !== 'true');
+
+    if (isTutorialMap) {
+        loadTutorialMap();
+        return;
+    }
+
+    genPhase = 1;
+
+    if (!hasShownWelcomeTutorial && currentLevel === 1) {
+        showTutorial('welcome');
+        hasShownWelcomeTutorial = true;
+        localStorage.setItem('hasShownWelcomeTutorial', 'true');
+    }
+}
+function loadTutorialMap() {
+    verboseLog('[game] Loading Tutorial Map...');
+  try {
+    logicalW = 20;
+    logicalH = 20;
+    mapStates = new Uint8Array(logicalW * logicalH);
+    terrainLayer = new Uint8Array(logicalW * logicalH);
+
+    const W = logicalW, H = logicalH;
+    const _s = (x, y, t) => { mapStates[y * W + x] = t; };
+
+    // ── 1. Fill with Grass, fence the border ──
+    for (let i = 0; i < mapStates.length; i++) {
+        const x = i % W, y = Math.floor(i / W);
+        mapStates[i] = (x === 0 || x === W-1 || y === 0 || y === H-1)
+            ? TILE_TYPES.FOREST : TILE_TYPES.GRASS;
+    }
+
+    // ── 2. Internal Zone Walls ──
+    // Vertical wall x=10 from y=10 down to border (separates bottom halves)
+    for (let y = 10; y < H; y++) _s(10, y, TILE_TYPES.FOREST);
+    // Horizontal wall y=10 across full width (separates top from bottom)
+    for (let x = 0; x < W; x++) _s(x, 10, TILE_TYPES.FOREST);
+    // Gaps: north passage at x=5 and x=15
+    _s(5, 10, TILE_TYPES.GRASS);
+    _s(15, 10, TILE_TYPES.GRASS);
+
+    // (Decorative flowers are handled by spawnDecorativeObjects() in createMapImage)
+
+    // ── 6. Snapshot terrain BEFORE placing items/coins ──
+    // This prevents coins from "respawning" when collected
+    terrainLayer = mapStates.slice();
+
+    // ── 7. Spawns ──
+    playerPosition = { x: 3, y: 15 };
+    initialSpawnPosition = { x: 3, y: 15 };
+
+    // Training Dummy (Passive Beetle)
+    const dummy = createBeetle(5, 5);
+    dummy.aggro = false;
+    dummy.health = 5;
+    enemies.push(dummy);
+
+    // Coins (placed AFTER terrainLayer snapshot so terrain underneath is GRASS)
+    _s(15, 5, TILE_TYPES.COIN);
+    _s(16, 4, TILE_TYPES.COIN);
+    _s(14, 6, TILE_TYPES.COIN);
+
+    // Portal (Top Right)
+    portalPos = { x: 17, y: 3 };
+    isPortalActive = false;
+
+    // ── 8. Reset tutorial state ──
+    tutorialStep = 0;
+    tutorialMoved = false; tutorialAttacked = false; tutorialCollected = false;
+    tutorialSprintDetected = false; tutorialHitLanded = false;
+    tutorialStepTimer = 0; tutorialCoinSnapshot = 3;
+    tutorialMessage = ''; tutorialMessageTimer = 0; tutorialArrowBlink = 0;
+
+    renderX = playerPosition.x; renderY = playerPosition.y;
+    renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY;
+
+    smoothCamX = playerPosition.x * cellSize - (width || 640)/2;
+    smoothCamY = playerPosition.y * cellSize - (height || 480)/2;
+
+    createMapImage();
+    verboseLog('[game] Tutorial Map Ready.');
+  } catch (e) {
+    console.warn('[game] loadTutorialMap error:', e);
+  } finally {
+    showLoadingOverlay = false;
+    mapLoadComplete = true;
+    completeLoadingProgress();
   }
 }
-
 function generateMap_Part1() {
   verboseLog('[game] Generating Part 1 (Base)...');
 
@@ -1949,7 +2078,10 @@ function tryFetchActiveMap() {
         }
         return resp.json().then(obj => {
           try { 
-             
+              if (isTutorialMap || localStorage.getItem('tutorialComplete') !== 'true') {
+                  verboseLog('[game] tryFetchActiveMap: Ignoring server map because tutorial is active.');
+                  return false;
+              }
               const success = applyLoadedMap(obj); 
               if (success) {
                   verboseLog('[game] tryFetchActiveMap: Successfully applied map from server.');
@@ -2049,6 +2181,10 @@ function applyLoadedMap(obj) {
 }
 
 function loadMapFromStorage() {
+  if (isTutorialMap) {
+      verboseLog('[game] tutorial map is active, ignoring stored maps.');
+      return false;
+  }
   if (isNewGame) {
     verboseLog('[game] new game detected, ignoring stored maps and generating a new one.');
     return false;
@@ -2749,17 +2885,19 @@ function spawnDecorativeObjects() {
     }
   }
 
-  const anchorX = Math.max(0, Math.min(logicalW - 1, Math.floor(logicalW / 2)));
-  const anchorY = Math.max(0, Math.min(logicalH - 1, Math.floor(logicalH / 2)));
-  const holeCandidates = grassTiles.slice().sort((a, b) => {
-    return (Math.hypot(a.x - anchorX, a.y - anchorY) - Math.hypot(b.x - anchorX, b.y - anchorY));
-  });
-  for (const tile of holeCandidates) {
-    const idx = tile.y * logicalW + tile.x;
-    if (occupied.has(idx)) continue;
-    decorativeObjects.push({ id: DECOR_SPECIAL_NAMES[0], type: 'special', tileX: tile.x, tileY: tile.y });
-    occupied.add(idx);
-    break;
+  if (!isTutorialMap) {
+    const anchorX = Math.max(0, Math.min(logicalW - 1, Math.floor(logicalW / 2)));
+    const anchorY = Math.max(0, Math.min(logicalH - 1, Math.floor(logicalH / 2)));
+    const holeCandidates = grassTiles.slice().sort((a, b) => {
+      return (Math.hypot(a.x - anchorX, a.y - anchorY) - Math.hypot(b.x - anchorX, b.y - anchorY));
+    });
+    for (const tile of holeCandidates) {
+      const idx = tile.y * logicalW + tile.x;
+      if (occupied.has(idx)) continue;
+      decorativeObjects.push({ id: DECOR_SPECIAL_NAMES[0], type: 'special', tileX: tile.x, tileY: tile.y });
+      occupied.add(idx);
+      break;
+    }
   }
 }
 
@@ -2813,8 +2951,9 @@ function createBeetle(startX, startY) {
     lastDist: 0,
 
     update: function() {
+      if (!this.aggro) return;
       const now = millis();
-      const dt = gameDelta || 16.6; 
+      const dt = gameDelta || 16.6;
       const targetX = playerPosition.x;
       const targetY = playerPosition.y;
       const d = dist(this.x, this.y, targetX, targetY);
@@ -4411,9 +4550,9 @@ function _drawPlayerInternal() {
                     mapStates[idx] = TILE_TYPES.GRASS;
                     spawnDamageText("✂", cutX, cutY, [100, 255, 100]);
                     
-                    // 15% chance to drop a coin or heart
+                    // 15% chance to drop a coin or heart (disabled in tutorial)
                     const lootRoll = Math.random();
-                    if (lootRoll < 0.1) {
+                    if (lootRoll < 0.1 && !isTutorialMap) {
                         mapStates[idx] = TILE_TYPES.COIN;
                     } else if (lootRoll < 0.15) {
                         mapStates[idx] = TILE_TYPES.HEALTH;
@@ -5008,8 +5147,12 @@ function startLevelTransition() {
   if (isTransitioning) return;
   isTransitioning = true;
   transitionAlpha = 0;
-  
-  try { showToast(`Level ${currentLevel} Clear! Entering Level ${currentLevel + 1}...`, 'info', 4000); } catch(e) {}
+
+  if (isTutorialMap) {
+    try { showToast('Training Complete! Entering the Forest...', 'info', 4000); } catch(e) {}
+  } else {
+    try { showToast(`Level ${currentLevel} Clear! Entering Level ${currentLevel + 1}...`, 'info', 4000); } catch(e) {}
+  }
 }
 
 function handleTransitionLogic() {
@@ -5022,7 +5165,14 @@ function handleTransitionLogic() {
       transitionAlpha = Math.min(255, transitionAlpha + fadeSpeed);
       if (transitionAlpha === 255) {
           // At peak blackout, swap the world
-          currentLevel++;
+          if (isTutorialMap) {
+              isTutorialMap = false;
+              localStorage.setItem('tutorialComplete', 'true');
+              verboseLog('[tutorial] Tutorial complete! Transitioning to Level 1.');
+              currentLevel = 1;
+          } else {
+              currentLevel++;
+          }
           generateMap();
           // Reset player for the new world
           playerHealth = maxHealth;
@@ -7576,11 +7726,10 @@ function draw() {
       if (isPortalActive && portalPos && playerPosition) {
           const d = dist(playerPosition.x, playerPosition.y, portalPos.x, portalPos.y);
           if (d < 0.8) {
-              verboseLog('[game] Entered Portal! Generating next map.');
+              verboseLog('[game] Entered Portal! Initiating transition.');
               isPortalActive = false;
               victoryShown = false;
-              generateMap(); // Create a whole new world
-              try { showToast('World Cleared! Traveling to next area...', 'info', 3500); } catch(e) {}
+              startLevelTransition();
           }
       }
     }
@@ -7927,6 +8076,7 @@ function draw() {
     drawHUD();
   }
 
+  handleTutorialLogic();
   drawTutorial();
 
   if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
@@ -7934,10 +8084,16 @@ function draw() {
   pop(); // End Top level Push
 
   drawVignette();
+
+  handleTransitionLogic();
+  if (isTransitioning) {
+      fill(0, transitionAlpha);
+      noStroke();
+      rect(0, 0, width, height);
+  }
 }
 
 let activeTutorial = null;
-let hasShownWelcomeTutorial = (localStorage.getItem('hasShownWelcomeTutorial') === 'true');
 
 function showTutorial(id) {
   if (!showTutorials) return;
@@ -7963,7 +8119,331 @@ function showTutorial(id) {
   }
 }
 
+function handleTutorialLogic() {
+    if (!isTutorialMap) return;
+    if (!playerPosition) return;
+
+    const pX = playerPosition.x;
+    const pY = playerPosition.y;
+    const dt = gameDelta || 16.67;
+    tutorialStepTimer += dt;
+    tutorialArrowBlink += dt;
+
+    // Decay temporary messages
+    if (tutorialMessageTimer > 0) {
+        tutorialMessageTimer -= dt;
+        if (tutorialMessageTimer <= 0) { tutorialMessage = ''; tutorialMessageTimer = 0; }
+    }
+
+    // ── Step 0: MOVEMENT ──
+    // Player starts at (3,15). Learn WASD. Head north through gap at (5,10).
+    if (tutorialStep === 0) {
+        if (pX !== 3 || pY !== 15) tutorialMoved = true;
+        // Transition: player crossed into the top zone (y < 10)
+        if (pY < 10) {
+            _advanceTutorial(1, 'Nice! You made it through!');
+        }
+    }
+    // ── Step 1: SPRINT ──
+    // Brief sprint lesson in the top zone
+    else if (tutorialStep === 1) {
+        if (sprintActive) tutorialSprintDetected = true;
+        // Auto-advance after sprinting or after 6 seconds
+        if (tutorialSprintDetected || tutorialStepTimer > 6000) {
+            _advanceTutorial(2, tutorialSprintDetected ? 'Fast!' : '');
+        }
+        // Warn if player goes back south
+        if (pY >= 10) {
+            _setTutorialMsg('Come back up! Hold ' + _sprintKeyLabel() + ' to sprint!', 2500);
+        }
+    }
+    // ── Step 2: COMBAT ──
+    // Kill the beetle at (5,5)
+    else if (tutorialStep === 2) {
+        if (isAttacking && !tutorialHitLanded) tutorialAttacked = true;
+        // Detect hit: beetle health went down (checked via enemies array)
+        if (enemies.length > 0 && enemies[0].health < (enemies[0].maxHealth || 999)) {
+            tutorialHitLanded = true;
+        }
+        if (enemies.length === 0) {
+            _advanceTutorial(3, 'Pest eliminated! Good work!');
+        }
+        // Warn if player wanders to coin area without killing beetle
+        if (enemies.length > 0 && pX > 12 && pY < 10) {
+            _setTutorialMsg('Defeat the pest first! Head back West!', 2500);
+        }
+        // Warn if player goes back south
+        if (pY >= 10) {
+            _setTutorialMsg('Come back! The pest is to the North!', 2500);
+        }
+    }
+    // ── Step 3: COLLECT COINS ──
+    else if (tutorialStep === 3) {
+        const coinCount = _countCoins();
+        // Detect coin pickup
+        if (tutorialCoinSnapshot > 0 && coinCount < tutorialCoinSnapshot) {
+            const collected = tutorialCoinSnapshot - coinCount;
+            tutorialCoinSnapshot = coinCount;
+            if (coinCount > 0) {
+                _setTutorialMsg(coinCount + ' coin' + (coinCount > 1 ? 's' : '') + ' left!', 2000);
+            }
+        }
+        if (!hasAnyCoins()) {
+            isPortalActive = true;
+            _advanceTutorial(4, 'All coins collected! The Portal is open!');
+        }
+        // Warn if player goes back west to beetle zone
+        if (pX < 5 && pY < 10) {
+            _setTutorialMsg('The coins are to the East!', 2500);
+        }
+        // Warn if player goes south
+        if (pY >= 10) {
+            _setTutorialMsg('Come back! Collect the coins up North!', 2500);
+        }
+    }
+    // ── Step 4: ENTER PORTAL ──
+    else if (tutorialStep === 4) {
+        // Warn if player wanders far from portal
+        if (pY >= 10) {
+            _setTutorialMsg('The Portal is up North! Head back!', 2500);
+        } else if (pX < 8 && pY < 10) {
+            _setTutorialMsg('The Portal is to the East!', 2500);
+        }
+    }
+}
+
+// Helper: advance to next tutorial step with a celebration message
+function _advanceTutorial(nextStep, msg) {
+    tutorialStep = nextStep;
+    tutorialStepTimer = 0;
+    tutorialArrowBlink = 0;
+    if (msg) _setTutorialMsg(msg, 2500);
+    if (nextStep === 3) tutorialCoinSnapshot = _countCoins();
+    verboseLog('[tutorial] Advanced to step', nextStep);
+}
+
+// Helper: set a temporary floating message (throttled)
+function _setTutorialMsg(msg, durationMs) {
+    // Don't overwrite a message that's still showing (unless it's the same one)
+    if (tutorialMessageTimer > 500 && tutorialMessage !== msg) return;
+    tutorialMessage = msg;
+    tutorialMessageTimer = durationMs || 2500;
+}
+
+// Helper: count remaining coins on the map
+function _countCoins() {
+    if (!mapStates) return 0;
+    let c = 0;
+    for (let i = 0; i < mapStates.length; i++) {
+        if (mapStates[i] === TILE_TYPES.COIN) c++;
+    }
+    return c;
+}
+
+// Helper: get the sprint key label
+function _sprintKeyLabel() {
+    const k = userControls.DASH.key;
+    return k === 'SHIFT' ? 'SHIFT' : k;
+}
+
+// Helper: get the attack key label
+function _attackKeyLabel() {
+    const k = userControls.ATTACK.key;
+    return k === 'MOUSE0' ? 'LEFT CLICK' : k;
+}
+
+// ────────────────────────────────────────
+//  TUTORIAL RENDERING
+// ────────────────────────────────────────
 function drawTutorial() {
+    if (activeTutorial) {
+        drawLegacyTutorial();
+        return;
+    }
+    if (!isTutorialMap) return;
+    if (!playerPosition) return;
+
+    push();
+    const camX = Math.floor(smoothCamX || 0);
+    const camY = Math.floor(smoothCamY || 0);
+    const pX = playerPosition.x;
+    const pY = playerPosition.y;
+    const t = millis();
+
+    textAlign(CENTER, CENTER);
+    if (uiFont) textFont(uiFont);
+
+    // ── Tooltip: box with text above a world tile ──
+    const drawTooltip = (txt, tx, ty, opts) => {
+        const col = (opts && opts.color) || [255, 215, 0];
+        const sz = (opts && opts.size) || 20;
+        gTextSize(sz);
+        const px = tx * cellSize + cellSize / 2 - camX;
+        const py = ty * cellSize - 40 - camY + Math.sin(t * 0.004) * 5;
+        const tw = textWidth(txt) + 24;
+        const th = sz + 14;
+        fill(0, 0, 0, 180); noStroke();
+        rect(px - tw/2, py - th/2, tw, th, 6);
+        // Gold border
+        stroke(col[0], col[1], col[2], 120); strokeWeight(1);
+        rect(px - tw/2, py - th/2, tw, th, 6);
+        noStroke();
+        fill(col[0], col[1], col[2]);
+        text(txt, px, py);
+    };
+
+    // ── Tooltip anchored to player ──
+    const drawPlayerTooltip = (txt, opts) => {
+        const rX = isMoving ? renderX : pX;
+        const rY = isMoving ? renderY : pY;
+        drawTooltip(txt, rX, rY - 0.5, opts);
+    };
+
+    // ── Pulsing arrow pointing at a world tile ──
+    const drawArrow = (tx, ty, label) => {
+        const px = tx * cellSize + cellSize / 2 - camX;
+        const py = ty * cellSize - camY;
+        const bounce = Math.sin(t * 0.006) * 8;
+        const alpha = 180 + Math.sin(t * 0.008) * 75;
+
+        // Arrow triangle
+        push();
+        translate(px, py - 55 + bounce);
+        fill(255, 215, 0, alpha); noStroke();
+        triangle(0, 18, -10, 0, 10, 0);
+        // Label above
+        if (label) {
+            gTextSize(14);
+            const lw = textWidth(label) + 12;
+            fill(0, 0, 0, 160); noStroke();
+            rect(-lw/2, -26, lw, 20, 4);
+            fill(255, 215, 0, alpha);
+            text(label, 0, -16);
+        }
+        pop();
+    };
+
+    // ── Step list (left margin) ──
+    const stepNames = ['Move', 'Sprint', 'Fight', 'Collect', 'Portal'];
+    const totalSteps = stepNames.length;
+    const listX = 15;
+    const listY = 80;
+    const rowH = 22;
+    const panelW = 110;
+    const panelH = totalSteps * rowH + 16;
+
+    // Dark panel background
+    fill(0, 0, 0, 150); noStroke();
+    rect(listX, listY, panelW, panelH, 6);
+    stroke(255, 215, 0, 60); strokeWeight(1);
+    rect(listX, listY, panelW, panelH, 6);
+    noStroke();
+
+    for (let i = 0; i < totalSteps; i++) {
+        const sy = listY + 12 + i * rowH;
+        let icon, col;
+        if (i < tutorialStep) {
+            icon = '\u2713'; col = [100, 220, 100];
+        } else if (i === tutorialStep) {
+            icon = '\u25B6'; col = [255, 215, 0];
+        } else {
+            icon = '\u00B7'; col = [140, 140, 140];
+        }
+        gTextSize(13);
+        textAlign(LEFT, CENTER);
+        fill(col[0], col[1], col[2]);
+        text(icon + '  ' + stepNames[i], listX + 10, sy);
+    }
+    textAlign(CENTER, CENTER);
+
+    // ── Per-step guidance (suppressed when a warning message is active) ──
+    const warningActive = tutorialMessage && tutorialMessageTimer > 0;
+
+    if (tutorialStep === 0 && !warningActive) {
+        // Movement tutorial
+        const keys = userControls;
+        if (!tutorialMoved) {
+            drawPlayerTooltip('Use ' + keys.UP.key + keys.LEFT.key + keys.DOWN.key + keys.RIGHT.key + ' to move!');
+        } else {
+            drawPlayerTooltip('Head North through the gap!', { size: 18 });
+            drawArrow(5, 10, 'Gap');
+        }
+    }
+    else if (tutorialStep === 1 && !warningActive) {
+        if (!tutorialSprintDetected) {
+            drawPlayerTooltip('Hold ' + _sprintKeyLabel() + ' to Sprint!');
+            // Show stamina bar hint
+            gTextSize(14);
+            const hintTxt = 'Try sprinting around!';
+            const hw = textWidth(hintTxt) + 16;
+            const rX = (isMoving ? renderX : pX) * cellSize + cellSize/2 - camX;
+            const rY = (isMoving ? renderY : pY) * cellSize - camY - 80;
+            fill(0, 0, 0, 140); noStroke();
+            rect(rX - hw/2, rY - 10, hw, 22, 4);
+            fill(200, 200, 200);
+            text(hintTxt, rX, rY + 1);
+        } else {
+            drawPlayerTooltip('Fast! Keep going!', { color: [100, 255, 100] });
+        }
+    }
+    else if (tutorialStep === 2 && !warningActive) {
+        if (enemies.length > 0) {
+            const beetle = enemies[0];
+            drawArrow(beetle.x, beetle.y, 'Target');
+            if (!tutorialHitLanded) {
+                drawPlayerTooltip(_attackKeyLabel() + ' to Attack!');
+                // Extra hint near beetle
+                drawTooltip('Approach and attack!', beetle.x, beetle.y + 2, { size: 16, color: [255, 100, 100] });
+            } else {
+                drawPlayerTooltip('Keep attacking!', { color: [255, 150, 50] });
+            }
+        }
+    }
+    else if (tutorialStep === 3 && !warningActive) {
+        const coinCount = _countCoins();
+        if (coinCount > 0) {
+            drawPlayerTooltip('Collect all coins! (' + coinCount + ' left)', { size: 18 });
+            // Arrows on coin positions
+            if (mapStates) {
+                let shown = 0;
+                for (let i = 0; i < mapStates.length && shown < 3; i++) {
+                    if (mapStates[i] === TILE_TYPES.COIN) {
+                        const cx = i % logicalW;
+                        const cy = Math.floor(i / logicalW);
+                        drawArrow(cx, cy, null);
+                        shown++;
+                    }
+                }
+            }
+        }
+    }
+    else if (tutorialStep === 4 && !warningActive) {
+        if (portalPos) {
+            drawArrow(portalPos.x, portalPos.y, 'Portal');
+            drawPlayerTooltip('Enter the Portal!', { color: [100, 200, 255] });
+        }
+    }
+
+    // ── Floating message (celebration / warning) ──
+    if (tutorialMessage && tutorialMessageTimer > 0) {
+        const msgAlpha = Math.min(255, tutorialMessageTimer * 0.5);
+        gTextSize(26);
+        const mw = textWidth(tutorialMessage) + 30;
+        const mx = (virtualW || (width / gameScale)) / 2;
+        const my = (virtualH || (height / gameScale)) * 0.35 + Math.sin(t * 0.003) * 3;
+        fill(0, 0, 0, msgAlpha * 0.7); noStroke();
+        rect(mx - mw/2, my - 20, mw, 42, 8);
+        stroke(255, 215, 0, msgAlpha * 0.5); strokeWeight(1);
+        rect(mx - mw/2, my - 20, mw, 42, 8);
+        noStroke();
+        fill(255, 255, 255, msgAlpha);
+        text(tutorialMessage, mx, my);
+    }
+
+    pop();
+}
+
+function drawLegacyTutorial() {
   if (!activeTutorial) return;
 
   const vW = virtualW || (width / gameScale);
@@ -8049,6 +8529,29 @@ window.addEventListener('message', (ev) => {
     switch (ev.data.type) {
         case 'game-activated': {
           try {
+            // Re-check tutorial state in case it was reset in the menu while iframe was sleeping
+            const wasTutorial = isTutorialMap;
+            const shouldBeTutorial = (localStorage.getItem('tutorialComplete') !== 'true');
+            if (shouldBeTutorial !== wasTutorial || (shouldBeTutorial && localStorage.getItem('hasShownWelcomeTutorial') === 'false')) {
+                isTutorialMap = shouldBeTutorial;
+                hasShownWelcomeTutorial = (localStorage.getItem('hasShownWelcomeTutorial') === 'true');
+                tutorialStep = 0;
+                tutorialMoved = false;
+                tutorialAttacked = false;
+                tutorialCollected = false;
+                tutorialSprintDetected = false;
+                tutorialHitLanded = false;
+                tutorialStepTimer = 0;
+                tutorialMessage = '';
+                tutorialMessageTimer = 0;
+                // Only regenerate if the game has already completed its initial load.
+                // If it hasn't loaded yet, the normal setup() flow will pick up
+                // the updated isTutorialMap flag and generate the correct map.
+                if (mapLoadComplete) {
+                    generateMap();
+                }
+            }
+
             pendingGameActivated = true;
             if (typeof _confirmResize === 'function') {
               try { _confirmResize(); pendingGameActivated = false; } catch (e) { console.warn('[game] _confirmResize failed', e); }

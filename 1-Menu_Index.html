@@ -29,14 +29,14 @@
         position: absolute;
         top: 0;
         left: 0;
-        z-index: -1; 
+        z-index: 0; 
       }
 
-      
-      button,
-      div,
-      input,
-      select {
+      /* Only target top-level p5 elements to avoid breaking complex UI like the terminal */
+      body > button,
+      body > div,
+      body > input,
+      body > select {
         position: absolute; 
         z-index: 10; 
       }

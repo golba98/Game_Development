@@ -683,6 +683,13 @@ function createMainMenu() {
       } else {
         disableMenuBackgroundVideo();
         overlay.style.display = 'flex';
+        const ifr = document.getElementById('game-iframe');
+        if (ifr && ifr.contentWindow) {
+            ifr.contentWindow.postMessage({ type: 'game-activated' }, '*');
+            console.log('[parent] posted game-activated to iframe (resume)');
+            try { ifr.focus(); } catch (e) {}
+            try { ifr.contentWindow.focus(); } catch (e) {}
+        }
       }
     });
   });
@@ -1732,6 +1739,15 @@ function injectTerminal() {
     `);
     terminalEl.style('display', 'none');
     terminalEl.style('z-index', '20000');
+    terminalEl.style('position', 'fixed');
+    terminalEl.style('top', '0');
+    terminalEl.style('left', '0');
+    terminalEl.style('width', '100%');
+    terminalEl.style('height', '100%');
+    terminalEl.style('pointer-events', 'none'); // Allow clicks to pass through empty space
+    
+    const inner = document.getElementById('game-terminal');
+    if (inner) inner.style.pointerEvents = 'auto'; // Re-enable clicks for the terminal itself
     
     const input = document.getElementById('terminal-input');
     const history = document.getElementById('terminal-history');
@@ -1767,6 +1783,8 @@ function injectTerminal() {
         }
     });
 
+    terminalLog('CORE OS [Version 1.0.42]', 'terminal-log');
+    terminalLog('Initializing secure connection... OK.', 'terminal-log');
     terminalLog('SYSTEM INITIALIZED. WELCOME TO THE GRID COMMAND INTERFACE.', 'terminal-success');
     terminalLog('Type <span style="color:#fff">/help</span> for available commands.', 'terminal-log');
 }
@@ -1774,7 +1792,7 @@ function injectTerminal() {
 function toggleTerminal(state) {
     if (!terminalEl) injectTerminal();
     isTerminalOpen = (state !== undefined) ? state : !isTerminalOpen;
-    terminalEl.style('display', isTerminalOpen ? 'block' : 'none');
+    if (terminalEl) terminalEl.style('display', isTerminalOpen ? 'block' : 'none');
     if (isTerminalOpen) {
         setTimeout(() => document.getElementById('terminal-input')?.focus(), 10);
     }
@@ -1797,25 +1815,30 @@ function processTerminalCommand(cmd) {
 
     if (base === '/help') {
         terminalLog('SYSTEM COMMANDS:');
-        terminalLog('  <span style="color:#fff">/tutorial reset</span>   - Reset tutorial flags (shows on next game start).');
+        terminalLog('  <span style="color:#fff">/tutorial welcome</span> - Reset welcome flag only.');
+        terminalLog('  <span style="color:#fff">/tutorial reset</span>   - Reset interactive tutorial map.');
         terminalLog('  <span style="color:#fff">/clear</span>            - Wipe terminal log history.');
         terminalLog('  <span style="color:#fff">/exit</span>             - Disconnect from console.');
     } else if (base === '/tutorial') {
         if (parts[1] === 'reset') {
-            // Since we're in the menu, we just update the storage or flag
-            // 4-Game.js will pick it up on next load.
             localStorage.setItem('hasShownWelcomeTutorial', 'false');
-            terminalLog('SUCCESS: User experience flags cleared in local storage.', 'terminal-success');
-        } else {
-            terminalLog('USAGE: /tutorial reset', 'terminal-log');
+            localStorage.setItem('tutorialComplete', 'false');
+            terminalLog('SUCCESS: Interactive tutorial state reset in local storage.', 'terminal-success');
+        } else if (parts[1] === 'welcome') {
+            localStorage.setItem('hasShownWelcomeTutorial', 'false');
+            localStorage.setItem('tutorialComplete', 'false');
+            terminalLog('SUCCESS: Welcome protocol and interactive tutorial reset in local storage.', 'terminal-success');
+        }
+ else {
+            terminalLog('USAGE: /tutorial [welcome|reset]', 'terminal-log');
         }
     } else if (base === '/clear') {
         const history = document.getElementById('terminal-history');
-        if (history) history.innerHTML = '';
+        if (history) history.innerHTML = '<div class="terminal-log">History cleared.</div>';
     } else if (base === '/exit') {
         toggleTerminal(false);
     } else {
-        terminalLog(`ERROR: Command '${base}' not recognized.`, 'terminal-error');
+        terminalLog(`ERROR: Command sequence '${base}' not recognized.`, 'terminal-error');
     }
 }
 
