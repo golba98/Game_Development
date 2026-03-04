@@ -668,34 +668,7 @@ function showToast(message, type = 'info', duration = 3000) {
 })();
 
 
-// ── Complex Escape key handler (settings overlay + pause menu) ──
-try {
-  window.addEventListener('keydown', (e) => {
-    try {
-      if (e.key === 'Escape' || e.keyCode === 27) {
-        const active = document && document.activeElement;
-        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-        try {
-          if (settingsOverlayDiv) {
-            if (settingsOverlayDiv.closeZoomPanel) settingsOverlayDiv.closeZoomPanel();
-            else settingsOverlayDiv.remove();
-            settingsOverlayDiv = null;
-            openInGameMenu();
-            e.preventDefault();
-            return;
-          }
-        } catch (err) {}
-        try {
-          if (inGameMenuVisible) closeInGameMenu();
-          else openInGameMenu();
-          e.preventDefault();
-        } catch (err) {
-          console.warn('[game] toggling inGameMenuVisible (global handler) failed', err);
-        }
-      }
-    } catch (err) {}
-  }, false);
-} catch (e) { console.warn('[game] failed to attach global Escape handler', e); }
+// Escape key is handled exclusively in game-input.js (capture phase, debounced)
 
 // ── Audio unlock on first interaction ──
 ['pointerdown', 'keydown'].forEach((evt) => {

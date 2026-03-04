@@ -100,7 +100,7 @@ function mousePressed() {
 
 function togglePauseMenuFromEscape() {
   const now = Date.now();
-  if (now - _lastEscToggleAt < 50) return; 
+  if (now - _lastEscToggleAt < 300) return;
   _lastEscToggleAt = now;
 
   try {
@@ -177,8 +177,6 @@ function keyPressed() {
     } catch (e) { console.warn('[game] jump-forward movement failed', e); }
     return;
   }
-  if (key === 'Escape' || keyCode === 27) { togglePauseMenuFromEscape(); return false; }
-
   if (key === 'm' || key === 'M') {
       showMinimap = !showMinimap;
       return;
@@ -256,7 +254,7 @@ try {
   window.addEventListener('keydown', (ev) => {
     if (ev && ev.key === 'Escape') {
       ev.preventDefault();
-      togglePauseMenuFromEscape();
+      if (!ev.repeat) togglePauseMenuFromEscape();
     }
   }, { capture: true });
 } catch (e) { /* ignore */ }
