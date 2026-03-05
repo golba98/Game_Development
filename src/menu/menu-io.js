@@ -7,9 +7,7 @@ function saveSettings() {
     if (iframe && iframe.contentWindow) {
       iframe.contentWindow.postMessage({
         type: 'update-audio-settings',
-        masterVol: masterVol,
-        musicVol: musicVol,
-        sfxVol: sfxVol,
+        masterVol, musicVol, sfxVol,
         difficulty: difficultySetting
       }, '*');
       console.log('[saveSettings] forwarded audio settings to game iframe');
@@ -52,7 +50,6 @@ function loadAllSettings() {
     sfxVol = s.sfxVol ?? sfxVol;
     textSizeSetting = s.textSizeSetting ?? textSizeSetting;
 
-    // New Settings
     sensitivitySetting = s.sensitivitySetting ?? sensitivitySetting;
     invertYAxis = s.invertYAxis ?? invertYAxis;
     showTutorials = s.showTutorials ?? showTutorials;

@@ -41,7 +41,10 @@ function setup() {
   createMainMenu();
   installMenuZoomLogger();
 
-  try { getAudioContext && getAudioContext().suspend && getAudioContext().suspend(); } catch (e) {}
+  try {
+    const ac = typeof getAudioContext === 'function' ? getAudioContext() : null;
+    if (ac?.suspend) ac.suspend();
+  } catch (e) {}
 }
 
   // === Iframe / Message handling ===
@@ -63,9 +66,7 @@ function setup() {
           if (iframe && iframe.contentWindow) {
             iframe.contentWindow.postMessage({
               type: 'update-audio-settings',
-              masterVol: masterVol,
-              musicVol: musicVol,
-              sfxVol: sfxVol,
+              masterVol, musicVol, sfxVol,
               difficulty: difficultySetting
             }, '*');
           }
@@ -98,30 +99,28 @@ function setup() {
 
     const cleanupAndResume = () => {
       try {
-        const iframe = document.getElementById('game-iframe');
-        if (iframe && iframe.contentWindow) {
-          iframe.contentWindow.postMessage({ type: 'release-game-assets' }, '*');
+        const ifr = document.getElementById('game-iframe');
+        if (ifr && ifr.contentWindow) {
+          ifr.contentWindow.postMessage({ type: 'release-game-assets' }, '*');
         }
       } catch (e) {
         console.warn('[menu] failed to request release-game-assets', e);
       }
       try { if (ov) ov.remove(); } catch (e) { console.warn('remove overlay failed', e); }
-      try { if (getAudioContext) getAudioContext().resume && getAudioContext().resume(); } catch (e) {}
+      try {
+        const ac = typeof getAudioContext === 'function' ? getAudioContext() : null;
+        if (ac?.resume) ac.resume();
+      } catch (e) {}
       try { startMenuMusicIfNeeded(); } catch (e) { console.warn('startMenuMusicIfNeeded failed', e); }
       try { enableMenuBackgroundVideo(); } catch (e) { console.warn('enableMenuBackgroundVideo failed', e); }
       showMainMenu();
       setTimeout(() => { try { window.focus(); } catch (e) {} }, 50);
 
-      try {
-        setTimeout(() => {
-            try {
-
-              skipNextMenuReload = true;
-            } catch (e) {}
-            try { window.dispatchEvent(new Event('resize')); } catch (e) {}
-            try { windowResized(); } catch (e) { console.warn('menu: windowResized call failed', e); }
-        }, 350);
-      } catch (e) { console.warn('failed to schedule menu resize', e); }
+      setTimeout(() => {
+        skipNextMenuReload = true;
+        try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+        try { windowResized(); } catch (e) { console.warn('menu: windowResized call failed', e); }
+      }, 350);
     };
 
     if (!iframe || !iframe.contentWindow) {

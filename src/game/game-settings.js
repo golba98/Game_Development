@@ -59,7 +59,7 @@ function estimateBrowserZoom() {
   const probeZoom = measureZoomViaInch();
   if (probeZoom) candidates.push(probeZoom);
   if (window.devicePixelRatio) {
-    const dprZoom = (window.devicePixelRatio) / (BASE_DPR || 1);
+    const dprZoom = window.devicePixelRatio / (BASE_DPR || 1);
     candidates.push(dprZoom);
   }
   const zoom = candidates.find(v => v && isFinite(v) && v > 0.05 && v < 20) || 1;
@@ -1172,7 +1172,7 @@ function createSettingsContext({ container }) {
 
     pushElement(el) {
       recordElement(el);
-        return ctx;
+      return ctx;
     },
 
     addSliderRow(name, min, max, val, callback, opts = {}) {

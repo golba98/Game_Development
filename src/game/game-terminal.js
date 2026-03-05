@@ -245,9 +245,14 @@ function processTerminalCommand(cmd) {
             hasShownWelcomeTutorial = false;
             isTutorialMap = true;
             tutorialStep = 0;
-            tutorialMoved = false; tutorialAttacked = false; tutorialCollected = false;
-            tutorialSprintDetected = false; tutorialHitLanded = false; tutorialStepTimer = 0;
-            tutorialMessage = ''; tutorialMessageTimer = 0;
+            tutorialMoved = false;
+            tutorialAttacked = false;
+            tutorialCollected = false;
+            tutorialSprintDetected = false;
+            tutorialHitLanded = false;
+            tutorialStepTimer = 0;
+            tutorialMessage = '';
+            tutorialMessageTimer = 0;
             localStorage.setItem('hasShownWelcomeTutorial', 'false');
             localStorage.setItem('tutorialComplete', 'false');
             log('SUCCESS: Tutorial state reset. Loading Training Glade...', 'terminal-success');

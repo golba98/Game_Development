@@ -1,5 +1,9 @@
 function preload() {
-  try { ensureLoadingOverlayDom(); overlayMessage = 'Loading assets...'; updateLoadingOverlayDom(); } catch (e) {}
+  try {
+    ensureLoadingOverlayDom();
+    overlayMessage = 'Loading assets...';
+    updateLoadingOverlayDom();
+  } catch (e) {}
 
   HILL_DIRECTIONS.forEach(dir => {
     const path = `assets/1-Background/2-Game/1-Forest/1-hill_${dir}.png`;
@@ -21,7 +25,10 @@ function preload() {
             try { img.updatePixels(); } catch (e) {}
           }
 
-          try { const fixed = cleanImageBrown(img); if (fixed) verboseLog('[preload] cleaned brown pixels from hill asset', dir, 'fixed=', fixed); } catch (e) {}
+          try {
+            const fixed = cleanImageBrown(img);
+            if (fixed) verboseLog('[preload] cleaned brown pixels from hill asset', dir, 'fixed=', fixed);
+          } catch (e) {}
         } catch (e) {}
         HILL_ASSETS[dir] = img;
     });
@@ -29,15 +36,33 @@ function preload() {
 
 
   try {
-    trackLoadImage('button_bg', 'assets/3-GUI/Button_BG.png', (img) => { BUTTON_BG = img; verboseLog('[game] loaded BUTTON_BG', img && img.width, 'x', img && img.height); }, (err) => { console.warn('[game] failed to load BUTTON_BG', err); BUTTON_BG = null; });
+    trackLoadImage('button_bg', 'assets/3-GUI/Button_BG.png',
+      (img) => {
+        BUTTON_BG = img;
+        verboseLog('[game] loaded BUTTON_BG', img && img.width, 'x', img && img.height);
+      },
+      (err) => { console.warn('[game] failed to load BUTTON_BG', err); BUTTON_BG = null; }
+    );
   } catch (e) {}
 
   try {
-    trackLoadImage('settings_overlay', 'assets/1-Background/1-Menu/Settings_Background.png', (img) => { SETTINGS_OVERLAY = img; verboseLog('[game] loaded SETTINGS_OVERLAY', img && img.width, 'x', img && img.height); }, (err) => { console.warn('[game] failed to load SETTINGS_OVERLAY', err); SETTINGS_OVERLAY = null; });
+    trackLoadImage('settings_overlay', 'assets/1-Background/1-Menu/Settings_Background.png',
+      (img) => {
+        SETTINGS_OVERLAY = img;
+        verboseLog('[game] loaded SETTINGS_OVERLAY', img && img.width, 'x', img && img.height);
+      },
+      (err) => { console.warn('[game] failed to load SETTINGS_OVERLAY', err); SETTINGS_OVERLAY = null; }
+    );
   } catch (e) {}
 
   try {
-    trackLoadImage('esc_menu_background', 'assets/1-Background/1-Menu/Background.png', (img) => { ESC_MENU_BACKGROUND = img; verboseLog('[game] loaded ESC_MENU_BACKGROUND'); }, (err) => { console.warn('[game] failed to load ESC_MENU_BACKGROUND', err); ESC_MENU_BACKGROUND = null; });
+    trackLoadImage('esc_menu_background', 'assets/1-Background/1-Menu/Background.png',
+      (img) => {
+        ESC_MENU_BACKGROUND = img;
+        verboseLog('[game] loaded ESC_MENU_BACKGROUND');
+      },
+      (err) => { console.warn('[game] failed to load ESC_MENU_BACKGROUND', err); ESC_MENU_BACKGROUND = null; }
+    );
   } catch (e) {}
 
   TILE_IMAGES['forest'] = null;
@@ -47,15 +72,8 @@ function preload() {
   TILE_IMAGES['tree_1'] = null;
   TILE_IMAGES['water_1'] = null;
   TILE_IMAGES['bridge_1'] = null;
+  
   try {
-
-
-
-
-
-
-
-
     trackLoadImage('tile_1', 'assets/1-Background/2-Game/1-Forest/tile_1.png',
       (img) => { TILE_IMAGES['tile_1'] = img; },
       (err) => { TILE_IMAGES['tile_1'] = null; }
@@ -100,8 +118,22 @@ function preload() {
   scheduleDeferredCharacterAssets();
   try { logAssetTrackerStatus('after preload queue'); } catch (e) {}
 
-  try { trackLoadSound('gameMusic:assets/8-Music/game_music.wav', 'assets/8-Music/game_music.wav', (snd) => { gameMusic = snd; }, (err) => { gameMusic = null; }); } catch (e) { try { gameMusic = loadSound('assets/8-Music/game_music.wav'); } catch (ee) { gameMusic = null; } }
-  try { trackLoadSound('clickSFX:assets/9-Sounds/Button_Press.mp3', 'assets/9-Sounds/Button_Press.mp3', (snd) => { clickSFX = snd; }, (err) => { clickSFX = null; }); } catch (e) { try { clickSFX = loadSound('assets/9-Sounds/Button_Press.mp3'); } catch (ee) { clickSFX = null; } }
+  try {
+    trackLoadSound('gameMusic:assets/8-Music/game_music.wav', 'assets/8-Music/game_music.wav',
+      (snd) => { gameMusic = snd; },
+      (err) => { gameMusic = null; }
+    );
+  } catch (e) {
+    try { gameMusic = loadSound('assets/8-Music/game_music.wav'); } catch (ee) { gameMusic = null; }
+  }
+  try {
+    trackLoadSound('clickSFX:assets/9-Sounds/Button_Press.mp3', 'assets/9-Sounds/Button_Press.mp3',
+      (snd) => { clickSFX = snd; },
+      (err) => { clickSFX = null; }
+    );
+  } catch (e) {
+    try { clickSFX = loadSound('assets/9-Sounds/Button_Press.mp3'); } catch (ee) { clickSFX = null; }
+  }
 
   try {
     trackLoadImage('mantis_move', 'assets/2-Characters/5-Enemies/MantisMove.png',
@@ -577,12 +609,16 @@ function releaseGameAssets() {
   releaseImageReference(spritesheetIdle);
   releaseImageReference(spritesheetWalk);
   releaseImageReference(spritesheetRun);
-  spritesheetIdle = null; spritesheetWalk = null; spritesheetRun = null;
+  spritesheetIdle = null;
+  spritesheetWalk = null;
+  spritesheetRun = null;
 
   releaseImageReference(BUTTON_BG);
   releaseImageReference(TREE_OVERLAY_IMG);
   releaseImageReference(uiFont);
-  BUTTON_BG = null; TREE_OVERLAY_IMG = null; uiFont = null;
+  BUTTON_BG = null;
+  TREE_OVERLAY_IMG = null;
+  uiFont = null;
 
   clearObjectValues(TILE_IMAGES);
   clearObjectValues(DECOR_ASSET_IMAGES);
@@ -590,11 +626,15 @@ function releaseGameAssets() {
   if (Array.isArray(cloudImages)) cloudImages.length = 0;
 
   try { if (gameMusic && typeof gameMusic.stop === 'function') gameMusic.stop(); } catch (e) {}
-  gameMusic = null; clickSFX = null;
+  gameMusic = null;
+  clickSFX = null;
 
-  AssetTracker.loaded = 0; AssetTracker.expected = 0;
+  AssetTracker.loaded = 0;
+  AssetTracker.expected = 0;
   AssetTracker.names.clear();
-  AssetTracker._callbacks = []; AssetTracker._resolve = null; AssetTracker._readyPromise = null;
+  AssetTracker._callbacks = [];
+  AssetTracker._resolve = null;
+  AssetTracker._readyPromise = null;
 
   genTempData = {};
 }

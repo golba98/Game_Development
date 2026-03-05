@@ -97,16 +97,15 @@ function processTerminalCommand(cmd) {
         terminalLog('  <span style="color:#fff">/clear</span>            - Wipe terminal log history.');
         terminalLog('  <span style="color:#fff">/exit</span>             - Disconnect from console.');
     } else if (base === '/tutorial') {
-        if (parts[1] === 'reset') {
+        const sub = parts[1];
+        if (sub === 'reset' || sub === 'welcome') {
             localStorage.setItem('hasShownWelcomeTutorial', 'false');
             localStorage.setItem('tutorialComplete', 'false');
-            terminalLog('SUCCESS: Interactive tutorial state reset in local storage.', 'terminal-success');
-        } else if (parts[1] === 'welcome') {
-            localStorage.setItem('hasShownWelcomeTutorial', 'false');
-            localStorage.setItem('tutorialComplete', 'false');
-            terminalLog('SUCCESS: Welcome protocol and interactive tutorial reset in local storage.', 'terminal-success');
-        }
- else {
+            const msg = sub === 'welcome'
+                ? 'SUCCESS: Welcome protocol and interactive tutorial reset in local storage.'
+                : 'SUCCESS: Interactive tutorial state reset in local storage.';
+            terminalLog(msg, 'terminal-success');
+        } else {
             terminalLog('USAGE: /tutorial [welcome|reset]', 'terminal-log');
         }
     } else if (base === '/clear') {

@@ -601,7 +601,7 @@ let EDGE_LAYER_DEBUG = false;
 let EDGE_LAYER_COLOR = [76, 175, 80, 200];
 
 function setEdgeLayerColor(r, g, b, a = 200) {
-  EDGE_LAYER_COLOR = [Number(r)||0, Number(g)||0, Number(b)||0, Number(a)||0];
+  EDGE_LAYER_COLOR = [Number(r) || 0, Number(g) || 0, Number(b) || 0, Number(a) || 0];
   verboseLog('[game] EDGE_LAYER_COLOR=', EDGE_LAYER_COLOR);
 }
 
@@ -611,10 +611,14 @@ function setEdgeLayerEnabled(v) {
 }
 
 function setEdgeLayerDebug(v) {
-  EDGE_LAYER_DEBUG = !!v; verboseLog('[game] EDGE_LAYER_DEBUG=', EDGE_LAYER_DEBUG);
+  EDGE_LAYER_DEBUG = !!v;
+  verboseLog('[game] EDGE_LAYER_DEBUG=', EDGE_LAYER_DEBUG);
 }
 
-try { window.setEdgeLayerEnabled = setEdgeLayerEnabled; window.setEdgeLayerDebug = setEdgeLayerDebug; } catch (e) {}
+try {
+  window.setEdgeLayerEnabled = setEdgeLayerEnabled;
+  window.setEdgeLayerDebug = setEdgeLayerDebug;
+} catch (e) {}
 try { window.setEdgeLayerColor = setEdgeLayerColor; } catch (e) {}
 
 let TILE_IMAGES = { };

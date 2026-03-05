@@ -42,7 +42,10 @@ function _addMenuBtn(panel, label, onClick) {
 
 // Opens the pause menu overlay.
 function openInGameMenu() {
-  if (inGameMenuOverlay) { inGameMenuOverlay.close(); inGameMenuOverlay = null; }
+  if (inGameMenuOverlay) {
+    inGameMenuOverlay.close();
+    inGameMenuOverlay = null;
+  }
   try { loadLocalSettings(); } catch (e) {}
   try { applyCurrentTextSize(); } catch (e) {}
   inGameMenuVisible = true;
@@ -53,7 +56,8 @@ function openInGameMenu() {
 
   _addMenuBtn(panel, t('resume'), () => closeInGameMenu());
   _addMenuBtn(panel, t('settings'), () => {
-    inGameMenuOverlay.close(); inGameMenuOverlay = null;
+    inGameMenuOverlay.close();
+    inGameMenuOverlay = null;
     openInGameSettings({ masterVol, musicVol, sfxVol, difficulty: currentDifficulty });
   });
   _addMenuBtn(panel, t('exit'), () => {
@@ -63,7 +67,10 @@ function openInGameMenu() {
 
 // Closes the pause menu overlay and restores focus.
 function closeInGameMenu() {
-  if (inGameMenuOverlay) { inGameMenuOverlay.close(); inGameMenuOverlay = null; }
+  if (inGameMenuOverlay) {
+    inGameMenuOverlay.close();
+    inGameMenuOverlay = null;
+  }
   inGameMenuVisible = false;
   try { if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize(); } catch (e) {}
 }
@@ -128,7 +135,10 @@ function triggerVictory() {
 
 // Shows the victory overlay with the player's final score.
 function showVictoryScreen() {
-  if (victoryOverlay) { victoryOverlay.close(); victoryOverlay = null; }
+  if (victoryOverlay) {
+    victoryOverlay.close();
+    victoryOverlay = null;
+  }
   const { panel, close } = createZoomStablePanel(MENU_PANEL_W, MENU_PANEL_H, 'gd-victory-menu');
   victoryOverlay = { close };
   _addPanelTitle(panel, t('victory'));
@@ -141,13 +151,19 @@ function showVictoryScreen() {
   msg.style('color',         '#fff');
 
   _addMenuBtn(panel, t('continue_btn'), () => {
-    if (victoryOverlay) { victoryOverlay.close(); victoryOverlay = null; }
+    if (victoryOverlay) {
+      victoryOverlay.close();
+      victoryOverlay = null;
+    }
   });
 }
 
 // Shows the game-over overlay with restart and exit-to-menu options.
 function showGameOverScreen() {
-  if (gameOverOverlay) { gameOverOverlay.close(); gameOverOverlay = null; }
+  if (gameOverOverlay) {
+    gameOverOverlay.close();
+    gameOverOverlay = null;
+  }
   const { panel, close } = createZoomStablePanel(MENU_PANEL_W, MENU_PANEL_H, 'gd-gameover-menu');
   gameOverOverlay = { close };
   _addPanelTitle(panel, t('game_over'));
@@ -165,15 +181,21 @@ function showGameOverScreen() {
 
 // Resets game-over state and re-spawns all enemies at their initial positions.
 function restartGame() {
-  if (gameOverOverlay) { gameOverOverlay.close(); gameOverOverlay = null; }
+  if (gameOverOverlay) {
+    gameOverOverlay.close();
+    gameOverOverlay = null;
+  }
   isGameOver = false;
   playerHealth = maxHealth;
 
   if (initialSpawnPosition) {
     playerPosition = { x: initialSpawnPosition.x, y: initialSpawnPosition.y };
-    renderX = playerPosition.x; renderY = playerPosition.y;
-    renderStartX = renderX; renderStartY = renderY;
-    renderTargetX = renderX; renderTargetY = renderY;
+    renderX = playerPosition.x;
+    renderY = playerPosition.y;
+    renderStartX = renderX;
+    renderStartY = renderY;
+    renderTargetX = renderX;
+    renderTargetY = renderY;
     isMoving = false;
   }
 
@@ -245,7 +267,10 @@ function attemptStartGameMusic(reason = 'unknown') {
 
 // Plays the UI click sound effect at the current volume.
 function playClickSFX() {
-  if (clickSFX) { clickSFX.setVolume(sfxVol * masterVol); clickSFX.play(); }
+  if (clickSFX) {
+    clickSFX.setVolume(sfxVol * masterVol);
+    clickSFX.play();
+  }
 }
 
 // Unlocks the AudioContext on first user interaction then starts the menu music.
@@ -354,7 +379,8 @@ function showToast(message, type = 'info', duration = 3000) {
 
     const dismiss = () => {
       try {
-        el.style.opacity = '0'; el.style.transform = 'translateY(-6px)';
+        el.style.opacity   = '0';
+        el.style.transform = 'translateY(-6px)';
         setTimeout(() => { try { el.parentNode?.removeChild(el); } catch (e) {} }, 240);
       } catch (e) {}
     };
@@ -453,4 +479,8 @@ function showSubSettings(label) {
 }
 
 
-try { ensureLoadingOverlayDom(); overlayMessage = 'Loading assets...'; updateLoadingOverlayDom(); } catch (e) {}
+try {
+  ensureLoadingOverlayDom();
+  overlayMessage = 'Loading assets...';
+  updateLoadingOverlayDom();
+} catch (e) {}

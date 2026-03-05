@@ -262,7 +262,7 @@ function canMoveTo(fromX, fromY, toX, toY) {
         if (edgeLayer[idx]) return false;
       }
     }
-  } catch (e) {  }
+  } catch (e) {}
   return true;
 }
 

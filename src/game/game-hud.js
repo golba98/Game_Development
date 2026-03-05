@@ -1,6 +1,19 @@
 // game-hud.js — HUD: health bar, minimap, score, inventory, compass, clouds
 // Extracted from 4-Game.js
 
+// Maps lastDirection strings to radians for the minimap player arrow.
+// N = up (-HALF_PI), E = right (0), S = down (HALF_PI), W = PI, plus diagonals.
+const DIRECTION_TO_ANGLE_MAP = {
+  'N':  -Math.PI / 2,
+  'NE': -Math.PI / 4,
+  'E':   0,
+  'SE':  Math.PI / 4,
+  'S':   Math.PI / 2,
+  'SW':  Math.PI / 2 + Math.PI / 4,
+  'W':   Math.PI,
+  'NW': -Math.PI / 2 - Math.PI / 4,
+};
+
 function drawHealthBar() {
   if (!heartImage) return;
   const startX = 30;
@@ -28,13 +41,16 @@ function drawHealthBar() {
   if (BUTTON_BG) {
       image(BUTTON_BG, startX - 15, startY - 12, containerW, containerH);
   } else {
-      stroke(0); strokeWeight(4); fill(20, 20, 20, 180);
+      stroke(0);
+      strokeWeight(4);
+      fill(20, 20, 20, 180);
       rect(startX - 15, startY - 12, containerW, containerH, 4);
   }
   
   // Gold Inner Border
   stroke(MENU_GOLD_BORDER);
-  strokeWeight(2); noFill();
+  strokeWeight(2);
+  noFill();
   rect(startX - 12, startY - 10, containerW - 6, containerH - 4, 2);
 
   for (let i = 0; i < maxHealth; i++) {
@@ -110,11 +126,15 @@ function drawMinimap() {
   
   push();
   // Background
-  stroke(0, 150); strokeWeight(4); fill(20, 20, 30, 180);
+  stroke(0, 150);
+  strokeWeight(4);
+  fill(20, 20, 30, 180);
   rect(mX - 5, mY - 5, mSize + 10, mSize + 10, 5);
   
   // Gold Border
-  stroke(MENU_GOLD_BORDER); strokeWeight(2); noFill();
+  stroke(MENU_GOLD_BORDER);
+  strokeWeight(2);
+  noFill();
   rect(mX - 3, mY - 3, mSize + 6, mSize + 6, 3);
   
   noStroke();
@@ -155,7 +175,8 @@ function drawMinimap() {
       fill(255);
       ellipse(pX, pY, 5, 5);
       // Small direction indicator
-      stroke(255); strokeWeight(2);
+      stroke(255);
+      strokeWeight(2);
       let dx = 0, dy = 0;
       if (facing === 'left') dx = -5; else dx = 5;
       line(pX, pY, pX + dx, pY);
@@ -227,11 +248,14 @@ function drawInventory() {
   if (BUTTON_BG) {
     image(BUTTON_BG, startX - 8, startY - 8, containerW, containerH);
   } else {
-    stroke(0); strokeWeight(4); fill(20, 20, 20, 180);
+    stroke(0);
+    strokeWeight(4);
+    fill(20, 20, 20, 180);
     rect(startX - 8, startY - 8, containerW, containerH, 4);
   }
   stroke(MENU_GOLD_BORDER);
-  strokeWeight(2); noFill();
+  strokeWeight(2);
+  noFill();
   rect(startX - 5, startY - 5, containerW - 6, containerH - 6, 2);
 
   for (let i = 0; i < slots.length; i++) {
@@ -240,7 +264,8 @@ function drawInventory() {
     const sy = startY;
 
     // Slot background
-    noStroke(); fill(0, 0, 0, 120);
+    noStroke();
+    fill(0, 0, 0, 120);
     rect(sx, sy, slotW, slotH, 3);
 
     // Item indicator
@@ -249,7 +274,8 @@ function drawInventory() {
     ellipse(sx + slotW / 2, sy + slotH / 2 - 4, 20, 20);
 
     // Count
-    fill(255); noStroke();
+    fill(255);
+    noStroke();
     textAlign(CENTER, CENTER);
     if (typeof gTextSize === 'function') gTextSize(14); else textSize(14);
     text('x' + s.count, sx + slotW / 2, sy + slotH - 8);
@@ -391,13 +417,16 @@ function drawSprintMeter() {
       image(BUTTON_BG, startX - 10, startY - 8, containerW + 20, containerH + 16);
       noTint();
   } else {
-      stroke(0); strokeWeight(4); fill(20, 20, 20, 200 * (targetAlpha / 255));
+      stroke(0);
+      strokeWeight(4);
+      fill(20, 20, 20, 200 * (targetAlpha / 255));
       rect(startX - 10, startY - 8, containerW + 20, containerH + 16, 4);
   }
   
   // Gold Inner Border
   stroke(MENU_GOLD_BORDER);
-  strokeWeight(2); noFill();
+  strokeWeight(2);
+  noFill();
   rect(startX - 7, startY - 5, containerW + 14, containerH + 10, 2);
 
   // Bar Background (empty part)
@@ -547,13 +576,19 @@ function drawCompass() {
         rotate(angle);
         
         // Arrow Shadow
-        fill(0, 100); noStroke();
-        beginShape(); vertex(22, 2); vertex(-8, -12); vertex(2, 2); vertex(-8, 12); endShape(CLOSE);
-        
+        fill(0, 100);
+        noStroke();
+        beginShape();
+        vertex(22, 2); vertex(-8, -12); vertex(2, 2); vertex(-8, 12);
+        endShape(CLOSE);
+
         // Arrow Fill
         fill(markerColor.levels[0], markerColor.levels[1], markerColor.levels[2], alpha);
-        stroke(0, alpha * 0.8); strokeWeight(2);
-        beginShape(); vertex(20, 0); vertex(-10, -14); vertex(0, 0); vertex(-10, 14); endShape(CLOSE);
+        stroke(0, alpha * 0.8);
+        strokeWeight(2);
+        beginShape();
+        vertex(20, 0); vertex(-10, -14); vertex(0, 0); vertex(-10, 14);
+        endShape(CLOSE);
         
         rotate(-angle);
         noStroke(); 
@@ -562,24 +597,28 @@ function drawCompass() {
         // Label (COIN/ENEMY/PORTAL)
         textAlign(CENTER, BOTTOM);
         textSize(10);
-        fill(0, 180); text(m.label, 1, -19); // Shadow
-        fill(markerColor); text(m.label, 0, -20);
-        
+        fill(0, 180);
+        text(m.label, 1, -19); // Shadow
+        fill(markerColor);
+        text(m.label, 0, -20);
+
         // Distance
         textAlign(CENTER, TOP);
         textSize(12);
-        fill(0, 180); text(Math.round(distTiles) + "m", 1, 21); // Shadow
-        fill(255); text(Math.round(distTiles) + "m", 0, 20);
+        fill(0, 180);
+        text(Math.round(distTiles) + "m", 1, 21); // Shadow
+        fill(255);
+        text(Math.round(distTiles) + "m", 0, 20);
         pop();
     });
 }
 
 function locatePortal() {
     if (portalPos) {
-        console.log(`[debug] Portal is at Tile: ${portalPos.x}, ${portalPos.y}`);
+        verboseLog(`[debug] Portal is at Tile: ${portalPos.x}, ${portalPos.y}`);
         return portalPos;
     } else {
-        console.log("[debug] No portal spawned yet.");
+        verboseLog('[debug] No portal spawned yet.');
         return null;
     }
 }
@@ -721,7 +760,8 @@ function _drawMinimapFull() {
 
   if (portalPos) {
     fill(isPortalActive ? [255, 215, 0] : [100, 100, 100]);
-    stroke(0, 150); strokeWeight(1);
+    stroke(0, 150);
+    strokeWeight(1);
     const px = mmX + offX + (portalPos.x / logicalW * drawW);
     const py = mmY + offY + (portalPos.y / logicalH * drawH);
     rect(px - 3, py - 3, 6, 6);
@@ -732,17 +772,13 @@ function _drawMinimapFull() {
     const pY = isMoving ? renderY : playerPosition.y;
     const markerX = mmX + offX + (pX / logicalW * drawW);
     const markerY = mmY + offY + (pY / logicalH * drawH);
-    const dirMap = {
-      'N': -HALF_PI, 'NE': -QUARTER_PI,
-      'E': 0, 'SE': QUARTER_PI,
-      'S': HALF_PI, 'SW': HALF_PI + QUARTER_PI,
-      'W': PI, 'NW': -HALF_PI - QUARTER_PI
-    };
-    const angle = dirMap[lastDirection || 'S'] ?? HALF_PI;
+    const angle = DIRECTION_TO_ANGLE_MAP[lastDirection || 'S'] ?? HALF_PI;
     push();
     translate(markerX, markerY);
     rotate(angle);
-    fill(255); stroke(0, 0, 0, 150); strokeWeight(1);
+    fill(255);
+    stroke(0, 0, 0, 150);
+    strokeWeight(1);
     beginShape();
     vertex(5, 0); vertex(-4, -4); vertex(-2, 0); vertex(-4, 4);
     endShape(CLOSE);

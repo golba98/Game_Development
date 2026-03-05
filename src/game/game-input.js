@@ -272,7 +272,7 @@ try {
 window.addEventListener('keydown', (ev) => {
   const k = ev.key ? ev.key.toUpperCase() : '';
   if (k === 'W' || k === 'A' || k === 'S' || k === 'D') {
-    try { tryMoveDirection(k); } catch (e) {  }
+    try { tryMoveDirection(k); } catch (e) {}
   }
   if (k === 'P') {
     verboseLog('[game] P pressed - Starting Phase 1');

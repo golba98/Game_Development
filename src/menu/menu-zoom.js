@@ -6,7 +6,6 @@ function installMenuZoomLogger() {
       const scale = vv && vv.scale ? vv.scale : (window.outerWidth / window.innerWidth) || 1;
       const dpr = window.devicePixelRatio || 1;
       const ratio = (window.outerWidth && window.innerWidth) ? window.outerWidth / window.innerWidth : 1;
-      const version = [scale, dpr, ratio].map(v => Number(v.toFixed(3))).join(',');
       if (!_lastMenuZoomLog || Math.abs(scale - _lastMenuZoomLog) > 0.01) {
         console.log('[menu-zoom] scale', scale, 'dpr', dpr, 'outer/inner ratio', ratio, 'headers zoom', document.documentElement.style.zoom, document.body.style.zoom, 'visualViewport', vv ? vv.scale : 'n/a');
         _lastMenuZoomLog = scale;
@@ -61,11 +60,8 @@ function unregisterZoomAwareSlider(el) {
 }
 // === Zoom / Measurement ===
 function getCurrentMenuZoom() {
-  const vv = window.visualViewport;
-  const viewportScale = vv && vv.scale;
-  if (viewportScale && isFinite(viewportScale) && viewportScale > 0) {
-    return viewportScale;
-  }
+  const scale = window.visualViewport?.scale;
+  if (scale && isFinite(scale) && scale > 0) return scale;
   return estimateMenuBrowserZoom();
 }
 // === DOM Stability Routines ===
@@ -79,13 +75,11 @@ function keepMenuRootStable(el) {
     const offsetY = vv ? (vv.offsetTop || 0) : 0;
     const zoom = getCurrentMenuZoom();
     const safeZoom = (zoom && isFinite(zoom) && zoom > 0) ? zoom : 1;
-    const translateX = offsetX;
-    const translateY = offsetY;
-    el.style.transform = `translate(${-translateX}px, ${-translateY}px)`;
+    el.style.transform = `translate(${-offsetX}px, ${-offsetY}px)`;
     el.style.transformOrigin = 'top left';
-    if (_lastMenuRootOffset.x !== translateX || _lastMenuRootOffset.y !== translateY) {
-      console.log('[menu-debug] root translate', { offsetX, offsetY, zoom: safeZoom, translateX, translateY });
-      _lastMenuRootOffset = { x: translateX, y: translateY };
+    if (_lastMenuRootOffset.x !== offsetX || _lastMenuRootOffset.y !== offsetY) {
+      console.log('[menu-debug] root translate', { offsetX, offsetY, zoom: safeZoom });
+      _lastMenuRootOffset = { x: offsetX, y: offsetY };
     }
     loopId = requestAnimationFrame(update);
   };
@@ -157,11 +151,8 @@ function estimateMenuBrowserZoom() {
   const probeZoom = measureMenuZoomViaInch();
   if (probeZoom) candidates.push(probeZoom);
   if (window.devicePixelRatio) {
-    const dprZoom = (window.devicePixelRatio) / (BASE_MENU_DPR || 1);
+    const dprZoom = window.devicePixelRatio / (BASE_MENU_DPR || 1);
     candidates.push(dprZoom);
-  }
-  if (window.outerWidth && window.innerWidth) {
-    candidates.push(window.outerWidth / window.innerWidth);
   }
   const zoom = candidates.find(v => v && isFinite(v) && v > 0.05 && v < 20) || 1;
   const clamped = Math.max(0.1, Math.min(10, zoom));

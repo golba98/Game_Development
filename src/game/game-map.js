@@ -157,8 +157,12 @@ function generateMap_Part2() {
       console.error("[PORTAL] Failed to spawn portal! No grass found.");
   }
 
-  renderX = playerPosition.x; renderY = playerPosition.y;
-  renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY;
+  renderX = playerPosition.x;
+  renderY = playerPosition.y;
+  renderStartX = renderX;
+  renderStartY = renderY;
+  renderTargetX = renderX;
+  renderTargetY = renderY;
   isMoving = false;
 
   markDecorObjectsDirty();
@@ -362,11 +366,14 @@ function pruneUnreachable(startX, startY) {
     while (head < q.length) {
       const { x, y } = q[head++];
       for (const d of dirs) {
-        const nx = x + d.dx; const ny = y + d.dy;
+        const nx = x + d.dx;
+        const ny = y + d.dy;
         if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH) {
-          const key = `${nx},${ny}`; const idx = ny * logicalW + nx;
+          const key = `${nx},${ny}`;
+          const idx = ny * logicalW + nx;
           if (!visited.has(key) && !isSolid(mapStates[idx])) {
-            visited.add(key); q.push({ x: nx, y: ny });
+            visited.add(key);
+            q.push({ x: nx, y: ny });
           }
         }
       }
@@ -770,14 +777,18 @@ function carveRiversMaybeThrough(map, w, h, opts = {}) {
       if (reachedSide(x, y, target.side)) {
         if (distToTarget > 2 && Math.random() < 0.4) {
           const extras = neighbors8(x, y, w, h).filter(n => reachedSide(n.x, n.y, target.side));
-          if (extras.length) { const e = extras[Math.floor(Math.random() * extras.length)]; placeRiverTile(e.x, e.y); }
+          if (extras.length) {
+            const e = extras[Math.floor(Math.random() * extras.length)];
+            placeRiverTile(e.x, e.y);
+          }
         }
         break;
       }
       // Score each candidate step: lower = preferred.
       // Penalties: inside clear zone, backtracking, diagonal step, direction change.
       let candidates = neighbors8(x, y, w, h);
-      let best = null; let bestScore = Infinity;
+      let best = null;
+      let bestScore = Infinity;
       for (const c of candidates) {
         const dist = Math.hypot(target.x - c.x, target.y - c.y);
         const jitter = (noise(c.x * jitterNoiseScale, c.y * jitterNoiseScale) - 0.5) * 3;
@@ -794,15 +805,22 @@ function carveRiversMaybeThrough(map, w, h, opts = {}) {
       }
       if (!best) break;
       prevDir = { dx: best.x - x, dy: best.y - y };
-      x = best.x; y = best.y; steps++;
+      x = best.x;
+      y = best.y;
+      steps++;
       if (steps % RIVER_JUMP_INTERVAL === 0 && Math.random() < RIVER_JUMP_PROB) {
-        const p = pickStartAndTarget().start; x = Math.max(0, Math.min(w - 1, p.x)); y = Math.max(0, Math.min(h - 1, p.y));
+        const p = pickStartAndTarget().start;
+        x = Math.max(0, Math.min(w - 1, p.x));
+        y = Math.max(0, Math.min(h - 1, p.y));
         prevDir = null;
       }
     }
   }
 
-  for (let r = 0; r < numRivers; r++) { const { start, target } = pickStartAndTarget(); carveSingleRiver(start, target); }
+  for (let r = 0; r < numRivers; r++) {
+    const { start, target } = pickStartAndTarget();
+    carveSingleRiver(start, target);
+  }
 
   // BFS from (px, py) over walkable tiles; returns the set of visited coordinate keys.
   function floodFillWalkable(px, py) {
@@ -973,7 +991,10 @@ function carveBranchFromRiver(map, w, h, opts = {}) {
     for (let xx = 0; xx < w; xx++) {
       if (map[yy * w + xx] === RIVER_TILE) {
         const d = Math.hypot(playerX - xx, playerY - yy);
-        if (d < bestD) { bestD = d; nearest = { x: xx, y: yy }; }
+        if (d < bestD) {
+          bestD = d;
+          nearest = { x: xx, y: yy };
+        }
       }
     }
   }

@@ -81,13 +81,23 @@ function loadTutorialMap() {
 
     // --- Reset Tutorial State ---
     tutorialStep = TUTORIAL_STEP_MOVE;
-    tutorialMoved = false; tutorialAttacked = false; tutorialCollected = false;
-    tutorialSprintDetected = false; tutorialHitLanded = false;
-    tutorialStepTimer = 0; tutorialCoinSnapshot = TUTORIAL_INITIAL_COINS;
-    tutorialMessage = ''; tutorialMessageTimer = 0; tutorialArrowBlink = 0;
+    tutorialMoved = false;
+    tutorialAttacked = false;
+    tutorialCollected = false;
+    tutorialSprintDetected = false;
+    tutorialHitLanded = false;
+    tutorialStepTimer = 0;
+    tutorialCoinSnapshot = TUTORIAL_INITIAL_COINS;
+    tutorialMessage = '';
+    tutorialMessageTimer = 0;
+    tutorialArrowBlink = 0;
 
-    renderX = playerPosition.x; renderY = playerPosition.y;
-    renderStartX = renderX; renderStartY = renderY; renderTargetX = renderX; renderTargetY = renderY;
+    renderX = playerPosition.x;
+    renderY = playerPosition.y;
+    renderStartX = renderX;
+    renderStartY = renderY;
+    renderTargetX = renderX;
+    renderTargetY = renderY;
 
     smoothCamX = playerPosition.x * cellSize - (width || 640) / 2;
     smoothCamY = playerPosition.y * cellSize - (height || 480) / 2;

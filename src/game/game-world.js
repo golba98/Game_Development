@@ -282,7 +282,12 @@ function createMapImage() {
           destW = (s.drawW && Number(s.drawW) > 0) ? s.drawW : cellSize;
           destH = (s.drawH && Number(s.drawH) > 0) ? s.drawH : cellSize;
         }
-        overlays.push({ tileState: TILE_TYPES.FOREST, px, py, imgType: (TREE_OVERLAY_IMG ? 'image' : 'none'), img: TREE_OVERLAY_IMG || null, s: null, destW, destH, source: 'mapForest' });
+        overlays.push({
+          tileState: TILE_TYPES.FOREST, px, py,
+          imgType: TREE_OVERLAY_IMG ? 'image' : 'none',
+          img: TREE_OVERLAY_IMG || null,
+          s: null, destW, destH, source: 'mapForest'
+        });
       }
     }
   } catch (e) {}
@@ -310,7 +315,6 @@ function createMapImage() {
       const fromTreeObject = o.source === 'treeObject';
       const baseTileX = Math.max(0, Math.min(logicalW - 1, Math.floor(o.px / cellSize)));
       const baseTileY = Math.max(0, Math.min(logicalH - 1, Math.floor(o.py / cellSize)));
-      let markedCount = 0;
       for (let ty = minTileY; ty <= maxTileY; ty++) {
         if (fromTreeObject && ty !== baseTileY) continue;
         for (let tx = minTileX; tx <= maxTileX; tx++) {
@@ -496,9 +500,9 @@ function spawnDecorativeObjects() {
 
   const anchorX = Math.max(0, Math.min(logicalW - 1, Math.floor(logicalW / 2)));
   const anchorY = Math.max(0, Math.min(logicalH - 1, Math.floor(logicalH / 2)));
-  const holeCandidates = grassTiles.slice().sort((a, b) => {
-    return (Math.hypot(a.x - anchorX, a.y - anchorY) - Math.hypot(b.x - anchorX, b.y - anchorY));
-  });
+  const holeCandidates = grassTiles.slice().sort((a, b) =>
+    Math.hypot(a.x - anchorX, a.y - anchorY) - Math.hypot(b.x - anchorX, b.y - anchorY)
+  );
   for (const tile of holeCandidates) {
     const idx = tile.y * logicalW + tile.x;
     if (occupied.has(idx)) continue;
@@ -549,51 +553,51 @@ const DECOR_WALKABLE_SPAWN_CHANCE = 0.06;
 const DECOR_OBSTACLE_SPAWN_CHANCE = 0.025;
 
 function clearObjectValues(target) {
-      if (!target || typeof target !== 'object') return;
-      Object.keys(target).forEach((key) => { target[key] = null; });
-    }
+  if (!target || typeof target !== 'object') return;
+  Object.keys(target).forEach((key) => { target[key] = null; });
+}
 
 
 function releaseGameAssets() {
-      clearPreviousGameState();
-      releaseImageReference(spritesheetIdle);
-      releaseImageReference(spritesheetWalk);
-      releaseImageReference(spritesheetRun);
-      spritesheetIdle = null;
-      spritesheetWalk = null;
-      spritesheetRun = null;
+  clearPreviousGameState();
+  releaseImageReference(spritesheetIdle);
+  releaseImageReference(spritesheetWalk);
+  releaseImageReference(spritesheetRun);
+  spritesheetIdle = null;
+  spritesheetWalk = null;
+  spritesheetRun = null;
 
-      releaseImageReference(BUTTON_BG);
-      releaseImageReference(TREE_OVERLAY_IMG);
-      releaseImageReference(uiFont);
-      BUTTON_BG = null;
-      TREE_OVERLAY_IMG = null;
-      uiFont = null;
+  releaseImageReference(BUTTON_BG);
+  releaseImageReference(TREE_OVERLAY_IMG);
+  releaseImageReference(uiFont);
+  BUTTON_BG = null;
+  TREE_OVERLAY_IMG = null;
+  uiFont = null;
 
-      clearObjectValues(TILE_IMAGES);
-      clearObjectValues(DECOR_ASSET_IMAGES);
-      clearObjectValues(HILL_ASSETS);
+  clearObjectValues(TILE_IMAGES);
+  clearObjectValues(DECOR_ASSET_IMAGES);
+  clearObjectValues(HILL_ASSETS);
 
-      if (Array.isArray(cloudImages)) cloudImages.length = 0;
+  if (Array.isArray(cloudImages)) cloudImages.length = 0;
 
-      try {
-        if (gameMusic && typeof gameMusic.stop === 'function') {
-          gameMusic.stop();
-        }
-      } catch (stopErr) {}
-      gameMusic = null;
-      clickSFX = null;
-
-      if (typeof AssetTracker !== 'undefined') {
-        AssetTracker.loaded = 0;
-        AssetTracker.expected = 0;
-        if (AssetTracker.names && typeof AssetTracker.names.clear === 'function') {
-          AssetTracker.names.clear();
-        }
-        AssetTracker._callbacks = [];
-        AssetTracker._resolve = null;
-        AssetTracker._readyPromise = null;
-      }
-      genTempData = {};
+  try {
+    if (gameMusic && typeof gameMusic.stop === 'function') {
+      gameMusic.stop();
     }
+  } catch (stopErr) {}
+  gameMusic = null;
+  clickSFX = null;
+
+  if (typeof AssetTracker !== 'undefined') {
+    AssetTracker.loaded = 0;
+    AssetTracker.expected = 0;
+    if (AssetTracker.names && typeof AssetTracker.names.clear === 'function') {
+      AssetTracker.names.clear();
+    }
+    AssetTracker._callbacks = [];
+    AssetTracker._resolve = null;
+    AssetTracker._readyPromise = null;
+  }
+  genTempData = {};
+}
 

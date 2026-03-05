@@ -1,6 +1,14 @@
 // game-core.js — p5.js lifecycle: setup, draw, windowResized, resize helpers
 // Extracted from 4-Game.js
 
+// Map-generation phase IDs stored in `genPhase`
+const GENPHASE_START = 1; // show loading overlay, set initial message
+const GENPHASE_PART1 = 2; // wait one frame, then run generateMap_Part1
+const GENPHASE_PART2 = 3; // wait for heavy work, then run generateMap_Part2
+
+// Player bounding-box height relative to cellSize (used for tree-fade overlap test)
+const PLAYER_BBOX_HEIGHT_SCALE = 1.25;
+
 function setup() {
   verboseLog("!!! NEW VERSION LOADED !!! - FIXED_VIRTUAL_HEIGHT = " + FIXED_VIRTUAL_HEIGHT);
   
@@ -97,19 +105,15 @@ function setup() {
 
   try {
     document.addEventListener('pointerdown', (ev) => {
-      try {
-        const el = ev.target;
-        if (!el) return;
-        const isButton = (el.tagName === 'BUTTON') || (el.closest && el.closest('button')) || (el.getAttribute && el.getAttribute('role') === 'button');
-        if (!isButton) return;
-        try {
-          unlockAudioAndStart(() => {
-            try { playClickSFX(); } catch (e) {}
-          });
-        } catch (e) {
-          try { playClickSFX(); } catch (ee) {}
-        }
-      } catch (e) {}
+      const el = ev.target;
+      if (!el) return;
+      const isButton =
+        el.tagName === 'BUTTON' ||
+        (el.closest && el.closest('button')) ||
+        (el.getAttribute && el.getAttribute('role') === 'button');
+      if (!isButton) return;
+      try { unlockAudioAndStart(() => { try { playClickSFX(); } catch (e) {} }); }
+      catch (e) { try { playClickSFX(); } catch (ee) {} }
     }, { capture: true });
   } catch (e) {}
   
@@ -246,32 +250,34 @@ function draw() {
   try { enforceCanvasSharpness(drawingContext); } catch (e) {}
   
   // Clamp deltaTime to prevent huge jumps after lag/tab switch
-  gameDelta = (typeof deltaTime !== 'undefined') ? Math.min(deltaTime, 50) : 16.67;
+  gameDelta = (typeof deltaTime !== 'undefined') ? Math.min(deltaTime, 50) : FRAME_TIME_MS;
 
   if (typeof WeatherSystem !== 'undefined' && !inGameMenuVisible && !settingsOverlayDiv && !isGameOver) {
     WeatherSystem.update(gameDelta);
   }
 
   if (genPhase > 0) {
-    if (genPhase === 1) {
+    if (genPhase === GENPHASE_START) {
       showLoadingOverlay = true;
       startLoadingProgress(0);
       overlayMessage = 'Initializing World...';
       updateLoadingOverlayDom();
       background(0);
       genTimer = millis() + 100;
-      genPhase = 2; return; 
+      genPhase = GENPHASE_PART1;
+      return;
     }
-    if (genPhase === 2) {
+    if (genPhase === GENPHASE_PART1) {
       background(0);
       if (millis() < genTimer) return;
       generateMap_Part1();
       overlayMessage = 'Roughening & Eroding...';
       updateLoadingOverlayDom();
       genTimer = millis() + 800;
-      genPhase = 3; return;
+      genPhase = GENPHASE_PART2;
+      return;
     }
-    if (genPhase === 3) {
+    if (genPhase === GENPHASE_PART2) {
       background(0);
       if (millis() < genTimer) return;
       generateMap_Part2();
@@ -283,11 +289,15 @@ function draw() {
   }
 
 
-  if (typeof window !== 'undefined' && window && window.__gameDebugShown !== true) { 
-    verboseLog('[game] draw() running'); window.__gameDebugShown = true; 
+  if (typeof window !== 'undefined' && !window.__gameDebugShown) {
+    verboseLog('[game] draw() running');
+    window.__gameDebugShown = true;
   }
   
-  try { ensureLoadingOverlayDom(); updateLoadingOverlayDom(); } catch (e) {}
+  try {
+    ensureLoadingOverlayDom();
+    updateLoadingOverlayDom();
+  } catch (e) {}
 
   push();
 
@@ -330,7 +340,7 @@ function draw() {
   } else {
     // Adaptive smoothing based on frame time (normalized to ~60fps)
     // 0.18 is the base lerp at 60Hz; scales smoothly for 144Hz+
-    const t = 1 - Math.pow(1 - 0.18, gameDelta / 16.67);
+    const t = 1 - Math.pow(1 - 0.18, gameDelta / FRAME_TIME_MS);
     smoothCamX = lerp(smoothCamX, targetCamX, t);
     smoothCamY = lerp(smoothCamY, targetCamY, t);
   }
@@ -506,8 +516,8 @@ function draw() {
     if (playerPosition) {
         const pX = isMoving ? renderX : playerPosition.x;
         const pY = isMoving ? renderY : playerPosition.y;
-        const pW = cellSize; 
-        const pH = cellSize * 1.25;
+        const pW = cellSize;
+        const pH = cellSize * PLAYER_BBOX_HEIGHT_SCALE;
         pRect = {
             x: pX * cellSize + (cellSize/2) - (pW/2),
             y: pY * cellSize + cellSize - pH,
@@ -517,55 +527,73 @@ function draw() {
     }
 
     for (const d of currentDrawables) {
-      if (d.type === 'overlay') {
-        const o = d.o;
-        let alpha = 255;
-        // Fade tree if player is visually behind it
-        if (pRect && d.baseY > pRect.y + pRect.h * 0.5) {
+      switch (d.type) {
+        case 'overlay': {
+          const o = d.o;
+          let alpha = 255;
+          // Fade tree if player is visually behind it
+          if (pRect && d.baseY > pRect.y + pRect.h * 0.5) {
             if (pRect.x < d.drawX + o.destW && pRect.x + pRect.w > d.drawX &&
                 pRect.y < d.drawY + o.destH && pRect.y + pRect.h > d.drawY) {
-                alpha = 140; 
+              alpha = 140;
             }
+          }
+          if (alpha < 255) tint(255, alpha);
+          if (o.imgType === 'image' && o.img) image(o.img, d.drawX, d.drawY, o.destW, o.destH);
+          else if (o.imgType === 'sheet' && o.s) image(spritesheet, d.drawX, d.drawY, o.destW, o.destH, o.s.x, o.s.y, o.s.w, o.s.h);
+          if (alpha < 255) noTint();
+          break;
         }
-        if (alpha < 255) tint(255, alpha);
-        if (o.imgType === 'image' && o.img) image(o.img, d.drawX, d.drawY, o.destW, o.destH);
-        else if (o.imgType === 'sheet' && o.s) image(spritesheet, d.drawX, d.drawY, o.destW, o.destH, o.s.x, o.s.y, o.s.w, o.s.h);
-        if (alpha < 255) noTint();
-      } else if (d.type === 'decor') {
-        try { if (d.img) image(d.img, d.drawX, d.drawY, d.destW, d.destH); } catch (e) {}
-      } else if (d.type === 'coin') {
-        if (coinAnimSprite && coinAnimSprite.width > 0) {
+        case 'decor':
+          try { if (d.img) image(d.img, d.drawX, d.drawY, d.destW, d.destH); } catch (e) {}
+          break;
+        case 'coin': {
+          if (coinAnimSprite && coinAnimSprite.width > 0) {
             const frameCount = 4;
             const frame = Math.floor(millis() / 150) % frameCount;
             const fw = coinAnimSprite.width / frameCount;
             const fh = coinAnimSprite.height;
             const drawSize = cellSize * 0.8;
-            image(coinAnimSprite, d.tileX * cellSize + (cellSize - drawSize) / 2, d.tileY * cellSize + (cellSize - drawSize) / 2, drawSize, drawSize, frame * fw, 0, fw, fh);
+            image(coinAnimSprite,
+              d.tileX * cellSize + (cellSize - drawSize) / 2,
+              d.tileY * cellSize + (cellSize - drawSize) / 2,
+              drawSize, drawSize, frame * fw, 0, fw, fh);
+          }
+          break;
         }
-      } else if (d.type === 'player') {
-        try { drawPlayer(); } catch (e) {}
-      } else if (d.type === 'enemy') {
-        try { d.entity.draw(); } catch (e) {}
-      } else if (d.type === 'projectile') {
-        try { d.entity.draw(); } catch (e) {}
-      } else if (d.type === 'vfx') {
-        try { d.entity.draw(); } catch (e) {}
-      } else if (d.type === 'portal') {
-        const sheet = isPortalActive ? portalActiveSheet : portalInactiveSheet;
-        if (sheet && sheet.width > 0) {
-            const frameCount = 6; // Updated to 6 frames
+        case 'player':
+          try { drawPlayer(); } catch (e) {}
+          break;
+        case 'enemy':
+        case 'projectile':
+        case 'vfx':
+          try { d.entity.draw(); } catch (e) {}
+          break;
+        case 'portal': {
+          const sheet = isPortalActive ? portalActiveSheet : portalInactiveSheet;
+          if (sheet && sheet.width > 0) {
+            const frameCount = 6;
             const frame = Math.floor(millis() / 150) % frameCount;
             const fw = sheet.width / frameCount;
             const fh = sheet.height;
-            const drawSize = cellSize * 2.0; 
-            image(sheet, d.x * cellSize + (cellSize - drawSize) / 2, d.y * cellSize + (cellSize - drawSize), drawSize, drawSize, frame * fw, 0, fw, fh);
-        } else {
+            const drawSize = cellSize * 2.0;
+            image(sheet,
+              d.x * cellSize + (cellSize - drawSize) / 2,
+              d.y * cellSize + (cellSize - drawSize),
+              drawSize, drawSize, frame * fw, 0, fw, fh);
+          } else {
             // Visual Fallback
             fill(isPortalActive ? [255, 215, 0] : [100, 100, 100], 180);
-            stroke(255); strokeWeight(2);
+            stroke(255);
+            strokeWeight(2);
             rect(d.x * cellSize, d.y * cellSize, cellSize, cellSize, 4);
-            noStroke(); fill(255); textAlign(CENTER); gTextSize(10);
+            noStroke();
+            fill(255);
+            textAlign(CENTER);
+            gTextSize(10);
             text("PORTAL", d.x * cellSize + cellSize/2, d.y * cellSize + cellSize/2 + 4);
+          }
+          break;
         }
       }
     }
@@ -574,7 +602,8 @@ function draw() {
   drawClouds();
 
   if (EDGE_LAYER_DEBUG && edgeLayer && logicalW && logicalH) {
-    noStroke(); fill(255, 0, 0, 100);
+    noStroke();
+    fill(255, 0, 0, 100);
     for (let y = 0; y < logicalH; y++) {
       for (let x = 0; x < logicalW; x++) {
         if (edgeLayer[y * logicalW + x]) rect(x * cellSize, y * cellSize, cellSize, cellSize);
@@ -687,7 +716,8 @@ function draw() {
     // Draw Portal on Minimap
     if (portalPos) {
        fill(isPortalActive ? [255, 215, 0] : [100, 100, 100]);
-       stroke(0, 150); strokeWeight(1);
+       stroke(0, 150);
+       strokeWeight(1);
        const pxRel = portalPos.x / logicalW;
        const pyRel = portalPos.y / logicalH;
        const tx = mmX + offX + (pxRel * drawW);
@@ -706,14 +736,8 @@ function draw() {
       const markerX = mmX + offX + (pxRel * drawW);
       const markerY = mmY + offY + (pyRel * drawH);
       
-      // Calculate rotation
-      const dirMap = { 
-          'N': -HALF_PI, 'NE': -QUARTER_PI, 
-          'E': 0, 'SE': QUARTER_PI, 
-          'S': HALF_PI, 'SW': HALF_PI + QUARTER_PI, 
-          'W': PI, 'NW': -HALF_PI - QUARTER_PI 
-      };
-      const angle = dirMap[lastDirection || 'S'] ?? HALF_PI;
+      // Calculate rotation from last-known direction
+      const angle = DIRECTION_TO_ANGLE_MAP[lastDirection || 'S'] ?? HALF_PI;
 
       push();
       translate(markerX, markerY);

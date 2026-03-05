@@ -1,6 +1,47 @@
 // game-enemies.js — Enemy creation, AI, projectiles, and VFX
 // Extracted from 4-Game.js
 
+// Cardinal directions used by enemy wander and fallback movement AI
+const CARDINAL_DIRECTIONS = [
+  { dx:  0, dy:  1, dir: 'S' },
+  { dx:  0, dy: -1, dir: 'N' },
+  { dx:  1, dy:  0, dir: 'E' },
+  { dx: -1, dy:  0, dir: 'W' },
+];
+
+// Death splat type per enemy — 'acid' for ranged, 'egg' for others
+const DEATH_SPLAT_TYPE = { mantis: 'acid', maggot: 'egg', beetle: 'egg' };
+
+// Damage-text drift velocities (tiles/frame-normalised)
+const DAMAGE_TEXT_DRIFT_VEL = 0.02;
+const DAMAGE_TEXT_RISE_VEL  = 0.05;
+
+/**
+ * Returns true when `tileState` is passable (not solid and not river).
+ * Used by enemy wander and pathfinding fallbacks.
+ */
+function isWalkableTile(tileState) {
+  return !isSolid(tileState) && tileState !== TILE_TYPES.RIVER;
+}
+
+/**
+ * Maps a cardinal/diagonal direction string to the sprite sheet row index.
+ * Beetle uses S=0, W=1, E=2, N=3.
+ * Mantis/Maggot use S=0, E=1, W=2, N=3.
+ */
+function getDirectionSpriteRow_NSEW(dir) {
+  if (dir === 'S') return 0;
+  if (dir === 'W') return 1;
+  if (dir === 'E') return 2;
+  return 3; // N
+}
+function getDirectionSpriteRow_SEWN(dir) {
+  if (dir === 'S') return 0;
+  if (dir === 'E') return 1;
+  if (dir === 'W') return 2;
+  return 3; // N
+}
+
 /**
  * Pushes the player `dist` tiles away from direction (dx, dy).
  * Tries the full distance first; if blocked, tries again with `fallbackDist` (optional).
@@ -107,6 +148,7 @@ const MAGGOT_ATTACK_COOLDOWN_MS = 2000;
 const MAGGOT_PANIC_DURATION_MS  = 4000;
 const MAGGOT_ANIM_MS          = 250;   // ms per walk animation frame
 const MAGGOT_RENDER_LERP      = 0.1;
+const MAGGOT_LERP_THRESHOLD   = 0.01;  // snap to tile below this render distance
 const MAGGOT_ATTACK_RANGE     = 6;     // tile distance at which maggot fires
 const MAGGOT_NOTICE_RANGE     = 10;    // tile distance at which maggot starts closing in
 const MAGGOT_MOVE_MS          = 600;   // ms between steps (both aggro and panic)
@@ -191,8 +233,10 @@ function createBeetle(startX, startY) {
               const tx = constrain(targetX + Math.cos(angle) * BEETLE_TELEPORT_RADIUS, 1, logicalW - 2);
               const ty = constrain(targetY + Math.sin(angle) * BEETLE_TELEPORT_RADIUS, 1, logicalH - 2);
               if (!isSolid(getTileState(Math.round(tx), Math.round(ty)))) {
-                  this.x = tx; this.y = ty;
-                  this.renderX = tx; this.renderY = ty;
+                  this.x = tx;
+                  this.y = ty;
+                  this.renderX = tx;
+                  this.renderY = ty;
                   this.stuckTimer = 0;
                   verboseLog('[game] Boss Beetle teleported closer to player');
               }
@@ -261,8 +305,11 @@ function createBeetle(startX, startY) {
                 }
             }
           }
-          if (Math.abs(dx) > Math.abs(dy)) this.direction = dx > 0 ? 'E' : 'W';
-          else this.direction = dy > 0 ? 'S' : 'N';
+          if (Math.abs(dx) > Math.abs(dy)) {
+            this.direction = dx > 0 ? 'E' : 'W';
+          } else {
+            this.direction = dy > 0 ? 'S' : 'N';
+          }
         }
       }
 
@@ -330,10 +377,7 @@ function createBeetle(startX, startY) {
         if (this.moving) frame = Math.floor(millis() / BEETLE_MOVE_ANIM_MS) % frameCount;
       }
 
-      if (this.direction === 'S') row = 0;
-      else if (this.direction === 'W') row = 1;
-      else if (this.direction === 'E') row = 2;
-      else if (this.direction === 'N') row = 3;
+      row = getDirectionSpriteRow_NSEW(this.direction);
 
       if (!sprite) return;
 
@@ -443,7 +487,10 @@ function createMantis(startX, startY) {
       if (Math.abs(this.renderY - this.y) > MANTIS_LERP_THRESHOLD) this.renderY = lerp(this.renderY, this.y, MANTIS_RENDER_LERP);
       else this.renderY = this.y;
 
-      if (this.moveTimer > 0) { this.moveTimer -= dt; return; }
+      if (this.moveTimer > 0) {
+        this.moveTimer -= dt;
+        return;
+      }
 
       // --- Aggro Logic ---
       let targetX = null, targetY = null, isAggro = false;
@@ -464,8 +511,11 @@ function createMantis(startX, startY) {
                   this.hasDealtDamage = false;
                   const dx = playerPosition.x - this.x;
                   const dy = playerPosition.y - this.y;
-                  if (Math.abs(dx) > Math.abs(dy)) this.direction = dx > 0 ? 'E' : 'W';
-                  else                              this.direction = dy > 0 ? 'S' : 'N';
+                  if (Math.abs(dx) > Math.abs(dy)) {
+                    this.direction = dx > 0 ? 'E' : 'W';
+                  } else {
+                    this.direction = dy > 0 ? 'S' : 'N';
+                  }
                   return;
               }
 
@@ -499,31 +549,41 @@ function createMantis(startX, startY) {
           let moveX = 0, moveY = 0, newDir = this.direction;
 
           if (Math.abs(dx) > Math.abs(dy)) {
-              if (dx > 0) { moveX = 1; newDir = 'E'; } else { moveX = -1; newDir = 'W'; }
+              if (dx > 0) { moveX =  1; newDir = 'E'; }
+              else        { moveX = -1; newDir = 'W'; }
           } else {
-              if (dy > 0) { moveY = 1; newDir = 'S'; } else { moveY = -1; newDir = 'N'; }
+              if (dy > 0) { moveY =  1; newDir = 'S'; }
+              else        { moveY = -1; newDir = 'N'; }
           }
 
-          let nx = this.x + moveX, ny = this.y + moveY;
-          const isWalkable = (tx, ty) => !isSolid(getTileState(tx, ty)) && getTileState(tx, ty) !== TILE_TYPES.RIVER;
+          let nx = this.x + moveX;
+          let ny = this.y + moveY;
 
-          if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH && isWalkable(nx, ny)) {
-              this.x = nx; this.y = ny; this.direction = newDir;
+          if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH && isWalkableTile(getTileState(nx, ny))) {
+              this.x = nx;
+              this.y = ny;
+              this.direction = newDir;
               this.moveTimer = MANTIS_AGGRO_MOVE_MS;
               return;
           }
 
           // Try secondary axis
-          moveX = 0; moveY = 0;
+          moveX = 0;
+          moveY = 0;
           if (Math.abs(dx) > Math.abs(dy)) {
-              if (dy > 0) { moveY = 1; newDir = 'S'; } else if (dy < 0) { moveY = -1; newDir = 'N'; }
+              if (dy > 0)      { moveY =  1; newDir = 'S'; }
+              else if (dy < 0) { moveY = -1; newDir = 'N'; }
           } else {
-              if (dx > 0) { moveX = 1; newDir = 'E'; } else if (dx < 0) { moveX = -1; newDir = 'W'; }
+              if (dx > 0)      { moveX =  1; newDir = 'E'; }
+              else if (dx < 0) { moveX = -1; newDir = 'W'; }
           }
           if (moveX !== 0 || moveY !== 0) {
-              nx = this.x + moveX; ny = this.y + moveY;
-              if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH && isWalkable(nx, ny)) {
-                  this.x = nx; this.y = ny; this.direction = newDir;
+              nx = this.x + moveX;
+              ny = this.y + moveY;
+              if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH && isWalkableTile(getTileState(nx, ny))) {
+                  this.x = nx;
+                  this.y = ny;
+                  this.direction = newDir;
                   this.moveTimer = MANTIS_AGGRO_MOVE_MS;
               }
           }
@@ -532,16 +592,14 @@ function createMantis(startX, startY) {
 
       // --- Idle Wander ---
       if (Math.random() < MANTIS_WANDER_PROB) {
-        const dirs = [
-            { dx: 0, dy: 1, dir: 'S' }, { dx: 0, dy: -1, dir: 'N' },
-            { dx: 1, dy: 0, dir: 'E' }, { dx: -1, dy: 0, dir: 'W' }
-        ];
-        const choice = dirs[Math.floor(Math.random() * dirs.length)];
-        const nx = this.x + choice.dx, ny = this.y + choice.dy;
+        const choice = CARDINAL_DIRECTIONS[Math.floor(Math.random() * CARDINAL_DIRECTIONS.length)];
+        const nx = this.x + choice.dx;
+        const ny = this.y + choice.dy;
         if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH) {
-            const ts = getTileState(nx, ny);
-            if (!isSolid(ts) && ts !== TILE_TYPES.RIVER) {
-                this.x = nx; this.y = ny; this.direction = choice.dir;
+            if (isWalkableTile(getTileState(nx, ny))) {
+                this.x = nx;
+                this.y = ny;
+                this.direction = choice.dir;
                 this.moveTimer = MANTIS_WANDER_MIN_MS + Math.random() * MANTIS_WANDER_MAX_MS;
             }
         }
@@ -561,11 +619,7 @@ function createMantis(startX, startY) {
 
         if (!sprite) return;
 
-        let row = 0;
-        if      (this.direction === 'S') row = 0;
-        else if (this.direction === 'E') row = 1;
-        else if (this.direction === 'W') row = 2;
-        else if (this.direction === 'N') row = 3;
+        const row = getDirectionSpriteRow_SEWN(this.direction);
 
         const fw = sprite.width / cols;
         const fh = sprite.height / 4;
@@ -589,7 +643,8 @@ function createMantis(startX, startY) {
             const barW = cellSize * 0.8;
             const barX = destX + (cellSize - barW) / 2;
             const barY = drawY - 8;
-            fill(0, 150); noStroke();
+            fill(0, 150);
+            noStroke();
             rect(barX, barY, barW, 4);
             fill(255, 0, 0);
             rect(barX, barY, barW * (this.health / this.maxHealth), 4);
@@ -659,12 +714,15 @@ function createMaggot(startX, startY) {
         this.animFrame = (this.animFrame + 1) % 4;
       }
 
-      if (Math.abs(this.renderX - this.x) > MANTIS_LERP_THRESHOLD) this.renderX = lerp(this.renderX, this.x, MAGGOT_RENDER_LERP);
+      if (Math.abs(this.renderX - this.x) > MAGGOT_LERP_THRESHOLD) this.renderX = lerp(this.renderX, this.x, MAGGOT_RENDER_LERP);
       else this.renderX = this.x;
-      if (Math.abs(this.renderY - this.y) > MANTIS_LERP_THRESHOLD) this.renderY = lerp(this.renderY, this.y, MAGGOT_RENDER_LERP);
+      if (Math.abs(this.renderY - this.y) > MAGGOT_LERP_THRESHOLD) this.renderY = lerp(this.renderY, this.y, MAGGOT_RENDER_LERP);
       else this.renderY = this.y;
 
-      if (this.moveTimer > 0) { this.moveTimer -= dt; return; }
+      if (this.moveTimer > 0) {
+        this.moveTimer -= dt;
+        return;
+      }
 
       // --- Aggro Logic ---
       if (playerPosition) {
@@ -676,12 +734,14 @@ function createMaggot(startX, startY) {
                   this.x + (this.x - playerPosition.x),
                   this.y + (this.y - playerPosition.y));
               if (nextStep) {
-                  const dx = nextStep.x - this.x, dy = nextStep.y - this.y;
+                  const dx = nextStep.x - this.x;
+                  const dy = nextStep.y - this.y;
                   if      (dx > 0) this.direction = 'E';
                   else if (dx < 0) this.direction = 'W';
                   else if (dy > 0) this.direction = 'S';
                   else if (dy < 0) this.direction = 'N';
-                  this.x = nextStep.x; this.y = nextStep.y;
+                  this.x = nextStep.x;
+                  this.y = nextStep.y;
                   this.moveTimer = MAGGOT_MOVE_MS;
                   return;
               }
@@ -698,12 +758,14 @@ function createMaggot(startX, startY) {
               if (d >= MAGGOT_ATTACK_RANGE && d < MAGGOT_NOTICE_RANGE) {
                   const nextStep = findNextStep(this.x, this.y, playerPosition.x, playerPosition.y);
                   if (nextStep) {
-                      const dx = nextStep.x - this.x, dy = nextStep.y - this.y;
+                      const dx = nextStep.x - this.x;
+                      const dy = nextStep.y - this.y;
                       if      (dx > 0) this.direction = 'E';
                       else if (dx < 0) this.direction = 'W';
                       else if (dy > 0) this.direction = 'S';
                       else if (dy < 0) this.direction = 'N';
-                      this.x = nextStep.x; this.y = nextStep.y;
+                      this.x = nextStep.x;
+                      this.y = nextStep.y;
                       this.moveTimer = MAGGOT_MOVE_MS;
                       return;
                   }
@@ -713,16 +775,14 @@ function createMaggot(startX, startY) {
 
       // --- Idle Wander ---
       if (Math.random() < MAGGOT_WANDER_PROB) {
-        const dirs = [
-            { dx: 0, dy: 1, dir: 'S' }, { dx: 0, dy: -1, dir: 'N' },
-            { dx: 1, dy: 0, dir: 'E' }, { dx: -1, dy: 0, dir: 'W' }
-        ];
-        const choice = dirs[Math.floor(Math.random() * dirs.length)];
-        const nx = this.x + choice.dx, ny = this.y + choice.dy;
+        const choice = CARDINAL_DIRECTIONS[Math.floor(Math.random() * CARDINAL_DIRECTIONS.length)];
+        const nx = this.x + choice.dx;
+        const ny = this.y + choice.dy;
         if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH) {
-            const ts = getTileState(nx, ny);
-            if (!isSolid(ts) && ts !== TILE_TYPES.RIVER) {
-                this.x = nx; this.y = ny; this.direction = choice.dir;
+            if (isWalkableTile(getTileState(nx, ny))) {
+                this.x = nx;
+                this.y = ny;
+                this.direction = choice.dir;
                 this.moveTimer = MAGGOT_WANDER_MIN_MS + Math.random() * MAGGOT_WANDER_MAX_MS;
             }
         }
@@ -742,11 +802,7 @@ function createMaggot(startX, startY) {
 
         if (!sprite) return;
 
-        let row = 0;
-        if      (this.direction === 'S') row = 0;
-        else if (this.direction === 'W') row = 1;
-        else if (this.direction === 'E') row = 2;
-        else if (this.direction === 'N') row = 3;
+        const row = getDirectionSpriteRow_NSEW(this.direction);
 
         const fw = sprite.width / cols;
         const fh = sprite.height / 4;
@@ -770,7 +826,8 @@ function createMaggot(startX, startY) {
             const barW = cellSize * 0.8;
             const barX = destX + (cellSize - barW) / 2;
             const barY = drawY - 8;
-            fill(0, 150); noStroke();
+            fill(0, 150);
+            noStroke();
             rect(barX, barY, barW, 4);
             fill(255, 0, 0);
             rect(barX, barY, barW * (this.health / this.maxHealth), 4);
@@ -833,11 +890,7 @@ function spawnAcidBlob(startX, startY, targetX, targetY, initialDir) {
 
         draw: function() {
             if (!acidBlobSprite) return;
-            let row = 0;
-            if      (this.direction === 'S') row = 0;
-            else if (this.direction === 'W') row = 1;
-            else if (this.direction === 'E') row = 2;
-            else if (this.direction === 'N') row = 3;
+            const row = getDirectionSpriteRow_NSEW(this.direction);
 
             const fw = acidBlobSprite.width  / ACID_BLOB_ANIM_FRAMES;
             const fh = acidBlobSprite.height / ACID_BLOB_ANIM_ROWS;
@@ -864,8 +917,8 @@ function spawnDamageText(val, x, y, color = [255, 255, 255]) {
         type: 'text',
         text: val,
         x, y,
-        vx: random(-0.02, 0.02),
-        vy: -0.05,
+        vx: random(-DAMAGE_TEXT_DRIFT_VEL, DAMAGE_TEXT_DRIFT_VEL),
+        vy: -DAMAGE_TEXT_RISE_VEL,
         alpha: 255,
         life: DAMAGE_TEXT_LIFE_MS,
         maxLife: DAMAGE_TEXT_LIFE_MS,
@@ -1023,7 +1076,7 @@ function updateEnemies() {
          const ts = getTileState(tx, ty);
          if (isSolid(ts)) {
              e.health = 0;
-             spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
+             spawnSplat(e.x, e.y, DEATH_SPLAT_TYPE[e.type] ?? 'egg');
              spawnDamageText(t('crush'), e.x, e.y, [150, 150, 150]);
              enemies.splice(i, 1);
          }

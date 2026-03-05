@@ -174,8 +174,10 @@ function createSettingsContext(layout) {
       registerZoomAwareSlider(slider, sliderW, 30);
 
       if (opts && opts.isAudio) {
-        slider.attribute('data-setting', labelText.toLowerCase().includes("master") ? "masterVol" :
-                                         labelText.toLowerCase().includes("music") ? "musicVol" : "sfxVol");
+        const settingKey = labelText.toLowerCase().includes("master") ? "masterVol"
+                      : labelText.toLowerCase().includes("music")  ? "musicVol"
+                      : "sfxVol";
+      slider.attribute('data-setting', settingKey);
       }
       slider.input(() => onChange(slider.value()));
       this.pushElement(slider);
@@ -349,16 +351,25 @@ function buildControlsSettings(ctx) {
 
   ctx.y += 20; // Gap
 
+  // Helper: adds a rebindable control row for the given action key
+  const ctrlRow = (label, action) => {
+    const displayKey = userControls[action].key === ' ' ? 'SPACE' : userControls[action].key;
+    ctx.addControlRow(label, displayKey, (k, c) => {
+      userControls[action] = { key: k, code: c };
+      saveAllSettings();
+    });
+  };
+
   // Movement
-  ctx.addControlRow("Move Up", userControls.UP.key === ' ' ? 'SPACE' : userControls.UP.key, (k, c) => { userControls.UP = { key: k, code: c }; saveAllSettings(); });
-  ctx.addControlRow("Move Down", userControls.DOWN.key === ' ' ? 'SPACE' : userControls.DOWN.key, (k, c) => { userControls.DOWN = { key: k, code: c }; saveAllSettings(); });
-  ctx.addControlRow("Move Left", userControls.LEFT.key === ' ' ? 'SPACE' : userControls.LEFT.key, (k, c) => { userControls.LEFT = { key: k, code: c }; saveAllSettings(); });
-  ctx.addControlRow("Move Right", userControls.RIGHT.key === ' ' ? 'SPACE' : userControls.RIGHT.key, (k, c) => { userControls.RIGHT = { key: k, code: c }; saveAllSettings(); });
+  ctrlRow("Move Up",    'UP');
+  ctrlRow("Move Down",  'DOWN');
+  ctrlRow("Move Left",  'LEFT');
+  ctrlRow("Move Right", 'RIGHT');
 
   // Actions
-  ctx.addControlRow("Jump", userControls.JUMP.key === ' ' ? 'SPACE' : userControls.JUMP.key, (k, c) => { userControls.JUMP = { key: k, code: c }; saveAllSettings(); });
-  ctx.addControlRow("Dash", userControls.DASH.key === ' ' ? 'SPACE' : userControls.DASH.key, (k, c) => { userControls.DASH = { key: k, code: c }; saveAllSettings(); });
-  ctx.addControlRow("Attack", userControls.ATTACK.key === ' ' ? 'SPACE' : userControls.ATTACK.key, (k, c) => { userControls.ATTACK = { key: k, code: c }; saveAllSettings(); });
+  ctrlRow("Jump",   'JUMP');
+  ctrlRow("Dash",   'DASH');
+  ctrlRow("Attack", 'ATTACK');
 }
 
 function buildAccessibilitySettings(ctx) {

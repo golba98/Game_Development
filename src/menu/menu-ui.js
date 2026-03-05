@@ -49,7 +49,10 @@ function createMainMenu() {
 
         overlay.appendChild(iframe);
         document.body.appendChild(overlay);
-        try { document.documentElement.style.overflow = 'hidden'; document.body.style.overflow='hidden'; } catch(e) {}
+        try {
+          document.documentElement.style.overflow = 'hidden';
+          document.body.style.overflow = 'hidden';
+        } catch (e) {}
         disableMenuBackgroundVideo();
 
         iframe.addEventListener('load', () => {
@@ -60,9 +63,7 @@ function createMainMenu() {
               try { iframe.contentWindow.focus(); } catch (e) {}
               iframe.contentWindow.postMessage({
                 type: 'update-audio-settings',
-                masterVol: masterVol,
-                musicVol: musicVol,
-                sfxVol: sfxVol,
+                masterVol, musicVol, sfxVol,
                 difficulty: difficultySetting
               }, '*');
               console.log('[parent] iframe load: sent audio settings to game iframe');
@@ -91,9 +92,7 @@ function createMainMenu() {
             if (ifr && ifr.contentWindow) {
               ifr.contentWindow.postMessage({
                 type: 'update-audio-settings',
-                masterVol: masterVol,
-                musicVol: musicVol,
-                sfxVol: sfxVol,
+                masterVol, musicVol, sfxVol,
                 difficulty: difficultySetting
               }, '*');
               console.log('[parent] fallback: posted audio settings to iframe after timeout');

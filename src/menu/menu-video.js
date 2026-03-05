@@ -54,7 +54,10 @@ function initializeMenuBackgroundVideo(videoElement) {
   wasInVideoFadeWindow = false;
   videoLoopPending = false;
   bgVideo.onended(() => { videoLoopPending = true; });
-  try { bgVideo.loop(); bgVideo.play(); } catch (e) {}
+  try {
+    bgVideo.loop();
+    bgVideo.play();
+  } catch (e) {}
 }
 
 function disableMenuBackgroundVideo() {
@@ -69,7 +72,10 @@ function enableMenuBackgroundVideo() {
   }
   inGame = false;
   if (bgVideo) {
-    try { bgVideo.loop(); bgVideo.play(); } catch (e) {}
+    try {
+      bgVideo.loop();
+      bgVideo.play();
+    } catch (e) {}
     return;
   }
   videoBuffer = videoBuffer || createGraphics(width, height);
@@ -106,6 +112,9 @@ function updateBackgroundVideo() {
 
   if (videoLoopPending && videoOpacity <= 0) {
     videoLoopPending = false;
-    try { bgVideo.time(0); bgVideo.play(); } catch (e) {}
+    try {
+      bgVideo.time(0);
+      bgVideo.play();
+    } catch (e) {}
   }
 }
