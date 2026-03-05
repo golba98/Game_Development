@@ -270,6 +270,7 @@ try {
 
 // ── WASD + P key handler ──
 window.addEventListener('keydown', (ev) => {
+  if (isGameOver || isTerminalOpen) return;
   const k = ev.key ? ev.key.toUpperCase() : '';
   if (k === 'W' || k === 'A' || k === 'S' || k === 'D') {
     try { tryMoveDirection(k); } catch (e) {}

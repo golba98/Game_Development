@@ -188,6 +188,20 @@ function restartGame() {
   isGameOver = false;
   playerHealth = maxHealth;
 
+  // Clear all movement state so no stale move from before death fires post-respawn
+  queuedMove = null;
+  isMoving = false;
+  prevKeyA = false;
+  prevKeyD = false;
+  prevKeyW = false;
+  prevKeyS = false;
+  if (holdState) {
+    holdState.A.start = 0; holdState.A.last = 0;
+    holdState.D.start = 0; holdState.D.last = 0;
+    holdState.W.start = 0; holdState.W.last = 0;
+    holdState.S.start = 0; holdState.S.last = 0;
+  }
+
   if (initialSpawnPosition) {
     playerPosition = { x: initialSpawnPosition.x, y: initialSpawnPosition.y };
     renderX = playerPosition.x;
@@ -196,7 +210,6 @@ function restartGame() {
     renderStartY = renderY;
     renderTargetX = renderX;
     renderTargetY = renderY;
-    isMoving = false;
   }
 
   projectiles = [];
