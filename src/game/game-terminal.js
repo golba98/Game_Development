@@ -1,9 +1,15 @@
 // game-terminal.js — In-game debug terminal (game-side commands)
 // Extracted from 4-Game.js
 
+// --- Terminal UI Constants ---
+const TERMINAL_PANEL_WIDTH  = 700;  // px — terminal overlay width
+const TERMINAL_PANEL_HEIGHT = 450;  // px — terminal overlay height
+const TERMINAL_SPAWN_DIST   = 10;   // tile radius used by /spawn boss
+
+// Shows or hides the debug terminal overlay; creates it on first use.
 function toggleTerminal() {
     if (!terminalEl) createTerminalUI();
-    
+
     if (isTerminalOpen) {
         terminalEl.style.display = 'none';
         isTerminalOpen = false;
@@ -15,6 +21,7 @@ function toggleTerminal() {
     }
 }
 
+// Builds and injects the terminal DOM (styles + HTML); wires keyboard input handling.
 function createTerminalUI() {
     // Inject terminal styles once
     if (!document.getElementById('game-terminal-styles')) {
@@ -26,8 +33,8 @@ function createTerminalUI() {
                 top: 50%;
                 left: 50%;
                 transform: translate(-50%, -50%);
-                width: 700px;
-                height: 450px;
+                width: ${TERMINAL_PANEL_WIDTH}px;
+                height: ${TERMINAL_PANEL_HEIGHT}px;
                 background: rgba(15, 15, 20, 0.98);
                 border: 3px solid #ffcc00;
                 box-shadow: 0 0 30px rgba(0,0,0,0.9), inset 0 0 15px rgba(255,204,0,0.1);
@@ -154,6 +161,7 @@ function createTerminalUI() {
     });
 }
 
+// Parses and executes a terminal command string; appends output to terminal history.
 function processTerminalCommand(cmd) {
     const history = document.getElementById('terminal-history');
     const log = (msg, type = '', isHTML = false) => {
@@ -197,9 +205,8 @@ function processTerminalCommand(cmd) {
                 if (mapStates[i] === TILE_TYPES.COIN) {
                     const underlyingTerrain = (terrainLayer && terrainLayer[i]) || TILE_TYPES.GRASS;
                     mapStates[i] = underlyingTerrain;
-                    playerScore += 10;
+                    playerScore += COIN_SCORE_VALUE;
                     collected++;
-                    // Optional: Redraw only if necessary, but for /collect all we can just rebuild mapImage once
                 }
             }
             if (collected > 0) {
@@ -222,16 +229,15 @@ function processTerminalCommand(cmd) {
         if (boss) {
             const dx = Math.floor(boss.x - playerPosition.x);
             const dy = Math.floor(boss.y - playerPosition.y);
-            const distStr = Math.sqrt(dx*dx + dy*dy).toFixed(1);
+            const distStr = Math.hypot(dx, dy).toFixed(1);
             log(`SIGNAL STRENGTH: Boss coordinates confirmed. Sector: [${Math.floor(boss.x)}, ${Math.floor(boss.y)}]. Distance: ${distStr}m.`, 'terminal-success');
         } else {
             log('ERROR: Unable to lock on. No boss signature found.', 'terminal-error');
         }
     } else if (base === '/spawn' && parts[1] === 'boss') {
         const angle = Math.random() * TWO_PI;
-        const dist = 10;
-        const ex = Math.floor(playerPosition.x + Math.cos(angle) * dist);
-        const ey = Math.floor(playerPosition.y + Math.sin(angle) * dist);
+        const ex = Math.floor(playerPosition.x + Math.cos(angle) * TERMINAL_SPAWN_DIST);
+        const ey = Math.floor(playerPosition.y + Math.sin(angle) * TERMINAL_SPAWN_DIST);
         spawnEnemy('beetle', ex, ey);
         log(`CRITICAL: Boss Beetle signature forced into local grid at [${ex}, ${ey}].`, 'terminal-error');
     } else if (base === '/tutorial') {
@@ -252,14 +258,14 @@ function processTerminalCommand(cmd) {
         }
     } else if (base === '/help') {
         log('SYSTEM COMMANDS:');
-        log('  <span style="color:#fff">/kill all</span>       - Wipe all enemies.');
-        log('  <span style="color:#fff">/collect all</span>    - Collect all coins on the map.');
-        log('  <span style="color:#fff">/scan boss</span>      - Check for active boss signatures.');
-        log('  <span style="color:#fff">/locate boss</span>    - Get precise boss coordinates.');
-        log('  <span style="color:#fff">/spawn boss</span>     - Force a boss beetle to spawn near you.');
-        log('  <span style="color:#fff">/tutorial reset</span> - Reset tutorial (shows on next reload).');
-        log('  <span style="color:#fff">/clear</span>          - Wipe terminal log history.');
-        log('  <span style="color:#fff">/exit</span>           - Disconnect from console.');
+        log('  <span style="color:#fff">/kill all</span>       - Wipe all enemies.', '', true);
+        log('  <span style="color:#fff">/collect all</span>    - Collect all coins on the map.', '', true);
+        log('  <span style="color:#fff">/scan boss</span>      - Check for active boss signatures.', '', true);
+        log('  <span style="color:#fff">/locate boss</span>    - Get precise boss coordinates.', '', true);
+        log('  <span style="color:#fff">/spawn boss</span>     - Force a boss beetle to spawn near you.', '', true);
+        log('  <span style="color:#fff">/tutorial reset</span> - Reset tutorial (shows on next reload).', '', true);
+        log('  <span style="color:#fff">/clear</span>          - Wipe terminal log history.', '', true);
+        log('  <span style="color:#fff">/exit</span>           - Disconnect from console.', '', true);
     } else if (base === '/clear') {
         history.innerHTML = '<div class="terminal-log">History cleared.</div>';
     } else if (base === '/exit') {
@@ -268,4 +274,3 @@ function processTerminalCommand(cmd) {
         log(`ERROR: Unknown command sequence "${base}".`, 'terminal-error');
     }
 }
-

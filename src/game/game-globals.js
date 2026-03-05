@@ -3,6 +3,8 @@ let pendingGameActivated = false;
 let enemies = [];
 let initialEnemies = [];
 let projectiles = [];
+
+// --- Enemy Sprites ---
 let mantisMoveSprite = null;
 let mantisAttackSprite = null;
 let beetleMoveSprite = null;
@@ -16,11 +18,15 @@ let powerupSprite = null;
 let healthPotionSprite = null;
 let powerupPotionSprite = null;
 let chestSprite = null;
+
+// --- Portal ---
 let portalActiveSheet = null;
 let portalInactiveSheet = null;
 let portalPos = null;
 let isPortalActive = false;
 let victoryShown = false;
+
+// --- Player State ---
 let vfx = [];
 let playerHealth = 7;
 let maxHealth = 7;
@@ -31,6 +37,8 @@ let heartImage = null;
 let playerHurtTimer = 0;
 let isGameOver = false;
 let playerScore = 0;
+
+// --- Tutorial Flags ---
 let isTutorialMap = (localStorage.getItem('tutorialComplete') !== 'true');
 let tutorialStep = 0;
 let tutorialMoved = false;
@@ -46,10 +54,14 @@ let tutorialArrowBlink = 0;
 let activeTutorial = null;
 let hasShownWelcomeTutorial = (localStorage.getItem('hasShownWelcomeTutorial') === 'true');
 let initialSpawnPosition = { x: 0, y: 0 };
+
+// --- HUD & Overlay Buffers ---
 let gameOverOverlay = null;
 let victoryOverlay = null;
 let gameOverTimer = 0;
 let minimapImage = null;
+
+// --- VFX & Screen Effects ---
 let gameDelta = 0;
 let screenShakeTimer = 0;
 let screenShakeAmount = 0;
@@ -58,6 +70,10 @@ let transitionAlpha = 0;
 let isTransitioning = false;
 let currentLevel = 1;
 
+// `willReadFrequently: true` must be set at canvas creation time. We patch the global
+// getContext so every canvas created by p5.js inherits this flag, which prevents
+// a browser-side deoptimization warning and improves pixel-read performance (used by
+// cleanImageBrown and minimap rendering).
 if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype) {
   const canvasProto = HTMLCanvasElement.prototype;
   if (!canvasProto.__gdWillReadFrequentlyPatched) {
@@ -155,7 +171,12 @@ function verboseLog(...args) {
 }
 
 
+// GameGroups is a late-binding function registry. Each key is a category; each value is
+// a wrapper that calls the real implementation once it's defined in a later script file.
+// This avoids circular dependency problems in the HTML load order — callers use
+// `GameGroups.Map.generateMap()` instead of `generateMap()` directly.
 const GameGroups = {
+  // Canvas lifecycle: draw loop, canvas creation, sharpness enforcement, video background.
   Core: {
     draw: (...a) => typeof draw === 'function' ? draw(...a) : undefined,
     createMapImage: (...a) => typeof createMapImage === 'function' ? createMapImage(...a) : undefined,
@@ -166,6 +187,7 @@ const GameGroups = {
     ensureLoopFallbackBuffer: (...a) => typeof ensureLoopFallbackBuffer === 'function' ? ensureLoopFallbackBuffer(...a) : undefined,
     captureLoopFallbackFrame: (...a) => typeof captureLoopFallbackFrame === 'function' ? captureLoopFallbackFrame(...a) : undefined
   },
+  // Terrain generation: Perlin noise, cellular automata hills, flood-fill connectivity.
   Map: {
     generateMap: (...a) => typeof generateMap === 'function' ? generateMap(...a) : undefined,
     generateMap_Part1: (...a) => typeof generateMap_Part1 === 'function' ? generateMap_Part1(...a) : undefined,
@@ -177,6 +199,7 @@ const GameGroups = {
     getHillTileType: (...a) => typeof getHillTileType === 'function' ? getHillTileType(...a) : undefined,
     pruneUnreachable: (...a) => typeof pruneUnreachable === 'function' ? pruneUnreachable(...a) : undefined
   },
+  // River carving: drunken-walk rivers, bridges, smoothing, edge connectivity.
   Rivers: {
     carveRivers: (...a) => typeof carveRivers === 'function' ? carveRivers(...a) : undefined,
     carveRiversMaybeThrough: (...a) => typeof carveRiversMaybeThrough === 'function' ? carveRiversMaybeThrough(...a) : undefined,
@@ -187,6 +210,7 @@ const GameGroups = {
     ensureInteractiveClearArea: (...a) => typeof ensureInteractiveClearArea === 'function' ? ensureInteractiveClearArea(...a) : undefined,
     ensureEdgeLayerConnectivity: (...a) => typeof ensureEdgeLayerConnectivity === 'function' ? ensureEdgeLayerConnectivity(...a) : undefined
   },
+  // Player movement: tile-based walking, sprint, pathfinding, player drawing.
   Movement: {
     handleMovement: (...a) => typeof handleMovement === 'function' ? handleMovement(...a) : undefined,
     tryMoveDirection: (...a) => typeof tryMoveDirection === 'function' ? tryMoveDirection(...a) : undefined,
@@ -206,6 +230,7 @@ const GameGroups = {
     neighbors: (...a) => typeof neighbors === 'function' ? neighbors(...a) : undefined,
     getTileState: (...a) => typeof getTileState === 'function' ? getTileState(...a) : undefined
   },
+  // Save/load: map serialization, server fetch, localStorage settings persistence.
   IO: {
     buildActiveMapPayload: (...a) => typeof buildActiveMapPayload === 'function' ? buildActiveMapPayload(...a) : undefined,
     saveMap: (...a) => typeof saveMap === 'function' ? saveMap(...a) : undefined,
@@ -221,6 +246,7 @@ const GameGroups = {
     saveLocalSettingsDebounced: (...a) => typeof saveLocalSettingsDebounced === 'function' ? saveLocalSettingsDebounced(...a) : undefined,
     loadLocalSettings: (...a) => typeof loadLocalSettings === 'function' ? loadLocalSettings(...a) : undefined
   },
+  // Asset loading: image/sound tracking, pixel cleaning, custom asset toggling.
   Assets: {
     trackLoadImage: (...a) => typeof trackLoadImage === 'function' ? trackLoadImage(...a) : undefined,
     trackLoadSound: (...a) => typeof trackLoadSound === 'function' ? trackLoadSound(...a) : undefined,
@@ -231,6 +257,7 @@ const GameGroups = {
     restoreCustomAssetsRuntime: (...a) => typeof restoreCustomAssetsRuntime === 'function' ? restoreCustomAssetsRuntime(...a) : undefined,
     toggleCustomAssetsRuntime: (...a) => typeof toggleCustomAssetsRuntime === 'function' ? toggleCustomAssetsRuntime(...a) : undefined
   },
+  // Audio: volume control, music start, click SFX, difficulty normalization.
   Audio: {
     applyVolumes: (...a) => typeof applyVolumes === 'function' ? applyVolumes(...a) : undefined,
     attemptStartGameMusic: (...a) => typeof attemptStartGameMusic === 'function' ? attemptStartGameMusic(...a) : undefined,
@@ -241,6 +268,7 @@ const GameGroups = {
     setDifficulty: (...a) => typeof setDifficulty === 'function' ? setDifficulty(...a) : undefined,
     getDifficultyDisplayLabel: (...a) => typeof getDifficultyDisplayLabel === 'function' ? getDifficultyDisplayLabel(...a) : undefined
   },
+  // Cloud system: spawning, updating, drawing, and environment defaults.
   Clouds: {
     spawnCloud: (...a) => typeof spawnCloud === 'function' ? spawnCloud(...a) : undefined,
     updateClouds: (...a) => typeof updateClouds === 'function' ? updateClouds(...a) : undefined,
@@ -248,6 +276,7 @@ const GameGroups = {
     RandomEnvironment: (...a) => typeof RandomEnvironment === 'function' ? RandomEnvironment(...a) : undefined,
     applyEnvironmentDefaults: (...a) => typeof applyEnvironmentDefaults === 'function' ? applyEnvironmentDefaults(...a) : undefined
   },
+  // Utilities: toasts, loading overlay, color helpers, flood-fill.
   Utils: {
     showToast: (...a) => typeof showToast === 'function' ? showToast(...a) : undefined,
     updateLoadingOverlayDom: (...a) => typeof updateLoadingOverlayDom === 'function' ? updateLoadingOverlayDom(...a) : undefined,
@@ -255,6 +284,7 @@ const GameGroups = {
     getColorForState: (...a) => typeof getColorForState === 'function' ? getColorForState(...a) : undefined,
     floodReachable: (...a) => typeof floodReachable === 'function' ? floodReachable(...a) : undefined
   },
+  // Input: mouse/keyboard events, resize confirmation, pause toggle.
   Input: {
     mousePressed: (...a) => typeof mousePressed === 'function' ? mousePressed(...a) : undefined,
     keyPressed: (...a) => typeof keyPressed === 'function' ? keyPressed(...a) : undefined,
@@ -307,15 +337,6 @@ const BACK_BUTTON_VERTICAL_OFFSET = 120;
 
 let genPhase = 0;
 let genTimer = 0;
-// preload() -
-// setup() -
-// draw() -
-// windowResized() -
-// _confirmResize() -
-// createFullWindowCanvas() -
-// mousePressed() -
-// keyPressed() -
-
 let genTempData = {};
 
 
@@ -325,6 +346,7 @@ const FIXED_MAP_HEIGHT_TILES = 150;
 let gameScale = 1;
 
 
+// --- Sprint System ---
 let sprintEnergy = 100;
 const SPRINT_MAX = 100;
 const SPRINT_COST_PER_FRAME = 0.5;
@@ -382,8 +404,6 @@ try {
   console.warn('[game] localStorage error, using fallback game ID.');
 }
 
-let lastAutosavePayload = null;
-
 let _settingsSaveTimer = null;
 
 let _resizeConfirmTimer = null;
@@ -398,10 +418,9 @@ let playerAttackFrame = 0;
 let hasDealtPlayerDamage = false;
 let isAttackingEnvironmentalTriggered = false;
 let playerAttackCooldownTimer = 0;
+// --- Attack & Dash ---
 const PLAYER_ATTACK_COOLDOWN_MS = 450;
 const PLAYER_ATTACK_STAMINA_COST = 12;
-
-// Combo and Dash globals
 let playerComboCount = 0;
 let lastAttackTime = 0;
 let isDashing = false;
@@ -410,6 +429,7 @@ let dashCooldown = 0;
 const DASH_DURATION = 200;
 const DASH_COOLDOWN = 1000;
 
+// --- Jump ---
 const JUMP_FRAME_COUNT = 5;
 const JUMP_ANIM_SPEED = 100;
 const JUMP_DURATION = JUMP_FRAME_COUNT * JUMP_ANIM_SPEED;
@@ -424,14 +444,12 @@ let W, H;
 let logicalW, logicalH;
 const cellSize = 32;
 
-const BASE_ELEVATION_THRESHOLD = 0.5;
-const BASE_BUSH_THRESHOLD = 0.65;
-
 let mapStates;
 let terrainLayer;
 
 let playerPosition = null;
 
+// --- Movement Timing ---
 const BASE_MOVE_DURATION_MS = 100;
 const BASE_MOVE_COOLDOWN_MS = 160;
 const SPRINT_MOVE_DURATION_MS = 75;
@@ -459,19 +477,20 @@ let holdState = {
   S: { start: 0, last: 0 }
 };
 
-const HOLD_INITIAL_DELAY_MS = 120;
-const HOLD_REPEAT_INTERVAL_MS = 70;
+// --- Key Repeat ---
+const HOLD_INITIAL_DELAY_MS = 120;    // ms before held key starts repeating (like OS key-repeat delay)
+const HOLD_REPEAT_INTERVAL_MS = 70;   // ms between repeated moves while key is held
 let moveStartMillis = 0;
 let lastMoveDurationMs = BASE_MOVE_DURATION_MS;
 
-const SPAWN_CLEAR_RADIUS = 3;
+const SPAWN_CLEAR_RADIUS = 3; // tiles cleared around player spawn point to ensure walkable start
 let lastMoveTime = 0;
 let sprintActive = false;
 let sprintEndMillis = 0;
 let sprintCooldownUntil = 0;
 let sprintRemainingMs = SPRINT_MAX_DURATION_MS;
 let sprintLastUpdate = 0;
-let smoothSprintPct = 1.0; // Added for smoother UI animation
+let smoothSprintPct = 1.0; // starts at 1.0 = full bar; animated toward sprintEnergy each frame
 
 let mapImage;
 let mapOverlays = [];
@@ -480,8 +499,6 @@ let drawablePoolIdx = 0;
 let currentDrawables = [];
 let spritesheet = null;
 const SPRITESHEET_PATH = 'assets/1-Background/test3.png';
-let spirtesheet_idle = null;
-
 const TILE_TYPES = Object.freeze({
   GRASS: 1,
   FOREST: 2,
@@ -553,8 +570,8 @@ const DECORATIVE_OBSTACLE_NAMES = Object.freeze([
 const DECOR_SPECIAL_NAMES = Object.freeze(['hole_1']);
 const DECOR_ASSET_IMAGES = {};
 
-let decorativeObstacleTiles = new Set();
-let decorativeObjects = [];
+let decorativeObstaclePositions = new Set(); // Set of tile indices (y*logicalW+x) that block movement
+let decorativeObjectsList = [];              // Array of placed decorative object descriptors
 let decorObjectsDirty = true;
 
 const SPRITES = {

@@ -1,6 +1,38 @@
 // game-movement.js — Player movement, collision, interpolation, rendering, pathfinding
 // Extracted from 4-Game.js
 
+// --- Movement & Combat Tuning Constants ---
+const COIN_SCORE_VALUE           = 10;    // gold added to score per coin collected
+const RIVER_SPEED_MULTIPLIER     = 1.5;   // move/cooldown multiplier while on river tiles
+const SENSITIVITY_CENTER         = 5;     // mid-point of the 1–10 sensitivity slider
+const SENSITIVITY_SCALE          = 0.06;  // speed change per slider unit away from center
+const BASE_CELL_SIZE_REFERENCE   = 32;    // pixel size cells were tuned at; used for speed scaling
+const PLAYER_RIPPLE_INTERVAL_MS  = 300;   // ms between water ripple spawns while moving
+const SPRITE_REFERENCE_HEIGHT    = 20;    // reference sprite height in px for SPRITE_SCALE
+const ATTACK_SCALE_FACTOR        = 0.17;  // attack sheet scale relative to SPRITE_SCALE
+const ATTACK_FRAME_SPEED_MS      = 80;    // ms per attack animation frame
+const ATTACK_MAX_FRAMES          = 4;     // total frames in the attack sheet
+const BEETLE_ATTACK_RANGE_TILES  = 3.0;   // hit-range for the boss beetle (large sprite)
+const NORMAL_ATTACK_RANGE_TILES  = 1.8;   // hit-range for regular enemies
+const BEETLE_AUTO_HIT_RADIUS     = 2.0;   // within this dist the beetle is always hit regardless of angle
+const NORMAL_AUTO_HIT_RADIUS     = 0.7;   // same for regular enemies
+const BEETLE_ATTACK_ANGLE_TOL    = 2.5;   // attack angle tolerance for beetle
+const NORMAL_ATTACK_ANGLE_TOL    = 1.2;   // attack angle tolerance for regular enemies
+const ATTACK_DAMAGE_BASE         = 1;     // normal hit damage
+const ATTACK_DAMAGE_CRITICAL     = 2;     // 3rd-combo critical hit damage
+const PLAYER_ATTACK_HURT_MS      = 250;   // enemy hurt-flash duration after being hit
+const PLAYER_ATTACK_SHAKE_DUR    = 120;   // screen-shake duration on normal hit
+const PLAYER_ATTACK_SHAKE_NORMAL = 5;     // screen-shake intensity on normal hit
+const PLAYER_ATTACK_SHAKE_CRIT   = 8;     // screen-shake intensity on critical hit
+const KNOCKBACK_DIST             = 0.6;   // tile distance enemies are knocked back per hit
+const LOOT_DROP_CHANCE           = 0.3;   // probability a defeated enemy drops an item
+const LOOT_HEALTH_WEIGHT         = 0.8;   // fraction of drops that are HEALTH (rest are POWERUP)
+const ENV_CUT_RANGE              = 1.2;   // tile distance ahead of player that attack cuts grass
+const CUT_COIN_CHANCE            = 0.1;   // chance cutting a flower drops a coin
+const CUT_HEALTH_CHANCE          = 0.15;  // chance cutting a flower drops a health pickup
+const JUMP_HEIGHT_SCALE          = 1.5;   // jump arc height as a multiple of cellSize
+
+// Polls key state each frame; triggers dash, moves player one tile, and queues chained moves.
 function handleMovement() {
   if (isTerminalOpen) return;
   updateSprintState();
@@ -11,15 +43,15 @@ function handleMovement() {
   }
 
   if (isJumping || (isMoving && (millis() - lastMoveTime < getActiveMoveCooldownMs()))) return;
-  const nowA = keyIsDown(playerKeybinds.moveLeft);
-  const nowD = keyIsDown(playerKeybinds.moveRight);
-  const nowW = keyIsDown(playerKeybinds.moveUp);
-  const nowS = keyIsDown(playerKeybinds.moveDown);
+  const keyLeft  = keyIsDown(playerKeybinds.moveLeft);
+  const keyRight = keyIsDown(playerKeybinds.moveRight);
+  const keyUp    = keyIsDown(playerKeybinds.moveUp);
+  const keyDown  = keyIsDown(playerKeybinds.moveDown);
   const shiftHeld = keyIsDown(playerKeybinds.sprint);
   const now = millis();
 
   // Dash trigger
-  if (shiftHeld && !isDashing && dashCooldown <= 0 && (nowA || nowD || nowW || nowS)) {
+  if (shiftHeld && !isDashing && dashCooldown <= 0 && (keyLeft || keyRight || keyUp || keyDown)) {
       isDashing = true;
       dashTimer = DASH_DURATION;
       dashCooldown = DASH_COOLDOWN;
@@ -31,6 +63,7 @@ function handleMovement() {
   let targetY = playerPosition.y;
   const maxTileX = (logicalW || 0) - 1;
   const maxTileY = (logicalH || 0) - 1;
+  // Returns true on initial key-down or after hold delays for key-repeat.
   function keyTriggered(keyNow, prevKey, holdObj) {
     if (keyNow && !prevKey) {
       holdObj.start = now;
@@ -48,14 +81,14 @@ function handleMovement() {
     holdObj.last = 0;
     return false;
   }
-  const A_trig = keyTriggered(nowA, prevKeyA, holdState.A);
-  const D_trig = keyTriggered(nowD, prevKeyD, holdState.D);
-  const W_trig = keyTriggered(nowW, prevKeyW, holdState.W);
-  const S_trig = keyTriggered(nowS, prevKeyS, holdState.S);
-  if (A_trig) { facing = 'left'; targetX--; moved = true; }
-  else if (D_trig) { facing = 'right'; targetX++; moved = true; }
-  const upTrig   = invertYAxis ? S_trig : W_trig;
-  const downTrig = invertYAxis ? W_trig : S_trig;
+  const trigLeft  = keyTriggered(keyLeft,  prevKeyA, holdState.A);
+  const trigRight = keyTriggered(keyRight, prevKeyD, holdState.D);
+  const trigUp    = keyTriggered(keyUp,    prevKeyW, holdState.W);
+  const trigDown  = keyTriggered(keyDown,  prevKeyS, holdState.S);
+  if (trigLeft)  { facing = 'left';  targetX--; moved = true; }
+  else if (trigRight) { facing = 'right'; targetX++; moved = true; }
+  const upTrig   = invertYAxis ? trigDown : trigUp;
+  const downTrig = invertYAxis ? trigUp   : trigDown;
   if (upTrig)   { targetY--; moved = true; }
   else if (downTrig) { targetY++; moved = true; }
   if (targetX < 0) targetX = 0;
@@ -81,12 +114,13 @@ function handleMovement() {
       }
     }
   }
-  prevKeyA = nowA;
-  prevKeyD = nowD;
-  prevKeyW = nowW;
-  prevKeyS = nowS;
+  prevKeyA = keyLeft;
+  prevKeyD = keyRight;
+  prevKeyW = keyUp;
+  prevKeyS = keyDown;
 }
 
+// Programmatically moves the player one step in the given WASD direction.
 function tryMoveDirection(keyChar) {
   if (!playerPosition) return;
   const k = keyChar ? keyChar.toUpperCase() : '';
@@ -122,6 +156,7 @@ function tryMoveDirection(keyChar) {
   if (k === 'S') { holdState.S.start = now; holdState.S.last = now; prevKeyS = true; }
 }
 
+// Picks up the item at (targetX, targetY) and applies its effect to the player.
 function handleItemInteraction(targetX, targetY) {
   const tileIdx = targetY * logicalW + targetX;
   const tileState = mapStates[tileIdx];
@@ -159,13 +194,13 @@ function handleItemInteraction(targetX, targetY) {
       screenShakeTimer = 150; screenShakeAmount = 5;
       break;
     case TILE_TYPES.COIN:
-      playerScore += 10;
+      playerScore += COIN_SCORE_VALUE;
       lastScoreChange = millis(); // Trigger UI pulse
-      spawnDamageText("+10 GOLD", targetX, targetY, [255, 255, 0]);
+      spawnDamageText(`+${COIN_SCORE_VALUE} GOLD`, targetX, targetY, [255, 255, 0]);
       consumed = true;
       break;
   }
-  
+
   if (consumed) {
       const underlyingTerrain = terrainLayer[tileIdx] || TILE_TYPES.GRASS;
       mapStates[tileIdx] = underlyingTerrain;
@@ -173,32 +208,27 @@ function handleItemInteraction(targetX, targetY) {
   }
 }
 
+// Returns false if the target tile is solid, a hill (unless jumping), an obstacle, or an enemy.
 function canMoveTo(fromX, fromY, toX, toY) {
   const fromState = getTileState(fromX, fromY);
   const toState = getTileState(toX, toY);
   const targetIdx = toY * logicalW + toX;
   const currentIdx = fromY * logicalW + fromX;
-  
-  const hillMin = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.HILL_NORTH : 13;
-  const hillMax = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.HILL_NORTHWEST : 20;
-  const cliffTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.CLIFF : 6;
-  const isToHill = (toState >= hillMin && toState <= hillMax) || (toState === cliffTile);
-  const isFromHill = (fromState >= hillMin && fromState <= hillMax) || (fromState === cliffTile);
 
-  const logTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.LOG : 8;
-  const rampTile = (typeof TILE_TYPES !== 'undefined') ? TILE_TYPES.RAMP : 7;
-  const isToLogOrRamp = (toState === logTile || toState === rampTile);
-  const isFromLogOrRamp = (fromState === logTile || fromState === rampTile);
+  const isToHill = (toState >= TILE_TYPES.HILL_NORTH && toState <= TILE_TYPES.HILL_NORTHWEST) || toState === TILE_TYPES.CLIFF;
+  const isFromHill = (fromState >= TILE_TYPES.HILL_NORTH && fromState <= TILE_TYPES.HILL_NORTHWEST) || fromState === TILE_TYPES.CLIFF;
+  const isToLogOrRamp = (toState === TILE_TYPES.LOG || toState === TILE_TYPES.RAMP);
+  const isFromLogOrRamp = (fromState === TILE_TYPES.LOG || fromState === TILE_TYPES.RAMP);
 
-  const isToObstacle = decorativeObstacleTiles.has(targetIdx);
-  const isFromObstacle = decorativeObstacleTiles.has(currentIdx);
+  const isToObstacle = decorativeObstaclePositions.has(targetIdx);
+  const isFromObstacle = decorativeObstaclePositions.has(currentIdx);
 
   // 1. Decorative Obstacles
   if (isToObstacle) {
     if (isJumping || isFromObstacle) return true; // Can jump over/onto or walk between obstacles
     return false;
   }
-  
+
   // 2. Hills (Cliffs)
   if (isToHill) {
     // Can move to a hill if jumping OR if already on a hill
@@ -224,7 +254,7 @@ function canMoveTo(fromX, fromY, toX, toY) {
 
   // 5. General Solidarity
   if (isSolid(toState)) return false;
-  
+
   try {
     if (EDGE_LAYER_ENABLED && edgeLayer && logicalW && logicalH) {
       if (toX >= 0 && toX < logicalW && toY >= 0 && toY < logicalH) {
@@ -236,26 +266,21 @@ function canMoveTo(fromX, fromY, toX, toY) {
   return true;
 }
 
+// Returns true if a tile is impassable (not in WALKABLE_TILES and not an item tile).
 function isSolid(tileState) {
-  
   if (WALKABLE_TILES.has(tileState)) {
     return false;
   }
-
-  
   if (ITEM_DATA.hasOwnProperty(tileState)) {
     return false;
   }
-  
-  
   if (tileState === TILE_TYPES.MOB) {
       return true;
   }
-
-  
   return true;
 }
 
+// Converts a movement delta (dx, dy) to an 8-direction compass string ('N', 'SE', etc.).
 function deltaToDirection(dx, dy) {
   const eps = 0.01;
   if (Math.abs(dx) <= eps && Math.abs(dy) <= eps) return lastDirection || 'S';
@@ -270,8 +295,8 @@ function deltaToDirection(dx, dy) {
   return 'S';
 }
 
+// Converts a compass direction string to a unit (dx, dy) delta object.
 function directionToDelta(dir) {
-  
   switch ((dir || '').toUpperCase()) {
     case 'N':  return { dx: 0, dy: -1 };
     case 'NE': return { dx: 1, dy: -1 };
@@ -285,6 +310,7 @@ function directionToDelta(dir) {
   }
 }
 
+// Records interpolation start/target and marks the player as in motion.
 function startMoveVisual(prevX, prevY, newX, newY) {
   lastMoveDurationMs = getActiveMoveDurationMs();
   renderStartX = isNaN(renderX) ? prevX : renderX;
@@ -295,14 +321,15 @@ function startMoveVisual(prevX, prevY, newX, newY) {
   isMoving = true;
 }
 
+// Advances render position each frame; fires queued moves on completion.
 function updateMovementInterpolation() {
   if (!isMoving) return;
   const elapsed = millis() - moveStartMillis;
   const duration = Math.max(1, lastMoveDurationMs);
-  const t = constrain(elapsed / duration, 0, 1);
-  renderX = lerp(renderStartX, renderTargetX, t);
-  renderY = lerp(renderStartY, renderTargetY, t);
-  if (t >= 1) {
+  const progress = constrain(elapsed / duration, 0, 1);
+  renderX = lerp(renderStartX, renderTargetX, progress);
+  renderY = lerp(renderStartY, renderTargetY, progress);
+  if (progress >= 1) {
     isMoving = false;
     renderStartX = renderTargetX;
     renderStartY = renderTargetY;
@@ -321,6 +348,7 @@ function updateMovementInterpolation() {
   }
 }
 
+// Drains sprint stamina while sprinting; regenerates it while idle; manages cooldown.
 function updateSprintState() {
   const now = millis();
   const shiftHeld = keyIsDown(playerKeybinds.sprint);
@@ -330,7 +358,7 @@ function updateSprintState() {
   sprintLastUpdate = now;
 
   if (sprintActive) {
-  
+
     sprintRemainingMs = Math.max(0, sprintRemainingMs - dt);
     if (!shiftHeld || sprintRemainingMs <= 0) {
       sprintActive = false;
@@ -358,37 +386,40 @@ function updateSprintState() {
   // Update smooth sprint percentage for UI with an adaptive lerp factor
   const targetPct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
   // Adaptive lerp based on ~60fps baseline
-  const t = 1 - Math.pow(1 - 0.12, gameDelta / 16.67);
-  smoothSprintPct = lerp(smoothSprintPct, targetPct, t);
+  const lerpT = 1 - Math.pow(1 - 0.12, gameDelta / 16.67);
+  smoothSprintPct = lerp(smoothSprintPct, targetPct, lerpT);
 }
 
+// Returns ms this move takes, factoring in dash, sprint, river tiles, and sensitivity.
 function getActiveMoveDurationMs() {
   if (isDashing) return 50; // Very fast dash
   const base = sprintActive ? SPRINT_MOVE_DURATION_MS : BASE_MOVE_DURATION_MS;
   let multiplier = 1.0;
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
-    multiplier = 1.5;
+    multiplier = RIVER_SPEED_MULTIPLIER;
   }
-  const sensMultiplier = 1.0 - (sensitivitySetting - 5) * 0.06;
+  const sensMultiplier = 1.0 - (sensitivitySetting - SENSITIVITY_CENTER) * SENSITIVITY_SCALE;
   return Math.max(1, Math.round(base * multiplier * getCellSizeSpeedScale() * sensMultiplier));
 }
 
+// Returns ms before the next move is allowed (same factors as duration).
 function getActiveMoveCooldownMs() {
   const base = sprintActive ? SPRINT_MOVE_COOLDOWN_MS : BASE_MOVE_COOLDOWN_MS;
   let multiplier = 1.0;
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
-    multiplier = 1.5;
+    multiplier = RIVER_SPEED_MULTIPLIER;
   }
-  const sensMultiplier = 1.0 - (sensitivitySetting - 5) * 0.06;
+  const sensMultiplier = 1.0 - (sensitivitySetting - SENSITIVITY_CENTER) * SENSITIVITY_SCALE;
   return Math.max(0, Math.round(base * multiplier * getCellSizeSpeedScale() * sensMultiplier));
 }
 
+// Returns cellSize / BASE_CELL_SIZE_REFERENCE for speed normalization across zoom levels.
 function getCellSizeSpeedScale() {
-  const BASE_CELL_SIZE = 32;
   if (typeof cellSize !== 'number' || cellSize <= 0) return 1;
-  return cellSize / BASE_CELL_SIZE;
+  return cellSize / BASE_CELL_SIZE_REFERENCE;
 }
 
+// Applies hurt tint and delegates to `_drawPlayerInternal`.
 function drawPlayer() {
   if (playerHurtTimer > 0) {
      tint(255, 0, 0);
@@ -398,6 +429,7 @@ function drawPlayer() {
   noTint();
 }
 
+// Renders the player sprite: attack → jump → walk → run → idle → fallback rectangle.
 function _drawPlayerInternal() {
   const inputLeft  = keyIsDown && keyIsDown(playerKeybinds.moveLeft);
   const inputRight = keyIsDown && keyIsDown(playerKeybinds.moveRight);
@@ -421,27 +453,26 @@ function _drawPlayerInternal() {
       rippleTimer -= gameDelta;
       if (rippleTimer <= 0) {
           spawnRipple(drawTileX, drawTileY);
-          rippleTimer = 300; // Spawn every 300ms
+          rippleTimer = PLAYER_RIPPLE_INTERVAL_MS;
       }
   }
 
   // --- UNIFIED SCALING ---
   // We use a fixed scale factor for all animations to ensure pixel consistency.
-  // 20px is the reference character height for low-res sprites.
-  const SPRITE_SCALE = (cellSize * 1.25) / 20; 
-  const ATTACK_SCALE = SPRITE_SCALE * 0.17; // Matches character body size across resolutions
+  // SPRITE_REFERENCE_HEIGHT is the reference character height for low-res sprites.
+  const SPRITE_SCALE = (cellSize * 1.25) / SPRITE_REFERENCE_HEIGHT;
+  const ATTACK_SCALE = SPRITE_SCALE * ATTACK_SCALE_FACTOR; // Matches character body size across resolutions
 
   // --- ATTACK ANIMATION ---
   if (isAttacking) {
     playerAttackTimer += gameDelta;
-    if (playerAttackTimer > 80) { // Speed of attack animation
+    if (playerAttackTimer > ATTACK_FRAME_SPEED_MS) {
       playerAttackTimer = 0;
       playerAttackFrame++;
     }
-    
+
     // Check if animation done
-    const maxAttackFrames = 4; 
-    if (playerAttackFrame >= maxAttackFrames) {
+    if (playerAttackFrame >= ATTACK_MAX_FRAMES) {
       isAttacking = false;
       playerAttackFrame = 0;
     } else {
@@ -450,10 +481,10 @@ function _drawPlayerInternal() {
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const e = enemies[i];
                 const dist = Math.hypot(e.x - playerPosition.x, e.y - playerPosition.y);
-                
+
                 // ADJUSTMENT: Boss Beetle is large (80px), so it needs a bigger hit-range than normal mobs
-                const attackRange = (e.type === 'beetle') ? 3.0 : 1.8; 
-                
+                const attackRange = (e.type === 'beetle') ? BEETLE_ATTACK_RANGE_TILES : NORMAL_ATTACK_RANGE_TILES;
+
                 if (dist < attackRange) {
                     const dx = e.x - playerPosition.x;
                     const dy = e.y - playerPosition.y;
@@ -461,8 +492,8 @@ function _drawPlayerInternal() {
                     let angleMatches = false;
 
                     // Boss Beetle is large — wider auto-hit and angle tolerance
-                    const autoHitDist = (e.type === 'beetle') ? 2.0 : 0.7;
-                    const angleTolerance = (e.type === 'beetle') ? 2.5 : 1.2;
+                    const autoHitDist    = (e.type === 'beetle') ? BEETLE_AUTO_HIT_RADIUS  : NORMAL_AUTO_HIT_RADIUS;
+                    const angleTolerance = (e.type === 'beetle') ? BEETLE_ATTACK_ANGLE_TOL : NORMAL_ATTACK_ANGLE_TOL;
 
                     if (dist < autoHitDist) angleMatches = true; // Always hit if close enough
                     else if (dir === 'N' && dy < 0 && Math.abs(dx) < angleTolerance) angleMatches = true;
@@ -473,65 +504,66 @@ function _drawPlayerInternal() {
                     else if (dir === 'NW' && dx < 0 && dy < 0) angleMatches = true;
                     else if (dir === 'SE' && dx > 0 && dy > 0) angleMatches = true;
                     else if (dir === 'SW' && dx < 0 && dy > 0) angleMatches = true;
-                    
+
                     if (angleMatches) {
                         // Combo Damage (3rd hit deals double)
-                        let damage = 1;
+                        let damage = ATTACK_DAMAGE_BASE;
                         if (playerComboCount === 2) {
-                            damage = 2;
+                            damage = ATTACK_DAMAGE_CRITICAL;
                             verboseLog('[game] CRITICAL HIT! Combo step 3');
                         }
-                        
+
                         e.health = (e.health || 1) - damage;
-                        e.hurtTimer = 250; 
-                        screenShakeTimer = 120; 
-                        screenShakeAmount = playerComboCount === 2 ? 8 : 5;  
-                        
+                        e.hurtTimer = PLAYER_ATTACK_HURT_MS;
+                        screenShakeTimer = PLAYER_ATTACK_SHAKE_DUR;
+                        screenShakeAmount = playerComboCount === 2 ? PLAYER_ATTACK_SHAKE_CRIT : PLAYER_ATTACK_SHAKE_NORMAL;
+
                         // VFX: Damage Text
-                        spawnDamageText(`-${damage}`, e.x, e.y, damage === 2 ? [255, 200, 0] : [255, 255, 255]);
-                        
+                        spawnDamageText(`-${damage}`, e.x, e.y, damage === ATTACK_DAMAGE_CRITICAL ? [255, 200, 0] : [255, 255, 255]);
+
                         // Knockback logic
-                        const dir = lastDirection || 'S';
-                        const kbDist = 0.6;
-                        let kdx = 0, kdy = 0;
-                        if (dir.includes('N')) kdy = -kbDist;
-                        if (dir.includes('S')) kdy = kbDist;
-                        if (dir.includes('W')) kdx = -kbDist;
-                        if (dir.includes('E')) kdx = kbDist;
-                        
-                        const targetX = e.x + kdx;
-                        const targetY = e.y + kdy;
-                        
+                        const knockbackDist = KNOCKBACK_DIST;
+                        let knockDX = 0, knockDY = 0;
+                        if (dir.includes('N')) knockDY = -knockbackDist;
+                        if (dir.includes('S')) knockDY =  knockbackDist;
+                        if (dir.includes('W')) knockDX = -knockbackDist;
+                        if (dir.includes('E')) knockDX =  knockbackDist;
+
+                        const targetX = e.x + knockDX;
+                        const targetY = e.y + knockDY;
+
                         if (targetX >= 0 && targetX < logicalW && targetY >= 0 && targetY < logicalH) {
-                            const ts = getTileState(Math.floor(targetX), Math.floor(targetY));
-                            if (isSolid(ts)) {
+                            const knockTileState = getTileState(Math.floor(targetX), Math.floor(targetY));
+                            if (isSolid(knockTileState)) {
                                 // Knocked into wall -> Instant Death
                                 e.health = 0;
                                 spawnDamageText(t('splat'), e.x, e.y, [255, 50, 50]);
-                            } else if (ts !== TILE_TYPES.RIVER) {
+                            } else if (knockTileState !== TILE_TYPES.RIVER) {
                                 e.x = targetX;
                                 e.y = targetY;
                             }
                         }
 
-                                                    if (e.health <= 0) {
-                                                        spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
-                                                        
-                                                        // Loot Drop Logic
-                                                        if (random() < 0.3) { // 30% drop chance
-                                                            const dropType = random() < 0.8 ? TILE_TYPES.HEALTH : TILE_TYPES.POWERUP;
-                                                            const idx = Math.floor(e.y) * logicalW + Math.floor(e.x);
-                                                            // Only drop if on grass or similar
-                                                            const currentTile = mapStates[idx];
-                                                                                                if (currentTile === TILE_TYPES.GRASS || currentTile === TILE_TYPES.FLOWERS) {
-                                                                                                    mapStates[idx] = dropType;
-                                                                                                    spawnDamageText("★", e.x, e.y, [255, 255, 0]);
-                                                                                                    drawTileToMap(Math.floor(e.x), Math.floor(e.y)); // Optimized update
-                                                                                                }                                                        }
-                        
-                                                        enemies.splice(i, 1);
-                                                        verboseLog('[game] Enemy defeated!');
-                                                    } else {                            verboseLog('[game] Enemy hit! Health remaining:', e.health);
+                        if (e.health <= 0) {
+                            spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
+
+                            // Loot Drop Logic
+                            if (random() < LOOT_DROP_CHANCE) {
+                                const dropType = random() < LOOT_HEALTH_WEIGHT ? TILE_TYPES.HEALTH : TILE_TYPES.POWERUP;
+                                const idx = Math.floor(e.y) * logicalW + Math.floor(e.x);
+                                // Only drop if on grass or similar
+                                const currentTile = mapStates[idx];
+                                if (currentTile === TILE_TYPES.GRASS || currentTile === TILE_TYPES.FLOWERS) {
+                                    mapStates[idx] = dropType;
+                                    spawnDamageText("★", e.x, e.y, [255, 255, 0]);
+                                    drawTileToMap(Math.floor(e.x), Math.floor(e.y)); // Optimized update
+                                }
+                            }
+
+                            enemies.splice(i, 1);
+                            verboseLog('[game] Enemy defeated!');
+                        } else {
+                            verboseLog('[game] Enemy hit! Health remaining:', e.health);
                         }
                         hasDealtPlayerDamage = true; // Deal damage only once per click
                     }
@@ -541,27 +573,26 @@ function _drawPlayerInternal() {
 
         // --- ENVIRONMENTAL INTERACTION (Cut grass/flowers) ---
         if ((playerAttackFrame === 1 || playerAttackFrame === 2) && !isAttackingEnvironmentalTriggered) {
-            const punchDist = 1.2;
             const punchDir = lastDirection || 'S';
             const pd = directionToDelta(punchDir);
-            const cutX = Math.floor(playerPosition.x + pd.dx * punchDist);
-            const cutY = Math.floor(playerPosition.y + pd.dy * punchDist);
-            
+            const cutX = Math.floor(playerPosition.x + pd.dx * ENV_CUT_RANGE);
+            const cutY = Math.floor(playerPosition.y + pd.dy * ENV_CUT_RANGE);
+
             if (cutX >= 0 && cutX < logicalW && cutY >= 0 && cutY < logicalH) {
                 const idx = cutY * logicalW + cutX;
                 const tile = mapStates[idx];
                 if (tile === TILE_TYPES.FLOWERS) {
                     mapStates[idx] = TILE_TYPES.GRASS;
                     spawnDamageText("✂", cutX, cutY, [100, 255, 100]);
-                    
+
                     // 15% chance to drop a coin or heart
                     const lootRoll = Math.random();
-                    if (lootRoll < 0.1) {
+                    if (lootRoll < CUT_COIN_CHANCE) {
                         mapStates[idx] = TILE_TYPES.COIN;
-                    } else if (lootRoll < 0.15) {
+                    } else if (lootRoll < CUT_HEALTH_CHANCE) {
                         mapStates[idx] = TILE_TYPES.HEALTH;
                     }
-                    
+
                     drawTileToMap(cutX, cutY); // Optimized update
                 }
             }
@@ -572,7 +603,7 @@ function _drawPlayerInternal() {
         let dir = lastDirection || 'S';
         let sheet = attackSheets[dir];
         let flip = false;
-        
+
         // FIX: attack_west.png appears to be East-facing (Right).
         // If attacking West, we must FLIP it to face Left.
         if (dir === 'W') {
@@ -582,19 +613,19 @@ function _drawPlayerInternal() {
         // Fallback for East if null: Use attack_west.png (which is East-facing), so DO NOT flip.
         if (!sheet && dir === 'E') {
             sheet = attackSheets['W'];
-            flip = false; 
+            flip = false;
         }
 
         if (sheet && sheet.width > 0 && sheet.height > 0) {
-            const cols = 4; // User specified 4 frames
-            const fw = sheet.width / cols;
-            const fh = sheet.height;
-            const sx = playerAttackFrame * fw;
-            const sy = 0;
-            
-            const drawW = fw * ATTACK_SCALE;
-            const drawH = fh * ATTACK_SCALE;
-            
+            const cols = ATTACK_MAX_FRAMES;
+            const frameWidth  = sheet.width / cols;
+            const frameHeight = sheet.height;
+            const sourceX = playerAttackFrame * frameWidth;
+            const sourceY = 0;
+
+            const drawW = frameWidth  * ATTACK_SCALE;
+            const drawH = frameHeight * ATTACK_SCALE;
+
             if (!Number.isFinite(drawW) || !Number.isFinite(drawH)) return;
 
             const finalDrawH = drawH * clipFactor;
@@ -607,9 +638,9 @@ function _drawPlayerInternal() {
                 // Flip horizontally: translate to center, scale, translate back
                 translate(drawX + drawW/2, drawY + finalDrawH/2);
                 scale(-1, 1);
-                image(sheet, -drawW/2, -finalDrawH/2, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+                image(sheet, -drawW/2, -finalDrawH/2, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
             } else {
-                image(sheet, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+                image(sheet, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
             }
             pop();
             return; // Skip other animations
@@ -617,9 +648,10 @@ function _drawPlayerInternal() {
     }
   }
 
+  // --- Jump Arc ---
   if (isJumping) {
     const jumpProgress = (jumpTimer % JUMP_DURATION) / JUMP_DURATION;
-    const jumpHeight = Math.sin(jumpProgress * Math.PI) * cellSize * 1.5; 
+    const jumpHeight = Math.sin(jumpProgress * Math.PI) * cellSize * JUMP_HEIGHT_SCALE;
     destY -= jumpHeight;
 
     jumpTimer += gameDelta;
@@ -629,26 +661,28 @@ function _drawPlayerInternal() {
     }
 
     jumpFrame = Math.floor((jumpTimer / JUMP_ANIM_SPEED) % JUMP_FRAME_COUNT);
-    
+
     const dir = lastDirection || 'S';
     const sheet = jumpSheets[dir];
     if (sheet) {
-        const fw = sheet.width / JUMP_FRAME_COUNT;
-        const fh = sheet.height;
-        const sx = jumpFrame * fw;
-        const sy = 0;
-        const drawW = fw * SPRITE_SCALE;
-        const drawH = fh * SPRITE_SCALE;
+        const frameWidth  = sheet.width / JUMP_FRAME_COUNT;
+        const frameHeight = sheet.height;
+        const sourceX = jumpFrame * frameWidth;
+        const sourceY = 0;
+        const drawW = frameWidth  * SPRITE_SCALE;
+        const drawH = frameHeight * SPRITE_SCALE;
         const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
         const drawY = destY + cellSize - drawH; // Top stays same
-        push(); noSmooth();
-        image(sheet, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+        push();
+        noSmooth();
+        image(sheet, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
         pop();
-        return; 
+        return;
     }
   }
 
+  // --- Direction & Action Selection ---
   let dir = null;
   if (isMoving) {
     const dx = renderTargetX - renderStartX;
@@ -675,166 +709,176 @@ function _drawPlayerInternal() {
   }
   const colIndex = Math.floor(playerAnimFrame) % cols;
   if (movingForAnimation) {
+    // --- Walk Animation ---
     if (action === 'walk') {
       const frameImgWalk = (walkFrames[dir] && walkFrames[dir][colIndex]) ? walkFrames[dir][colIndex] : null;
       if (frameImgWalk) {
-        const fw = frameImgWalk.width;
-        const fh = frameImgWalk.height;
-        const drawW = fw * SPRITE_SCALE;
-        const drawH = fh * SPRITE_SCALE;
+        const frameWidth  = frameImgWalk.width;
+        const frameHeight = frameImgWalk.height;
+        const drawW = frameWidth  * SPRITE_SCALE;
+        const drawH = frameHeight * SPRITE_SCALE;
         const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
         const drawY = destY + cellSize - drawH;
-        push(); noSmooth(); 
-        image(frameImgWalk, drawX, drawY, drawW, finalDrawH, 0, 0, fw, fh * clipFactor); 
+        push(); noSmooth();
+        image(frameImgWalk, drawX, drawY, drawW, finalDrawH, 0, 0, frameWidth, frameHeight * clipFactor);
         pop();
         return;
       }
       const dirSheetWalk = walkSheets[dir] || null;
       if (dirSheetWalk) {
         const sheet = dirSheetWalk;
-        const fw = sheet.width / cols;
-        const fh = sheet.height;
-        const sx = colIndex * fw;
-        const sy = 0;
-        const drawW = fw * SPRITE_SCALE;
-        const drawH = fh * SPRITE_SCALE;
+        const frameWidth  = sheet.width / cols;
+        const frameHeight = sheet.height;
+        const sourceX = colIndex * frameWidth;
+        const sourceY = 0;
+        const drawW = frameWidth  * SPRITE_SCALE;
+        const drawH = frameHeight * SPRITE_SCALE;
         const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
         const drawY = destY + cellSize - drawH;
         push(); noSmooth();
-        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
-        else image(sheet, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
+        else image(sheet, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
         pop();
         return;
       }
       if (spritesheetWalk) {
-        const fw = spritesheetWalk.width / cols;
-        const fh = spritesheetWalk.height;
-        const sx = colIndex * fw;
-        const sy = 0;
-        const drawW = fw * SPRITE_SCALE;
-        const drawH = fh * SPRITE_SCALE;
+        const frameWidth  = spritesheetWalk.width / cols;
+        const frameHeight = spritesheetWalk.height;
+        const sourceX = colIndex * frameWidth;
+        const sourceY = 0;
+        const drawW = frameWidth  * SPRITE_SCALE;
+        const drawH = frameHeight * SPRITE_SCALE;
         const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
         const drawY = destY + cellSize - drawH;
         push(); noSmooth();
-        if (facing === 'left') image(spritesheetWalk, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
-        else image(spritesheetWalk, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+        if (facing === 'left') image(spritesheetWalk, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
+        else image(spritesheetWalk, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
         pop();
         return;
       }
+    // --- Run Animation ---
     } else if (action === 'run') {
       const frameImgRun = (runFrames[dir] && runFrames[dir][colIndex]) ? runFrames[dir][colIndex] : null;
       if (frameImgRun) {
-        const fw = frameImgRun.width;
-        const fh = frameImgRun.height;
-        const drawW = fw * SPRITE_SCALE;
-        const drawH = fh * SPRITE_SCALE;
+        const frameWidth  = frameImgRun.width;
+        const frameHeight = frameImgRun.height;
+        const drawW = frameWidth  * SPRITE_SCALE;
+        const drawH = frameHeight * SPRITE_SCALE;
         const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
         const drawY = destY + cellSize - drawH;
-        push(); noSmooth(); image(frameImgRun, drawX, drawY, drawW, finalDrawH, 0, 0, fw, fh * clipFactor); pop();
+        push();
+        noSmooth();
+        image(frameImgRun, drawX, drawY, drawW, finalDrawH, 0, 0, frameWidth, frameHeight * clipFactor);
+        pop();
         return;
       }
       const dirSheetRun = runSheets[dir] || null;
       if (dirSheetRun) {
         const sheet = dirSheetRun;
-        const fw = sheet.width / cols;
-        const fh = sheet.height;
-        const sx = colIndex * fw;
-        const sy = 0;
-        const drawW = fw * SPRITE_SCALE;
-        const drawH = fh * SPRITE_SCALE;
+        const frameWidth  = sheet.width / cols;
+        const frameHeight = sheet.height;
+        const sourceX = colIndex * frameWidth;
+        const sourceY = 0;
+        const drawW = frameWidth  * SPRITE_SCALE;
+        const drawH = frameHeight * SPRITE_SCALE;
         const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
         const drawY = destY + cellSize - drawH;
         push(); noSmooth();
-        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
-        else image(sheet, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+        if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
+        else image(sheet, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
         pop();
         return;
       }
       if (spritesheetRun) {
-        const fw = spritesheetRun.width / cols;
-        const fh = spritesheetRun.height;
-        const sx = colIndex * fw;
-        const sy = 0;
-        const drawW = fw * SPRITE_SCALE;
-        const drawH = fh * SPRITE_SCALE;
+        const frameWidth  = spritesheetRun.width / cols;
+        const frameHeight = spritesheetRun.height;
+        const sourceX = colIndex * frameWidth;
+        const sourceY = 0;
+        const drawW = frameWidth  * SPRITE_SCALE;
+        const drawH = frameHeight * SPRITE_SCALE;
         const finalDrawH = drawH * clipFactor;
         const drawX = destX + (cellSize / 2) - (drawW / 2);
         const drawY = destY + cellSize - drawH;
         push(); noSmooth();
-        if (facing === 'left') image(spritesheetRun, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
-        else image(spritesheetRun, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+        if (facing === 'left') image(spritesheetRun, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
+        else image(spritesheetRun, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
         pop();
         return;
       }
     }
   }
+  // --- Idle Animation ---
   const frameImg = (idleFrames[dir] && idleFrames[dir][colIndex]) ? idleFrames[dir][colIndex] : null;
   if (frameImg) {
-    const fw = frameImg.width;
-    const fh = frameImg.height;
-    const drawW = fw * SPRITE_SCALE;
-    const drawH = fh * SPRITE_SCALE;
+    const frameWidth  = frameImg.width;
+    const frameHeight = frameImg.height;
+    const drawW = frameWidth  * SPRITE_SCALE;
+    const drawH = frameHeight * SPRITE_SCALE;
     const finalDrawH = drawH * clipFactor;
     const drawX = destX + (cellSize / 2) - (drawW / 2);
     const drawY = destY + cellSize - drawH;
-    push(); noSmooth(); image(frameImg, drawX, drawY, drawW, finalDrawH, 0, 0, fw, fh * clipFactor); pop();
+    push();
+    noSmooth();
+    image(frameImg, drawX, drawY, drawW, finalDrawH, 0, 0, frameWidth, frameHeight * clipFactor);
+    pop();
     return;
   }
   const dirSheet = idleSheets[dir] || null;
   if (dirSheet) {
     const sheet = dirSheet;
-    const fw = sheet.width / cols;
-    const fh = sheet.height;
-    const sx = colIndex * fw;
-    const sy = 0;
-    const drawW = fw * SPRITE_SCALE;
-    const drawH = fh * SPRITE_SCALE;
+    const frameWidth  = sheet.width / cols;
+    const frameHeight = sheet.height;
+    const sourceX = colIndex * frameWidth;
+    const sourceY = 0;
+    const drawW = frameWidth  * SPRITE_SCALE;
+    const drawH = frameHeight * SPRITE_SCALE;
     const finalDrawH = drawH * clipFactor;
     const drawX = destX + (cellSize / 2) - (drawW / 2);
     const drawY = destY + cellSize - drawH;
     push(); noSmooth();
-    if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
-    else image(sheet, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+    if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
+    else image(sheet, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
     pop();
     return;
   }
   if (spritesheetIdle) {
     const rows = IDLE_SHEET_ROWS;
-    const fw = spritesheetIdle.width / cols;
-    const fh = spritesheetIdle.height / rows;
+    const frameWidth  = spritesheetIdle.width / cols;
+    const frameHeight = spritesheetIdle.height / rows;
     let rowIndex = 0;
     let flip = false;
     switch (dir) {
-      case 'S': rowIndex = 0; break;
+      case 'S':  rowIndex = 0; break;
       case 'SW': rowIndex = 1; break;
-      case 'W': rowIndex = 2; break;
+      case 'W':  rowIndex = 2; break;
       case 'NW': rowIndex = 3; break;
-      case 'N': rowIndex = 4; break;
+      case 'N':  rowIndex = 4; break;
       case 'SE': rowIndex = 1; flip = true; break;
-      case 'E': rowIndex = 2; flip = true; break;
+      case 'E':  rowIndex = 2; flip = true; break;
       case 'NE': rowIndex = 3; flip = true; break;
-      default: rowIndex = 0; break;
+      default:   rowIndex = 0; break;
     }
     if (dir.includes('W')) facing = 'left';
     else if (dir.includes('E')) facing = 'right';
-    const sx = colIndex * fw;
-    const sy = rowIndex * fh;
-    const drawW = fw * SPRITE_SCALE;
-    const drawH = fh * SPRITE_SCALE;
+    const sourceX = colIndex * frameWidth;
+    const sourceY = rowIndex * frameHeight;
+    const drawW = frameWidth  * SPRITE_SCALE;
+    const drawH = frameHeight * SPRITE_SCALE;
     const finalDrawH = drawH * clipFactor;
     const drawX = destX + (cellSize / 2) - (drawW / 2);
     const drawY = destY + cellSize - drawH;
     push(); noSmooth();
-    if (flip || facing === 'left') image(spritesheetIdle, drawX + drawW, drawY, -drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
-    else image(spritesheetIdle, drawX, drawY, drawW, finalDrawH, sx, sy, fw, fh * clipFactor);
+    if (flip || facing === 'left') image(spritesheetIdle, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
+    else image(spritesheetIdle, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
     pop();
     return;
   }
+  // --- Fallback: Solid Rectangle ---
   push();
   noStroke();
   fill(COLORS.player);
@@ -842,6 +886,7 @@ function _drawPlayerInternal() {
   pop();
 }
 
+// Returns the flat index of the nearest walkable tile to the player (used for flood-fill).
 function findFloodStart() {
   if (!logicalW || !logicalH) return -1;
   const candidates = [];
@@ -867,6 +912,7 @@ function findFloodStart() {
   return -1;
 }
 
+// Returns the 4 cardinal neighbours of (x, y) within map bounds.
 function neighbors(x, y) {
   const out = [];
   if (x > 0) out.push({ x: x - 1, y });
@@ -876,21 +922,22 @@ function neighbors(x, y) {
   return out;
 }
 
+// BFS from target back to start; returns the first step the enemy should take, or null.
 function findNextStep(startX, startY, targetX, targetY, maxDist = 12, maxNodes = 250) {
     if (startX === targetX && startY === targetY) return null;
-    
+
     const dist = Math.hypot(startX - targetX, startY - targetY);
-    if (dist > maxDist) return null; 
+    if (dist > maxDist) return null;
 
     const q = [{ x: targetX, y: targetY }];
     const cameFrom = new Map();
     const key = (x, y) => `${x},${y}`;
     cameFrom.set(key(targetX, targetY), null);
-    
+
     let head = 0;
     while (head < q.length) {
         const curr = q[head++];
-        
+
         // Check if we reached a neighbor of start
         if (Math.abs(curr.x - startX) + Math.abs(curr.y - startY) === 1) {
             return { x: curr.x, y: curr.y };
@@ -902,16 +949,15 @@ function findNextStep(startX, startY, targetX, targetY, maxDist = 12, maxNodes =
             if (!cameFrom.has(k)) {
                 const ts = getTileState(n.x, n.y);
                 const isWater = ts === TILE_TYPES.RIVER;
-                const isObstacle = decorativeObstacleTiles.has(n.y * logicalW + n.x);
-                
+                const isObstacle = decorativeObstaclePositions.has(n.y * logicalW + n.x);
+
                 if (!isSolid(ts) && !isWater && !isObstacle) {
                     cameFrom.set(k, curr);
                     q.push(n);
                 }
             }
         }
-        if (q.length > maxNodes) break; 
+        if (q.length > maxNodes) break;
     }
     return null;
 }
-

@@ -1,6 +1,42 @@
 // game-map.js — Map generation and river carving
 // Extracted from 4-Game.js
 
+// --- Map Generation Tuning Constants ---
+const SCATTER_FOREST_PROB        = 0.18;  // probability a tile becomes forest in scatter-style generation
+const COIN_SCATTER_COUNT         = 20;    // number of coins placed randomly on the map
+const BEETLE_SPAWN_PROB          = 0.15;  // chance any enemy slot becomes the one-per-map beetle
+const BEETLE_SEARCH_RADIUS       = 15;    // tile radius when force-placing the fallback beetle
+const BEETLE_MIN_DIST            = 8;     // minimum distance from player for fallback beetle placement
+const ENEMY_COUNT_NORMAL         = 12;
+const ENEMY_COUNT_HARD           = 24;
+const ENEMY_COUNT_EASY           = 6;
+const RIVER_JUMP_INTERVAL        = 70;    // every N steps the river walker may teleport to a new edge start
+const RIVER_JUMP_PROB            = 0.25;  // probability of the jump occurring
+const DEFAULT_CHANCE_ENTER_CLEAR = 0.35;  // default probability a river carves through the clear zone
+const DEFAULT_JITTER_NOISE_SCALE = 0.12;  // Perlin noise scale for river path jitter
+const DEFAULT_WIDEN_PROB         = 0.45;  // probability each step widens the river by one neighbor tile
+const BRIDGE_CHECK_RANGE         = 3;     // tiles sampled left/right when detecting river flow direction
+const BRIDGE_PLACE_DIVISOR       = 6;     // caps bridge placements per connectivity-repair pass
+
+// Returns all 8 grid-adjacent cells of (cx, cy) that are within bounds.
+function neighbors8(cx, cy, w, h) {
+  const n = [];
+  for (let yy = cy - 1; yy <= cy + 1; yy++) {
+    for (let xx = cx - 1; xx <= cx + 1; xx++) {
+      if (xx === cx && yy === cy) continue;
+      if (xx >= 0 && xx < w && yy >= 0 && yy < h) n.push({ x: xx, y: yy });
+    }
+  }
+  return n;
+}
+
+// Returns true if (x, y) falls inside the protected player-start rectangle.
+function isInClearRect(x, y, startX, endX, startY, endY) {
+  if (startX < 0) return false;
+  return x > startX && x < endX && y > startY && y < endY;
+}
+
+// Entry point: clears state and kicks off phased map generation.
 function generateMap() {
   genPhase = 0;
   clearPreviousGameState();
@@ -15,6 +51,7 @@ function generateMap() {
   genPhase = 1;
 }
 
+// Phase 1: allocates map arrays and fills terrain with noise or scatter.
 function generateMap_Part1() {
   verboseLog('[game] Generating Part 1 (Base)...');
 
@@ -33,8 +70,8 @@ function generateMap_Part1() {
   }
 
   // Randomly choose between noise-based and scatter-based generation
-  const generationStyle = Math.random();
-  if (generationStyle < 0.5) {
+  const generationRoll = Math.random();
+  if (generationRoll < 0.5) {
       verboseLog('[game] Style: Noise-based Forest');
       applyNoiseTerrain(clearArea.centerX, clearArea.centerY, clearArea.baseClearWidth, clearArea.baseClearHeight);
   } else {
@@ -43,15 +80,15 @@ function generateMap_Part1() {
       for (let y = 0; y < logicalH; y++) {
           for (let x = 0; x < logicalW; x++) {
               const idx = y * logicalW + x;
-              const inClearZone = (x >= clearArea.centerX - clearArea.baseClearWidth/2 && 
-                                   x <= clearArea.centerX + clearArea.baseClearWidth/2 && 
-                                   y >= clearArea.centerY - clearArea.baseClearHeight/2 && 
+              const inClearZone = (x >= clearArea.centerX - clearArea.baseClearWidth/2 &&
+                                   x <= clearArea.centerX + clearArea.baseClearWidth/2 &&
+                                   y >= clearArea.centerY - clearArea.baseClearHeight/2 &&
                                    y <= clearArea.centerY + clearArea.baseClearHeight/2);
 
               if (inClearZone) {
                   mapStates[idx] = TILE_TYPES.GRASS;
               } else {
-                  mapStates[idx] = Math.random() < 0.18 ? TILE_TYPES.FOREST : TILE_TYPES.GRASS;
+                  mapStates[idx] = Math.random() < SCATTER_FOREST_PROB ? TILE_TYPES.FOREST : TILE_TYPES.GRASS;
               }
           }
       }
@@ -60,44 +97,47 @@ function generateMap_Part1() {
   genTempData = { clearArea };
 }
 
+// Phase 2: carves rivers, places hills, spawns enemies/coins/trees, and finalises the map.
 function generateMap_Part2() {
   verboseLog('[game] Generating Part 2 (Roughness)...');
   enemies = []; // CLEAR ALL PREVIOUS ENEMIES TO PREVENT DUPLICATES
-  const { clearArea } = genTempData;  
+  const { clearArea } = genTempData;
+
+  // --- Phase 1: Rivers, Terrain & Connectivity ---
   const spawn = postProcessRiversAndClearArea(clearArea.clearStartX, clearArea.clearEndX, clearArea.clearStartY, clearArea.clearEndY);
 
-  
-
+  // --- Phase 2: Hills ---
   generateHills(mapStates, logicalW, logicalH);
 
-  
+  // --- Phase 3: Prune Unreachable Tiles ---
   pruneUnreachable(spawn.spawnX, spawn.spawnY);
-  
+
   terrainLayer = mapStates.slice();
   counts = {};
   for (let i = 0; i < mapStates.length; i++) counts[mapStates[i]] = (counts[mapStates[i]] || 0) + 1;
 
   playerPosition = { x: spawn.spawnX, y: spawn.spawnY };
   initialSpawnPosition = { x: spawn.spawnX, y: spawn.spawnY };
-  
+
+  // --- Phase 4: Portal Placement ---
   // Spawn Portal roughly in the middle
   portalPos = null;
   isPortalActive = false;
   victoryShown = false;
-  
+
   const midX = Math.floor(logicalW / 2);
   const midY = Math.floor(logicalH / 2);
-  
+
   // Search in expanding squares from the middle to find the nearest grass tile
   let foundMid = false;
   for (let r = 0; r < Math.max(logicalW, logicalH); r++) {
       for (let dy = -r; dy <= r; dy++) {
           for (let dx = -r; dx <= r; dx++) {
               if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // Only check the perimeter of the current square
-              
+
               const px = midX + dx;
               const py = midY + dy;
-              
+
               if (px >= 0 && px < logicalW && py >= 0 && py < logicalH) {
                   if (mapStates[py * logicalW + px] === TILE_TYPES.GRASS) {
                       portalPos = { x: px, y: py };
@@ -124,59 +164,59 @@ function generateMap_Part2() {
   markDecorObjectsDirty();
   createMapImage();
 
+  // --- Phase 5: Enemies ---
   try {
-     let enemyCount = 12;
-     if (difficultySetting === 'hard') enemyCount = 24;
-     else if (difficultySetting === 'easy') enemyCount = 6;
-     
+     let enemyCount = ENEMY_COUNT_NORMAL;
+     if (difficultySetting === 'hard') enemyCount = ENEMY_COUNT_HARD;
+     else if (difficultySetting === 'easy') enemyCount = ENEMY_COUNT_EASY;
+
      let beetleSpawned = false;
      for (let i = 0; i < enemyCount; i++) {
-        let ex, ey;
+        let enemyX, enemyY;
         let attempts = 0;
         let invalid = true;
         do {
-           ex = Math.floor(Math.random() * logicalW);
-           ey = Math.floor(Math.random() * logicalH);
+           enemyX = Math.floor(Math.random() * logicalW);
+           enemyY = Math.floor(Math.random() * logicalH);
            attempts++;
-           const tState = mapStates[ey * logicalW + ex];
+           const tState = mapStates[enemyY * logicalW + enemyX];
            invalid = isSolid(tState) || tState === TILE_TYPES.RIVER;
         } while (attempts < 50 && invalid);
-        
-        const finalTile = mapStates[ey * logicalW + ex];
+
+        const finalTile = mapStates[enemyY * logicalW + enemyX];
         if (!isSolid(finalTile) && finalTile !== TILE_TYPES.RIVER) {
             const roll = Math.random();
-            let eType = roll < 0.5 ? 'mantis' : 'maggot';
-            
+            let enemyType = roll < 0.5 ? 'mantis' : 'maggot';
+
             // Only spawn ONE beetle per map
-            if (!beetleSpawned && Math.random() < 0.15) {
-                eType = 'beetle';
+            if (!beetleSpawned && Math.random() < BEETLE_SPAWN_PROB) {
+                enemyType = 'beetle';
                 beetleSpawned = true;
             }
-            spawnEnemy(eType, ex, ey);
+            spawnEnemy(enemyType, enemyX, enemyY);
         }
      }
-     
+
      // Fallback: Ensure exactly one beetle spawns, and FORCE it to be on GRASS near the player
      if (!beetleSpawned) {
-        let ex, ey, attempts = 0, found = false;
-        const searchRadius = 15;
+        let enemyX, enemyY, attempts = 0, found = false;
         do {
            // Try to find a spot relatively near the player but not on top of them
            const angle = Math.random() * TWO_PI;
-           const dist = 8 + Math.random() * searchRadius;
-           ex = Math.floor(playerPosition.x + Math.cos(angle) * dist);
-           ey = Math.floor(playerPosition.y + Math.sin(angle) * dist);
-           ex = constrain(ex, 1, logicalW - 2);
-           ey = constrain(ey, 1, logicalH - 2);
+           const dist = BEETLE_MIN_DIST + Math.random() * BEETLE_SEARCH_RADIUS;
+           enemyX = Math.floor(playerPosition.x + Math.cos(angle) * dist);
+           enemyY = Math.floor(playerPosition.y + Math.sin(angle) * dist);
+           enemyX = constrain(enemyX, 1, logicalW - 2);
+           enemyY = constrain(enemyY, 1, logicalH - 2);
            attempts++;
-           const tState = mapStates[ey * logicalW + ex];
+           const tState = mapStates[enemyY * logicalW + enemyX];
            found = (tState === TILE_TYPES.GRASS);
         } while (attempts < 200 && !found);
-        
+
         if (found) {
-            spawnEnemy('beetle', ex, ey);
+            spawnEnemy('beetle', enemyX, enemyY);
             beetleSpawned = true;
-            verboseLog(`[game] Boss Beetle forced at ${ex}, ${ey}`);
+            verboseLog(`[game] Boss Beetle forced at ${enemyX}, ${enemyY}`);
         } else {
             // Absolute fallback anywhere on grass
             for (let i = 0; i < mapStates.length; i++) {
@@ -188,9 +228,9 @@ function generateMap_Part2() {
             }
         }
      }
-     
-     // Scatter Coins
-     for (let i = 0; i < 20; i++) {
+
+     // --- Phase 6: Scatter Coins ---
+     for (let i = 0; i < COIN_SCATTER_COUNT; i++) {
         let cx = Math.floor(Math.random() * logicalW);
         let cy = Math.floor(Math.random() * logicalH);
         const idx = cy * logicalW + cx;
@@ -198,9 +238,9 @@ function generateMap_Part2() {
             mapStates[idx] = TILE_TYPES.COIN;
         }
      }
-     
+
      initialEnemies = enemies.map(e => ({ type: e.type, x: e.x, y: e.y }));
-     
+
      // CRITICAL: Reset camera and redraw static map to prevent shifting
      smoothCamX = playerPosition.x * cellSize - width/2;
      smoothCamY = playerPosition.y * cellSize - height/2;
@@ -211,6 +251,7 @@ function generateMap_Part2() {
      } catch(e) {}
   } catch(e) {}
 
+  // --- Phase 7: Tree Objects ---
   treeObjects = [];
   if (TREE_OVERLAY_IMG) {
     for (let y = 0; y < logicalH; y++) {
@@ -223,19 +264,16 @@ function generateMap_Part2() {
     }
     createMapImage();
   }
-  
-  
+
+  // --- Phase 8: Finalize & Save ---
   genTempData = {};
 
   redraw();
   autosaveMap();
   persistActiveMapToServer('generated');
-
-  try {
-      showToast('OBJECTIVE: Collect all Coins and Eliminate all Threats!', 'warn', 5000);
-  } catch(e) {}
 }
 
+// Calculates the protected clear area (player start zone) dimensions and bounds.
 function computeClearArea() {
     const centerX = logicalW / 2;
     const centerY = logicalH / 2;
@@ -251,9 +289,10 @@ function computeClearArea() {
     };
 }
 
+// Fills mapStates with Perlin-noise-based forest/grass terrain, preserving the clear zone.
 function applyNoiseTerrain(centerX, centerY, baseClearWidth, baseClearHeight) {
     const noiseScale = 0.12;
-    
+
     const radiusX = logicalW / 2;
     const radiusY = logicalH / 2;
 
@@ -261,13 +300,12 @@ function applyNoiseTerrain(centerX, centerY, baseClearWidth, baseClearHeight) {
       for (let x = 0; x < logicalW; x++) {
         const idx = y * logicalW + x;
 
-   
         const dx = (x - centerX) / radiusX;
         const dy = (y - centerY) / radiusY;
-        const dist = Math.sqrt(dx*dx + dy*dy);
+        const dist = Math.hypot(dx, dy);
 
         const n = noise(x * noiseScale, y * noiseScale);
-        const wobble = (n - 0.5) * 0.3; 
+        const wobble = (n - 0.5) * 0.3;
 
         if (dist + wobble > 0.80) {
             mapStates[idx] = TILE_TYPES.FOREST;
@@ -278,6 +316,7 @@ function applyNoiseTerrain(centerX, centerY, baseClearWidth, baseClearHeight) {
     }
 }
 
+// Carves rivers, bridges unreachable areas, and returns the player spawn position.
 function postProcessRiversAndClearArea(clearStartX, clearEndX, clearStartY, clearEndY) {
     const RIVER_TILE = (typeof TILE_TYPES !== 'undefined' && TILE_TYPES.RIVER) ? TILE_TYPES.RIVER : null;
 
@@ -309,9 +348,10 @@ function postProcessRiversAndClearArea(clearStartX, clearEndX, clearStartY, clea
     return { spawnX, spawnY };
 }
 
+// BFS from (startX, startY); converts isolated non-solid tiles to FOREST (unreachable pruning).
 function pruneUnreachable(startX, startY) {
     const startIdx = startY * logicalW + startX;
-    if (isSolid(mapStates[startIdx])) return; 
+    if (isSolid(mapStates[startIdx])) return;
     const q = [{ x: startX, y: startY }];
     const visited = new Set([`${startX},${startY}`]);
     let head = 0;
@@ -332,34 +372,35 @@ function pruneUnreachable(startX, startY) {
       }
     }
     for (let i = 0; i < mapStates.length; i++) {
-      const x = i % logicalW; 
+      const x = i % logicalW;
       const y = Math.floor(i / logicalW);
-      
+
       if (!isSolid(mapStates[i]) && !visited.has(`${x},${y}`)) {
         mapStates[i] = TILE_TYPES.FOREST;
       }
     }
 }
 
+// Generates hill clusters via Perlin noise + cellular automata, then renders them into map.
 function generateHills(map, w, h) {
   // --- SETTINGS ---
-  const scale = 0.035; 
+  const scale = 0.035;
   const threshold = 0.48;
   const seed = Math.random() * 99999;
-  let grid = new Uint8Array(w * h);
+  let hillGrid = new Uint8Array(w * h);
 
   // 1. Initial Noise Pass
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       if (x < 4 || x > w - 5 || y < 4 || y > h - 5) continue;
       const n = noise((x * scale) + seed, (y * scale) + seed);
-      if (n > threshold) grid[y * w + x] = 1;
+      if (n > threshold) hillGrid[y * w + x] = 1;
     }
   }
 
   // 2. Cellular Automata Smoothing (5 Iterations)
   for (let i = 0; i < 5; i++) {
-    const nextGrid = new Uint8Array(grid);
+    const nextGrid = new Uint8Array(hillGrid);
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
         const idx = y * w + x;
@@ -367,31 +408,31 @@ function generateHills(map, w, h) {
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
             if (dx === 0 && dy === 0) continue;
-            if (grid[(y + dy) * w + (x + dx)] === 1) neighbors++;
+            if (hillGrid[(y + dy) * w + (x + dx)] === 1) neighbors++;
           }
         }
-        if (grid[idx] === 1) nextGrid[idx] = (neighbors >= 4) ? 1 : 0;
+        if (hillGrid[idx] === 1) nextGrid[idx] = (neighbors >= 4) ? 1 : 0;
         else nextGrid[idx] = (neighbors >= 5) ? 1 : 0;
       }
     }
-    grid = nextGrid;
+    hillGrid = nextGrid;
   }
 
   // 3. Strict Pruning Pass (Remove Thin/Unsupported Shapes)
-  for (let p = 0; p < 8; p++) {
+  for (let pass = 0; pass < 8; pass++) {
     let changed = false;
-    const nextGrid = new Uint8Array(grid);
+    const nextGrid = new Uint8Array(hillGrid);
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
         const idx = y * w + x;
-        if (grid[idx] === 0) continue;
+        if (hillGrid[idx] === 0) continue;
 
-        const n = grid[(y - 1) * w + x];
-        const s = grid[(y + 1) * w + x];
-        const e = grid[y * w + (x + 1)];
-        const wDir = grid[y * w + (x - 1)];
+        const n    = hillGrid[(y - 1) * w + x];
+        const s    = hillGrid[(y + 1) * w + x];
+        const e    = hillGrid[y * w + (x + 1)];
+        const west = hillGrid[y * w + (x - 1)];
 
-        const cardinalHillCount = n + s + e + wDir;
+        const cardinalHillCount = n + s + e + west;
 
         // Rule A: Isolated or Tip (0 or 1 neighbor) -> Kill
         if (cardinalHillCount < 2) {
@@ -402,18 +443,18 @@ function generateHills(map, w, h) {
 
         // Rule B: Thin Bar (2 neighbors, but opposite) -> Kill
         if (cardinalHillCount === 2) {
-          if ((n && s) || (e && wDir)) {
+          if ((n && s) || (e && west)) {
             nextGrid[idx] = 0;
             changed = true;
             continue;
           }
         }
-        
+
         // Keep valid shape (Corner or Solid)
         nextGrid[idx] = 1;
       }
     }
-    grid = nextGrid;
+    hillGrid = nextGrid;
     if (!changed) break;
   }
 
@@ -421,8 +462,8 @@ function generateHills(map, w, h) {
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
       const idx = y * w + x;
-      if (grid[idx] === 1) {
-        const tileType = getHillTileType(grid, x, y, w);
+      if (hillGrid[idx] === 1) {
+        const tileType = getHillTileType(hillGrid, x, y, w);
         if (tileType !== 0 && tileType !== TILE_TYPES.GRASS) {
           map[idx] = tileType;
         }
@@ -431,69 +472,47 @@ function generateHills(map, w, h) {
   }
 }
 
+// Returns the specific HILL_* tile type for a hill cell based on its cardinal neighbours.
 function getHillTileType(grid, x, y, w) {
-  
-  
   const isHill = (dx, dy) => {
     const nx = x + dx;
     const ny = y + dy;
-    const h = grid.length / w; 
-    
-    
+    const h = grid.length / w;
+
     if (nx < 0 || nx >= w || ny < 0 || ny >= h) return false;
-    
+
     return grid[ny * w + nx] === 1;
   };
 
-  
-  const n = isHill(0, -1);  
-  const s = isHill(0, 1);   
-  const e = isHill(1, 0);   
-  const wDir = isHill(-1, 0); 
+  const n    = isHill(0, -1);
+  const s    = isHill(0, 1);
+  const e    = isHill(1, 0);
+  const west = isHill(-1, 0);
 
-  
-  
-  
-  
-  
-  if (!n && !wDir) return TILE_TYPES.HILL_NORTHWEST;
+  if (!n && !west) return TILE_TYPES.HILL_NORTHWEST;
   if (!n && !e)    return TILE_TYPES.HILL_NORTHEAST;
-  if (!s && !wDir) return TILE_TYPES.HILL_SOUTHWEST;
+  if (!s && !west) return TILE_TYPES.HILL_SOUTHWEST;
   if (!s && !e)    return TILE_TYPES.HILL_SOUTHEAST;
 
-  
-  
-  
-  
-  
   if (!n) return TILE_TYPES.HILL_NORTH;
   if (!s) return TILE_TYPES.HILL_SOUTH;
-  if (!wDir) return TILE_TYPES.HILL_WEST;
+  if (!west) return TILE_TYPES.HILL_WEST;
   if (!e) return TILE_TYPES.HILL_EAST;
 
-  
-  
-  
-  
-  
-  
-  return TILE_TYPES.GRASS; 
+  return TILE_TYPES.GRASS;
 }
 
+// Carves the guaranteed main river and 2–3 natural branches across the map.
 function carveRivers(map, w, h, opts) {
   const { clearStartX, clearEndX, clearStartY, clearEndY } = opts;
   const RIVER_TILE = opts.RIVER_TILE;
   const riverId = () => (RIVER_TILE !== null ? RIVER_TILE : TILE_TYPES.FOREST);
-  
-  function isInsideClear(x, y) {
-    return x > clearStartX && x < clearEndX && y > clearStartY && y < clearEndY;
-  }
 
   // --- 1. MAIN RIVER (Guaranteed Middle) ---
   const isHorizontal = Math.random() < 0.5;
   let mx = isHorizontal ? 0 : w / 2 + (Math.random() - 0.5) * (w * 0.1);
   let my = isHorizontal ? h / 2 + (Math.random() - 0.5) * (h * 0.1) : 0;
-  
+
   let curMX = mx;
   let curMY = my;
   let mainRiverPoints = [];
@@ -530,10 +549,10 @@ function carveRivers(map, w, h, opts) {
     // Pick a point on the main river to start the branch
     const startIdx = Math.floor(Math.random() * (mainRiverPoints.length * 0.6)) + Math.floor(mainRiverPoints.length * 0.2);
     const startP = mainRiverPoints[startIdx];
-    
+
     let curBX = startP.x;
     let curBY = startP.y;
-    
+
     // Choose a general direction away from the main path
     let angle = isHorizontal ? (Math.random() < 0.5 ? -HALF_PI : HALF_PI) : (Math.random() < 0.5 ? 0 : PI);
     angle += (Math.random() - 0.5) * 0.5;
@@ -557,6 +576,7 @@ function carveRivers(map, w, h, opts) {
   }
 }
 
+// Places a bridge tile at (x, y) and extends it across the river in the dominant flow direction.
 function layBridgeTile(map, w, h, x, y, RIVER_TILE, BRIDGE_TILE) {
   if (x < 0 || x >= w || y < 0 || y >= h) return;
   const idx = y * w + x;
@@ -565,15 +585,14 @@ function layBridgeTile(map, w, h, x, y, RIVER_TILE, BRIDGE_TILE) {
   // Determine river flow direction (horizontal or vertical)
   let horizontalRiver = 0;
   let verticalRiver = 0;
-  const range = 3; // Check a small area around the bridge
-  
-  for (let d = -range; d <= range; d++) {
+
+  for (let d = -BRIDGE_CHECK_RANGE; d <= BRIDGE_CHECK_RANGE; d++) {
     if (x + d >= 0 && x + d < w && map[y * w + (x + d)] === RIVER_TILE) horizontalRiver++;
     if (y + d >= 0 && y + d < h && map[(y + d) * w + x] === RIVER_TILE) verticalRiver++;
   }
 
   const isVerticalBridge = horizontalRiver > verticalRiver;
-  
+
   // Extend bridge until it hits solid ground on both sides
   const extendBridge = (dx, dy) => {
     let curX = x + dx;
@@ -599,8 +618,8 @@ function layBridgeTile(map, w, h, x, y, RIVER_TILE, BRIDGE_TILE) {
   }
 }
 
+// Iterates over all edge-layer barriers; opens any that block connectivity.
 function ensureEdgeLayerConnectivity() {
-  
   if (!EDGE_LAYER_ENABLED) return;
   if (!edgeLayer || !logicalW || !logicalH) return;
   const total = logicalW * logicalH;
@@ -655,6 +674,7 @@ function ensureEdgeLayerConnectivity() {
   }
 }
 
+// Carves 1–2 rivers from map edge to map edge using a guided random walk; places bridges to restore connectivity.
 function carveRiversMaybeThrough(map, w, h, opts = {}) {
   const clearStartX = opts.clearStartX ?? -1;
   const clearEndX   = opts.clearEndX ?? -1;
@@ -674,28 +694,12 @@ function carveRiversMaybeThrough(map, w, h, opts = {}) {
   const numRivers = typeof opts.numRivers === 'number' ? opts.numRivers : (1 + Math.floor(Math.random() * 2));
   const allowClearOverride = typeof opts.allowClearOverride === 'boolean' ? opts.allowClearOverride : null;
   const chanceEnterClear = allowClearOverride === null
-    ? (typeof opts.chanceEnterClear === 'number' ? Math.max(0, Math.min(1, opts.chanceEnterClear)) : 0.35)
+    ? (typeof opts.chanceEnterClear === 'number' ? Math.max(0, Math.min(1, opts.chanceEnterClear)) : DEFAULT_CHANCE_ENTER_CLEAR)
     : (allowClearOverride ? 1 : 0);
 
-  const jitterNoiseScale = typeof opts.jitterNoiseScale === 'number' ? opts.jitterNoiseScale : 0.12;
-  const widenProb = typeof opts.widenProb === 'number' ? opts.widenProb : 0.45;
+  const jitterNoiseScale = typeof opts.jitterNoiseScale === 'number' ? opts.jitterNoiseScale : DEFAULT_JITTER_NOISE_SCALE;
+  const widenProb = typeof opts.widenProb === 'number' ? opts.widenProb : DEFAULT_WIDEN_PROB;
   const maxSteps = Math.max(w, h) * 6;
-
-  function inClear(x, y) {
-    if (clearStartX < 0) return false;
-    return x > clearStartX && x < clearEndX && y > clearStartY && y < clearEndY;
-  }
-
-  function neighbors8(cx, cy) {
-    const n = [];
-    for (let yy = cy - 1; yy <= cy + 1; yy++) {
-      for (let xx = cx - 1; xx <= cx + 1; xx++) {
-        if (xx === cx && yy === cy) continue;
-        if (xx >= 0 && xx < w && yy >= 0 && yy < h) n.push({ x: xx, y: yy });
-      }
-    }
-    return n;
-  }
 
   function reachedSide(x, y, side) {
     if (side === 0) return y === 0;
@@ -708,12 +712,41 @@ function carveRiversMaybeThrough(map, w, h, opts = {}) {
   function pickStartAndTarget() {
     const side = Math.floor(Math.random() * 4);
     let sx, sy, tx, ty;
-    if (side === 0) { sx = Math.floor(Math.random() * w); sy = 0; tx = Math.floor((w * 0.25) + Math.random() * w * 0.5); ty = h - 1; }
-    else if (side === 1) { sx = w - 1; sy = Math.floor(Math.random() * h); tx = 0; ty = Math.floor((h * 0.25) + Math.random() * h * 0.5); }
-    else if (side === 2) { sx = Math.floor(Math.random() * w); sy = h - 1; tx = Math.floor((w * 0.25) + Math.random() * w * 0.5); ty = 0; }
-    else { sx = 0; sy = Math.floor(Math.random() * h); tx = w - 1; ty = Math.floor((h * 0.25) + Math.random() * h * 0.5); }
-    if (inClear(sx, sy)) { if (side === 0) sy = 0; if (side === 1) sx = w - 1; if (side === 2) sy = h - 1; if (side === 3) sx = 0; }
-    if (inClear(tx, ty)) { if (side === 0) ty = h - 1; if (side === 1) tx = 0; if (side === 2) ty = 0; if (side === 3) tx = w - 1; }
+    if (side === 0) {
+      sx = Math.floor(Math.random() * w);
+      sy = 0;
+      tx = Math.floor((w * 0.25) + Math.random() * w * 0.5);
+      ty = h - 1;
+    } else if (side === 1) {
+      sx = w - 1;
+      sy = Math.floor(Math.random() * h);
+      tx = 0;
+      ty = Math.floor((h * 0.25) + Math.random() * h * 0.5);
+    } else if (side === 2) {
+      sx = Math.floor(Math.random() * w);
+      sy = h - 1;
+      tx = Math.floor((w * 0.25) + Math.random() * w * 0.5);
+      ty = 0;
+    } else {
+      sx = 0;
+      sy = Math.floor(Math.random() * h);
+      tx = w - 1;
+      ty = Math.floor((h * 0.25) + Math.random() * h * 0.5);
+    }
+
+    // Snap to edge if start/target falls inside the clear zone
+    if (isInClearRect(sx, sy, clearStartX, clearEndX, clearStartY, clearEndY)) {
+      if (side === 0) sy = 0;
+      if (side === 1) sx = w - 1;
+      if (side === 2) sy = h - 1;
+      if (side === 3) sx = 0;
+    }
+    if (isInClearRect(tx, ty, clearStartX, clearEndX, clearStartY, clearEndY)) {
+      if (side === 0) ty = h - 1;
+      if (side === 1) tx = 0;
+      if (side === 2) ty = 0;
+      if (side === 3) tx = w - 1;
+    }
     return { start: { x: sx, y: sy, side }, target: { x: tx, y: ty, side: (side + 2) % 4 } };
   }
 
@@ -731,22 +764,24 @@ function carveRiversMaybeThrough(map, w, h, opts = {}) {
       placeRiverTile(x, y);
       const distToTarget = Math.hypot(target.x - x, target.y - y);
       const localWidenProb = distToTarget < 4 ? widenProb * 0.35 : widenProb;
-      for (const n of neighbors8(x, y)) {
+      for (const n of neighbors8(x, y, w, h)) {
         if (Math.random() < localWidenProb) placeRiverTile(n.x, n.y);
       }
       if (reachedSide(x, y, target.side)) {
         if (distToTarget > 2 && Math.random() < 0.4) {
-          const extras = neighbors8(x, y).filter(n => reachedSide(n.x, n.y, target.side));
+          const extras = neighbors8(x, y, w, h).filter(n => reachedSide(n.x, n.y, target.side));
           if (extras.length) { const e = extras[Math.floor(Math.random() * extras.length)]; placeRiverTile(e.x, e.y); }
         }
         break;
       }
-      let candidates = neighbors8(x, y);
+      // Score each candidate step: lower = preferred.
+      // Penalties: inside clear zone, backtracking, diagonal step, direction change.
+      let candidates = neighbors8(x, y, w, h);
       let best = null; let bestScore = Infinity;
       for (const c of candidates) {
         const dist = Math.hypot(target.x - c.x, target.y - c.y);
         const jitter = (noise(c.x * jitterNoiseScale, c.y * jitterNoiseScale) - 0.5) * 3;
-        const inside = inClear(c.x, c.y);
+        const inside = isInClearRect(c.x, c.y, clearStartX, clearEndX, clearStartY, clearEndY);
         const insidePenalty = inside ? (allowThroughThisRiver ? 6 : 1000) : 0;
         const forwardDot = ((target.x - x) * (c.x - x) + (target.y - y) * (c.y - y));
         const backtrackPenalty = forwardDot < 0 ? 6 : 0;
@@ -760,7 +795,7 @@ function carveRiversMaybeThrough(map, w, h, opts = {}) {
       if (!best) break;
       prevDir = { dx: best.x - x, dy: best.y - y };
       x = best.x; y = best.y; steps++;
-      if (steps % 70 === 0 && Math.random() < 0.25) {
+      if (steps % RIVER_JUMP_INTERVAL === 0 && Math.random() < RIVER_JUMP_PROB) {
         const p = pickStartAndTarget().start; x = Math.max(0, Math.min(w - 1, p.x)); y = Math.max(0, Math.min(h - 1, p.y));
         prevDir = null;
       }
@@ -769,29 +804,68 @@ function carveRiversMaybeThrough(map, w, h, opts = {}) {
 
   for (let r = 0; r < numRivers; r++) { const { start, target } = pickStartAndTarget(); carveSingleRiver(start, target); }
 
+  // BFS from (px, py) over walkable tiles; returns the set of visited coordinate keys.
   function floodFillWalkable(px, py) {
-    const q = [{ x: px, y: py }]; const visited = new Set([`${px},${py}`]); let head = 0;
-    while (head < q.length) { const cur = q[head++]; for (const n of neighbors8(cur.x, cur.y)) { const key = `${n.x},${n.y}`; if (visited.has(key)) continue; const t = map[n.y * w + n.x]; const walkable = t === BRIDGE_TILE || t === TILE_TYPES.GRASS || t === TILE_TYPES.FLOWERS || t === TILE_TYPES.LOG; if (walkable) { visited.add(key); q.push({ x: n.x, y: n.y }); } } }
+    const q = [{ x: px, y: py }];
+    const visited = new Set([`${px},${py}`]);
+    let head = 0;
+    while (head < q.length) {
+      const cur = q[head++];
+      for (const n of neighbors8(cur.x, cur.y, w, h)) {
+        const key = `${n.x},${n.y}`;
+        if (visited.has(key)) continue;
+        const t = map[n.y * w + n.x];
+        const walkable = t === BRIDGE_TILE || t === TILE_TYPES.GRASS || t === TILE_TYPES.FLOWERS || t === TILE_TYPES.LOG;
+        if (walkable) {
+          visited.add(key);
+          q.push({ x: n.x, y: n.y });
+        }
+      }
+    }
     return visited;
   }
 
   for (let iter = 0; iter < 5; iter++) {
     const visited = floodFillWalkable(playerX, playerY);
     const unreachable = [];
-    for (let yy = 0; yy < h; yy++) { for (let xx = 0; xx < w; xx++) { const key = `${xx},${yy}`; const t = map[yy * w + xx]; if ((t === TILE_TYPES.GRASS || t === TILE_TYPES.FLOWERS || t === TILE_TYPES.LOG) && !visited.has(key)) unreachable.push({ x: xx, y: yy }); } }
+    for (let yy = 0; yy < h; yy++) {
+      for (let xx = 0; xx < w; xx++) {
+        const key = `${xx},${yy}`;
+        const t = map[yy * w + xx];
+        if ((t === TILE_TYPES.GRASS || t === TILE_TYPES.FLOWERS || t === TILE_TYPES.LOG) && !visited.has(key)) {
+          unreachable.push({ x: xx, y: yy });
+        }
+      }
+    }
     if (unreachable.length === 0) break;
-    const candidatesMap = new Map(); const visitedSet = visited;
+    const candidatesMap = new Map();
+    const visitedSet = visited;
     for (const g of unreachable) {
-      for (const n of neighbors8(g.x, g.y)) {
-        const nk = `${n.x},${n.y}`; if (candidatesMap.has(nk)) continue; const t = map[n.y * w + n.x]; if (t === RIVER_TILE) {
-          let touchesVisited = false; for (const nn of neighbors8(n.x, n.y)) { if (visitedSet.has(`${nn.x},${nn.y}`)) { const tt = map[nn.y * w + nn.x]; if (tt === TILE_TYPES.GRASS || tt === TILE_TYPES.FLOWERS || tt === TILE_TYPES.LOG || tt === BRIDGE_TILE) { touchesVisited = true; break; } } }
-          if (touchesVisited) { const score = Math.hypot(n.x - w/2, n.y - h/2) + Math.random() * 20; candidatesMap.set(nk, { x: n.x, y: n.y, score }); }
+      for (const n of neighbors8(g.x, g.y, w, h)) {
+        const nk = `${n.x},${n.y}`;
+        if (candidatesMap.has(nk)) continue;
+        const t = map[n.y * w + n.x];
+        if (t === RIVER_TILE) {
+          let touchesVisited = false;
+          for (const nn of neighbors8(n.x, n.y, w, h)) {
+            if (visitedSet.has(`${nn.x},${nn.y}`)) {
+              const tt = map[nn.y * w + nn.x];
+              if (tt === TILE_TYPES.GRASS || tt === TILE_TYPES.FLOWERS || tt === TILE_TYPES.LOG || tt === BRIDGE_TILE) {
+                touchesVisited = true;
+                break;
+              }
+            }
+          }
+          if (touchesVisited) {
+            const score = Math.hypot(n.x - w/2, n.y - h/2) + Math.random() * 20;
+            candidatesMap.set(nk, { x: n.x, y: n.y, score });
+          }
         }
       }
     }
     if (candidatesMap.size === 0) break;
     const candidates = Array.from(candidatesMap.values()).sort((a,b) => a.score - b.score);
-    const placeCount = Math.min(3, Math.max(1, Math.floor(candidates.length / 6)));
+    const placeCount = Math.min(3, Math.max(1, Math.floor(candidates.length / BRIDGE_PLACE_DIVISOR)));
     for (let i = 0; i < placeCount && i < candidates.length; i++) {
       const c = candidates[i];
       layBridgeTile(map, w, h, c.x, c.y, RIVER_TILE, BRIDGE_TILE);
@@ -799,6 +873,7 @@ function carveRiversMaybeThrough(map, w, h, opts = {}) {
   }
 }
 
+// Carves a secondary river branch from an existing river tile through the player zone to the opposite edge.
 function carveBranchFromRiver(map, w, h, opts = {}) {
   const RIVER_TILE = (typeof opts.RIVER_TILE !== 'undefined' && opts.RIVER_TILE !== null)
     ? opts.RIVER_TILE
@@ -816,22 +891,6 @@ function carveBranchFromRiver(map, w, h, opts = {}) {
   const playerX = Math.floor(opts.playerX ?? Math.floor(w / 2));
   const playerY = Math.floor(opts.playerY ?? Math.floor(h / 2));
   const { clearStartX = -1, clearEndX = -1, clearStartY = -1, clearEndY = -1 } = opts;
-
-  function neighbors8(cx, cy) {
-    const n = [];
-    for (let yy = cy - 1; yy <= cy + 1; yy++) {
-      for (let xx = cx - 1; xx <= cx + 1; xx++) {
-        if (xx === cx && yy === cy) continue;
-        if (xx >= 0 && xx < w && yy >= 0 && yy < h) n.push({ x: xx, y: yy });
-      }
-    }
-    return n;
-  }
-
-  function isInsideClear(x, y) {
-    if (clearStartX < 0) return false;
-    return x > clearStartX && x < clearEndX && y > clearStartY && y < clearEndY;
-  }
 
   const riverTiles = [];
   for (let yy = 0; yy < h; yy++) {
@@ -860,8 +919,8 @@ function carveBranchFromRiver(map, w, h, opts = {}) {
   const targetEdge = pickOppositeEdgeTargetFrom(start.x, start.y);
 
   const maxSteps = Math.max(w, h) * 6;
-  const jitterNoiseScale = 0.12;
-  const widenProb = 0.45;
+  const jitterNoiseScale = DEFAULT_JITTER_NOISE_SCALE;
+  const widenProb = DEFAULT_WIDEN_PROB;
 
   function carvePath(sx, sy, tx, ty, stepsLimit = maxSteps) {
     let x = sx, y = sy;
@@ -873,16 +932,18 @@ function carveBranchFromRiver(map, w, h, opts = {}) {
 
       const distToTarget = Math.hypot(tx - x, ty - y);
       const localWidenProb = distToTarget < 4 ? widenProb * 0.35 : widenProb;
-      for (const n of neighbors8(x, y)) {
+      for (const n of neighbors8(x, y, w, h)) {
         const nIdx = n.y * w + n.x;
         if (Math.random() < localWidenProb) map[nIdx] = RIVER_TILE;
       }
 
       if (Math.hypot(tx - x, ty - y) <= 1.5) break;
 
+      // Score each candidate step: lower = preferred.
+      // Penalties: inside clear zone, backtracking, diagonal step, direction change.
       let best = null;
       let bestScore = Infinity;
-      for (const c of neighbors8(x, y)) {
+      for (const c of neighbors8(x, y, w, h)) {
         const dist = Math.hypot(tx - c.x, ty - c.y);
         const jitter = (noise(c.x * jitterNoiseScale, c.y * jitterNoiseScale) - 0.5) * 3;
         const throughPlayerBias = (Math.hypot(playerX - c.x, playerY - c.y) < Math.max(w,h)*0.25) ? -2 : 0;
@@ -920,13 +981,14 @@ function carveBranchFromRiver(map, w, h, opts = {}) {
     carvePath(nearest.x, nearest.y, targetEdge.x, targetEdge.y, maxSteps);
   }
 
+  // BFS from (px, py) over walkable tiles; returns the set of visited coordinate keys.
   function floodFillWalkableFrom(px, py) {
     const q = [{ x: px, y: py }];
     const visited = new Set([`${px},${py}`]);
     let head = 0;
     while (head < q.length) {
       const cur = q[head++];
-      for (const n of neighbors8(cur.x, cur.y)) {
+      for (const n of neighbors8(cur.x, cur.y, w, h)) {
         const k = `${n.x},${n.y}`;
         if (visited.has(k)) continue;
         const t = map[n.y * w + n.x];
@@ -957,14 +1019,14 @@ function carveBranchFromRiver(map, w, h, opts = {}) {
     const candidates = [];
     const seen = new Set();
     for (const g of unreachable) {
-      for (const n of neighbors8(g.x, g.y)) {
+      for (const n of neighbors8(g.x, g.y, w, h)) {
         const nk = `${n.x},${n.y}`;
         if (seen.has(nk)) continue;
         seen.add(nk);
         const t = map[n.y * w + n.x];
         if (t === RIVER_TILE) {
           let touchesVisited = false;
-          for (const nn of neighbors8(n.x, n.y)) {
+          for (const nn of neighbors8(n.x, n.y, w, h)) {
             if (visited.has(`${nn.x},${nn.y}`)) {
               const tt = map[nn.y * w + nn.x];
               if (tt === TILE_TYPES.GRASS || tt === TILE_TYPES.FLOWERS || tt === TILE_TYPES.LOG || tt === BRIDGE_TILE) {
@@ -981,7 +1043,7 @@ function carveBranchFromRiver(map, w, h, opts = {}) {
     }
     if (candidates.length === 0) break;
     candidates.sort((a,b) => a.score - b.score);
-    const placeCount = Math.min(3, Math.max(1, Math.floor(candidates.length / 6)));
+    const placeCount = Math.min(3, Math.max(1, Math.floor(candidates.length / BRIDGE_PLACE_DIVISOR)));
     for (let i = 0; i < placeCount; i++) {
       const c = candidates[i];
       layBridgeTile(map, w, h, c.x, c.y, RIVER_TILE, BRIDGE_TILE);
@@ -989,6 +1051,7 @@ function carveBranchFromRiver(map, w, h, opts = {}) {
   }
 }
 
+// Converts river tiles near the player into LOG tiles and clears solid tiles to GRASS within the clear zone.
 function ensureInteractiveClearArea(map, w, h, opts = {}) {
   const {
     clearStartX = -1,
@@ -1037,6 +1100,7 @@ function ensureInteractiveClearArea(map, w, h, opts = {}) {
   }
 }
 
+// Fills diagonal river gaps (checkerboard artifacts) to smooth river edges.
 function smoothRiverTiles(map, w, h, opts = {}) {
   const {
     RIVER_TILE = (typeof TILE_TYPES !== 'undefined' && TILE_TYPES.RIVER) ? TILE_TYPES.RIVER : null,
@@ -1083,6 +1147,7 @@ function smoothRiverTiles(map, w, h, opts = {}) {
   }
 }
 
+// Removes isolated river-tip pixels (single-cardinal-neighbour river tiles diagonally adjacent to another tip).
 function roundRiverTips(map, w, h, opts = {}) {
   const {
     RIVER_TILE = (typeof TILE_TYPES !== 'undefined' && TILE_TYPES.RIVER) ? TILE_TYPES.RIVER : null,
@@ -1156,4 +1221,3 @@ function roundRiverTips(map, w, h, opts = {}) {
     }
   }
 }
-

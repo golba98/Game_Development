@@ -416,8 +416,8 @@ function clearPreviousGameState() {
   } catch (e) {}
   mapImage = null;
   mapOverlays = [];
-  decorativeObjects = [];
-  decorativeObstacleTiles = new Set();
+  decorativeObjectsList = [];
+  decorativeObstaclePositions = new Set();
   treeObjects = [];
   enemies = [];
   counts = {};
@@ -448,8 +448,8 @@ function markDecorObjectsDirty() {
 
 function spawnDecorativeObjects() {
   if (!logicalW || !logicalH || !mapStates) return;
-  decorativeObjects = [];
-  decorativeObstacleTiles = new Set();
+  decorativeObjectsList = [];
+  decorativeObstaclePositions = new Set();
   decorativeBehindObstacleTiles = new Set();
   const grassTiles = [];
   for (let y = 0; y < logicalH; y++) {
@@ -470,18 +470,18 @@ function spawnDecorativeObjects() {
   const placeRandomDecor = (tile, type, pool) => {
     if (!pool || !pool.length) return false;
     const name = pool[Math.floor(Math.random() * pool.length)];
-    decorativeObjects.push({ id: name, type, tileX: tile.x, tileY: tile.y });
+    decorativeObjectsList.push({ id: name, type, tileX: tile.x, tileY: tile.y });
     const idx = tile.y * logicalW + tile.x;
     occupied.add(idx);
     
     if (type === 'obstacle') {
-        decorativeObstacleTiles.add(idx);
+        decorativeObstaclePositions.add(idx);
     }
     return true;
   };
 
   for (const tile of ordered) {
-    if (decorativeObjects.length >= maxDecor) break;
+    if (decorativeObjectsList.length >= maxDecor) break;
     const tileIdx = tile.y * logicalW + tile.x;
     if (occupied.has(tileIdx)) continue;
     const roll = Math.random();
@@ -502,7 +502,7 @@ function spawnDecorativeObjects() {
   for (const tile of holeCandidates) {
     const idx = tile.y * logicalW + tile.x;
     if (occupied.has(idx)) continue;
-    decorativeObjects.push({ id: DECOR_SPECIAL_NAMES[0], type: 'special', tileX: tile.x, tileY: tile.y });
+    decorativeObjectsList.push({ id: DECOR_SPECIAL_NAMES[0], type: 'special', tileX: tile.x, tileY: tile.y });
     occupied.add(idx);
     break;
   }

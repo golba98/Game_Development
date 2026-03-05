@@ -1,6 +1,14 @@
 // game-utils.js — Shared utilities: tile state, flood fill, color lookup, shuffle
 // Extracted from 4-Game.js
 
+const DEFAULT_TILE_COLOR = [255, 0, 255]; // magenta fallback for unmapped tile states
+
+// Clamps `value` to the inclusive range [min, max].
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+// Shuffles an array in-place using Fisher-Yates algorithm.
 function shuffleArray(array) {
   if (!Array.isArray(array) || array.length <= 1) return;
   for (let i = array.length - 1; i > 0; i--) {
@@ -9,14 +17,16 @@ function shuffleArray(array) {
   }
 }
 
+// Returns the tile state at (x, y) from the given layer, or -1 if out of bounds.
 function getTileState(x, y, layer = mapStates) {
   if (x < 0 || x >= logicalW || y < 0 || y >= logicalH) return -1;
   return layer[y * logicalW + x];
 }
 
+// BFS flood-fill from the player's position; returns a Uint8Array of reachable tile flags.
 function floodReachable(options = {}) {
   let respectEdgeLayer = Object.prototype.hasOwnProperty.call(options, 'respectEdgeLayer') ? !!options.respectEdgeLayer : true;
-  
+
   if (!EDGE_LAYER_ENABLED) respectEdgeLayer = false;
   if (!logicalW || !logicalH) return new Uint8Array(0);
   const total = logicalW * logicalH;
@@ -53,12 +63,10 @@ function floodReachable(options = {}) {
   return visited;
 }
 
+// Returns the RGB color array for a tile state, or DEFAULT_TILE_COLOR if unmapped.
 function getColorForState(state) {
-  
   if (typeof COLORS !== 'undefined' && COLORS[state]) {
     return COLORS[state];
   }
-  
-  return [255, 0, 255]; 
+  return DEFAULT_TILE_COLOR;
 }
-

@@ -349,8 +349,8 @@ function drawDifficultyBadge() {
 }
 
 function findGoalPosition() {
-    if (!decorativeObjects) return null;
-    for (const obj of decorativeObjects) {
+    if (!decorativeObjectsList) return null;
+    for (const obj of decorativeObjectsList) {
         if (obj.type === 'special' && obj.id === 'hole_1') {
             return { x: obj.tileX, y: obj.tileY };
         }
@@ -617,6 +617,8 @@ function spawnCloud(forceX) {
     verticalDrift: (Math.random() - 0.5) * 0.15,
     driftPhase: Math.random() * Math.PI * 2
   });
+  // Keep clouds sorted by scale (painter's order) — cheapest to sort on insert
+  clouds.sort((a, b) => a.scale - b.scale);
 }
 
 function updateClouds() {
@@ -635,7 +637,7 @@ function updateClouds() {
     const cloud = clouds[i];
     
     // Normalize speed to ~60fps (16.67ms)
-    const dtScale = gameDelta / 16.67;
+    const dtScale = gameDelta / FRAME_TIME_MS;
     cloud.x += cloud.speed * dtScale;
     cloud.driftPhase += 0.01 * dtScale;
     cloud.y = cloud.baseY + Math.sin(cloud.driftPhase) * 20 * (cloud.verticalDrift || 0.1);
@@ -650,9 +652,6 @@ function updateClouds() {
 
 function drawClouds() {
   push();
-  
-  clouds.sort((a, b) => a.scale - b.scale);
-  
   // Weather tint
   let tintColor = [255, 255, 255, 255];
   if (typeof WeatherSystem !== 'undefined') {

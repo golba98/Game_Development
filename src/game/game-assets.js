@@ -342,8 +342,7 @@ const AssetTracker = {
       }, timeoutMs || 3000);
     });
     return this._readyPromise;
-  }
-  ,
+  },
   onReady(cb) {
     if (typeof cb !== 'function') return;
     if (this.loaded >= this.expected) {
@@ -442,47 +441,9 @@ let playerAnimSpeed = 150;
 
 const IDLE_DIRS = ['N','NE','E','SE','S','SW','W','NW'];
 
-const IDLE_FRAME_PATHS = {
-  N:   [null, null, null, null],
-  NE:  [null, null, null, null],
-  E:   [null, null, null, null],
-  SE:  [null, null, null, null],
-  S:   [null, null, null, null],
-  SW:  [null, null, null, null],
-  W:   [null, null, null, null],
-  NW:  [null, null, null, null]
-};
-
-const IDLE_FRAME_TEMPLATE = null;
 let idleFrames = { N:[], NE:[], E:[], SE:[], S:[], SW:[], W:[], NW:[] };
-const WALK_FRAME_PATHS = {
-  N:   [null, null, null, null],
-  NE:  [null, null, null, null],
-  E:   [null, null, null, null],
-  SE:  [null, null, null, null],
-  S:   [null, null, null, null],
-  SW:  [null, null, null, null],
-  W:   [null, null, null, null],
-  NW:  [null, null, null, null]
-};
-
-const WALK_FRAME_TEMPLATE = null;
-
 let walkFrames = { N:[], NE:[], E:[], SE:[], S:[], SW:[], W:[], NW:[] };
-const RUN_FRAME_PATHS = {
-  N:   [null, null, null, null],
-  NE:  [null, null, null, null],
-  E:   [null, null, null, null],
-  SE:  [null, null, null, null],
-  S:   [null, null, null, null],
-  SW:  [null, null, null, null],
-  W:   [null, null, null, null],
-  NW:  [null, null, null, null]
-};
-
-const RUN_FRAME_TEMPLATE = null;
-
-let runFrames = { N:[], NE:[], E:[], SE:[], S:[], SW:[], W:[], NW:[] };
+let runFrames  = { N:[], NE:[], E:[], SE:[], S:[], SW:[], W:[], NW:[] };
 const WALK_SHEET_PATHS = {
   N:  'assets/2-Characters/2-Walking/walk_sheet_north.png',
   NE: 'assets/2-Characters/2-Walking/walk_sheet_northeast.png',
@@ -598,60 +559,45 @@ function scheduleDeferredCharacterAssets() {
   try { logAssetTrackerStatus('deferred character assets scheduled'); } catch (e) {}
 }
 
+// Calls img.remove() if available, to release GPU/memory resources.
 function releaseImageReference(img) {
-      if (!img) return;
-      if (typeof img.remove === 'function') {
-        try { img.remove(); } catch (e) {}
-      }
-    }
+  if (!img) return;
+  if (typeof img.remove === 'function') { try { img.remove(); } catch (e) {} }
+}
 
-    function clearObjectValues(target) {
-      if (!target || typeof target !== 'object') return;
-      Object.keys(target).forEach((key) => { target[key] = null; });
-    }
+// Sets every key of an object to null (used to drop image references in bulk).
+function clearObjectValues(target) {
+  if (!target || typeof target !== 'object') return;
+  Object.keys(target).forEach((key) => { target[key] = null; });
+}
 
-    function releaseGameAssets() {
-      clearPreviousGameState();
-      releaseImageReference(spritesheetIdle);
-      releaseImageReference(spritesheetWalk);
-      releaseImageReference(spritesheetRun);
-      spritesheetIdle = null;
-      spritesheetWalk = null;
-      spritesheetRun = null;
+// Releases all loaded images, sounds, and resets the AssetTracker.
+function releaseGameAssets() {
+  clearPreviousGameState();
+  releaseImageReference(spritesheetIdle);
+  releaseImageReference(spritesheetWalk);
+  releaseImageReference(spritesheetRun);
+  spritesheetIdle = null; spritesheetWalk = null; spritesheetRun = null;
 
-      releaseImageReference(BUTTON_BG);
-      releaseImageReference(TREE_OVERLAY_IMG);
-      releaseImageReference(uiFont);
-      BUTTON_BG = null;
-      TREE_OVERLAY_IMG = null;
-      uiFont = null;
+  releaseImageReference(BUTTON_BG);
+  releaseImageReference(TREE_OVERLAY_IMG);
+  releaseImageReference(uiFont);
+  BUTTON_BG = null; TREE_OVERLAY_IMG = null; uiFont = null;
 
-      clearObjectValues(TILE_IMAGES);
-      clearObjectValues(DECOR_ASSET_IMAGES);
-      clearObjectValues(HILL_ASSETS);
+  clearObjectValues(TILE_IMAGES);
+  clearObjectValues(DECOR_ASSET_IMAGES);
+  clearObjectValues(HILL_ASSETS);
+  if (Array.isArray(cloudImages)) cloudImages.length = 0;
 
-      if (Array.isArray(cloudImages)) cloudImages.length = 0;
+  try { if (gameMusic && typeof gameMusic.stop === 'function') gameMusic.stop(); } catch (e) {}
+  gameMusic = null; clickSFX = null;
 
-      try {
-        if (gameMusic && typeof gameMusic.stop === 'function') {
-          gameMusic.stop();
-        }
-      } catch (stopErr) {}
-      gameMusic = null;
-      clickSFX = null;
+  AssetTracker.loaded = 0; AssetTracker.expected = 0;
+  AssetTracker.names.clear();
+  AssetTracker._callbacks = []; AssetTracker._resolve = null; AssetTracker._readyPromise = null;
 
-      if (typeof AssetTracker !== 'undefined') {
-        AssetTracker.loaded = 0;
-        AssetTracker.expected = 0;
-        if (AssetTracker.names && typeof AssetTracker.names.clear === 'function') {
-          AssetTracker.names.clear();
-        }
-        AssetTracker._callbacks = [];
-        AssetTracker._resolve = null;
-        AssetTracker._readyPromise = null;
-      }
-      genTempData = {};
-    }
+  genTempData = {};
+}
 
 function cleanImageBrown(img) {
   try {

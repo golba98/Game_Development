@@ -416,8 +416,8 @@ function draw() {
           currentDrawables.push(d);
         }
     }
-    if (Array.isArray(decorativeObjects) && decorativeObjects.length) {
-      for (const deco of decorativeObjects) {
+    if (Array.isArray(decorativeObjectsList) && decorativeObjectsList.length) {
+      for (const deco of decorativeObjectsList) {
         const img = DECOR_ASSET_IMAGES[deco.id];
         if (!img) continue;
         const destW = img.width || cellSize;

@@ -1,6 +1,28 @@
 // game-settings.js — Settings panels, DOM styles, translation, zoom helpers
 // Extracted from 4-Game.js
 
+// --- Text Size Constants ---
+const TEXT_SIZE_DEFAULT   = 75;  // Baseline setting value (maps to 1.0 scale)
+const TEXT_SIZE_BASE_PX   = 14;  // Body text
+const TEXT_SIZE_SMALL_PX  = 12;  // Small/secondary text
+const TEXT_SIZE_LABEL_PX  = 18;  // Setting row labels
+const TEXT_SIZE_HEADING_PX = 24; // Section headings
+
+// --- Settings Panel Dimensions ---
+const SETTINGS_PANEL_W = 720;
+const SETTINGS_PANEL_H = 540;
+
+// --- Loading Overlay Scale Clamps ---
+const LOADING_SCALE_HEIGHT_REF = 4000; // Reference height for scale calculation
+const LOADING_SCALE_MIN        = 0.18;
+const LOADING_SCALE_MAX        = 0.55;
+
+// --- Zoom Detection Constants ---
+const ZOOM_PROBE_DPI = 96; // Standard screen DPI used by browsers for CSS 1in
+const ZOOM_CLAMP_MIN = 0.1;
+const ZOOM_CLAMP_MAX = 10;
+
+/** Returns the browser zoom level by measuring a CSS 1-inch element against 96dpi. */
 function measureZoomViaInch() {
   try {
     if (typeof document === 'undefined') return null;
@@ -18,10 +40,11 @@ function measureZoomViaInch() {
     const rect = __zoomProbeEl.getBoundingClientRect();
     if (!rect || !rect.width) return null;
   
-    return rect.width / 96;
+    return rect.width / ZOOM_PROBE_DPI;
   } catch (e) { return null; }
 }
 
+/** Aggregates multiple zoom signals (visual viewport, DPR, layout ratio) into one value. */
 function estimateBrowserZoom() {
   if (typeof window === 'undefined') return 1;
   const candidates = [];
@@ -39,11 +62,8 @@ function estimateBrowserZoom() {
     const dprZoom = (window.devicePixelRatio) / (BASE_DPR || 1);
     candidates.push(dprZoom);
   }
-  if (window.outerWidth && window.innerWidth) {
-    candidates.push(window.outerWidth / window.innerWidth);
-  }
   const zoom = candidates.find(v => v && isFinite(v) && v > 0.05 && v < 20) || 1;
-  const clamped = Math.max(0.1, Math.min(10, zoom));
+  const clamped = Math.max(ZOOM_CLAMP_MIN, Math.min(ZOOM_CLAMP_MAX, zoom));
   if (ZOOM_DIAGNOSTIC_ENABLED) {
     if (!lastLoggedZoom || Math.abs(clamped - lastLoggedZoom) > 0.01) {
       console.log('[zoom] estimated browser zoom =', clamped, '(candidates', candidates, ')');
@@ -53,6 +73,7 @@ function estimateBrowserZoom() {
   return clamped;
 }
 
+/** Applies a continuous counter-scale transform on `el` to cancel browser zoom. Returns a cancel function. */
 function makeElementZoomInvariant(el, origin = 'center center') {
   if (!el) return () => {};
   let zoomLoopId = null;
@@ -68,6 +89,7 @@ function makeElementZoomInvariant(el, origin = 'center center') {
   return () => { if (zoomLoopId) cancelAnimationFrame(zoomLoopId); };
 }
 
+/** Creates a fullscreen overlay + centred panel that stays visually stable across browser zoom levels. */
 function createZoomStablePanel(w, h, id) {
   let container = createDiv('');
   container.id(id);
@@ -127,6 +149,7 @@ function createZoomStablePanel(w, h, id) {
   };
 }
 
+/** Applies full-width pixel-button skin to a settings category tab. */
 function applySettingsTabSkin(btn) {
   if (!btn || !btn.elt) return;
   stylePixelButton(btn);
@@ -144,6 +167,7 @@ function applySettingsTabSkin(btn) {
   }
 }
 
+/** Applies standard menu button styling (size, gold border, text shadow). */
 function applyMenuButtonUI(btn, w = 260, h = 48) {
   if (!btn || !btn.elt) return;
   stylePixelButton(btn);
@@ -164,6 +188,7 @@ function applyMenuButtonUI(btn, w = 260, h = 48) {
   btn.style('box-shadow', '0 8px 28px rgba(0,0,0,0.75)');
 }
 
+/** Applies the dark textured background and gold border to the settings panel element. */
 function decorateSettingsPanel(panel) {
   if (!panel || !panel.style) return;
   panel.style('background-color', 'rgba(8, 8, 12, 0.9)');
@@ -179,16 +204,13 @@ function decorateSettingsPanel(panel) {
   panel.style('border-radius', '12px');
 }
 
+/** Removes all settings DOM elements and the overlay, then persists current settings. */
 function closeInGameSettings() {
-  
   if (activeSettingElements && activeSettingElements.length) {
-    activeSettingElements.forEach(e => {
-      if (e) e.remove();
-    });
+    activeSettingElements.forEach(e => { if (e) e.remove(); });
   }
   activeSettingElements = [];
 
-  
   if (settingsOverlayDiv) {
     settingsOverlayDiv.remove();
     settingsOverlayDiv = null;
@@ -196,10 +218,11 @@ function closeInGameSettings() {
   }
 
   clearSubSettings();
-  try { if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize(); } catch(e) {}
-  try { if (typeof persistSavedSettings === 'function') persistSavedSettings(true); } catch(e) {}
+  try { applyCurrentTextSize(); } catch(e) {}
+  try { persistSavedSettings(true); } catch(e) {}
 }
 
+/** Replaces the current settings panel contents with the builder for `label`. */
 function showSubSettings(label) {
   clearSubSettings();
 
@@ -239,14 +262,15 @@ function showSubSettings(label) {
   applyCurrentTextSize();
 }
 
+/** Returns the multiplier for the current text size setting (e.g. 1.0 at default, 1.2 at large). */
 function getTextScale() {
   try {
-    const defaultVal = 75;
-    const raw = (typeof textSizeSetting === 'number') ? textSizeSetting : (parseInt(textSizeSetting, 10) || defaultVal);
-    return (raw && isFinite(raw)) ? (raw / defaultVal) : 1;
+    const raw = (typeof textSizeSetting === 'number') ? textSizeSetting : (parseInt(textSizeSetting, 10) || TEXT_SIZE_DEFAULT);
+    return (raw && isFinite(raw)) ? (raw / TEXT_SIZE_DEFAULT) : 1;
   } catch (e) { return 1; }
 }
 
+/** Calls the (possibly overridden) textSize() with scale applied. */
 function gTextSize(px) {
   ensureTextSizeOverride();
   try {
@@ -260,6 +284,7 @@ function gTextSize(px) {
   }
 }
 
+/** Monkey-patches p5's textSize() once so every call is automatically scaled by getTextScale(). */
 function ensureTextSizeOverride() {
   if (_textSizeOverrideInstalled) return;
   if (typeof textSize !== 'function') return;
@@ -276,34 +301,29 @@ function ensureTextSizeOverride() {
   _textSizeOverrideInstalled = true;
 }
 
+/** Re-applies the current text size to all live settings DOM elements. */
 function applyCurrentTextSize() {
   ensureTextSizeOverride();
-  try { if (typeof textSize === 'function') textSize(_textSizeBaseValue || 14); } catch(e) {}
+  try { if (typeof textSize === 'function') textSize(_textSizeBaseValue || TEXT_SIZE_BASE_PX); } catch(e) {}
   try {
-    const defaultVal = 75;
-    const raw = (typeof textSizeSetting === 'number') ? textSizeSetting : (parseInt(textSizeSetting, 10) || defaultVal);
-    const scale = (raw && isFinite(raw)) ? (raw / defaultVal) : 1;
+    const scale = getTextScale();
 
-    const base = Math.max(10, Math.round(14 * scale));
-    const small = Math.max(8, Math.round(12 * scale));
-    const label = Math.max(12, Math.round(18 * scale));
-    const heading = Math.max(14, Math.round(24 * scale));
+    const base    = Math.max(10, Math.round(TEXT_SIZE_BASE_PX  * scale));
+    const label   = Math.max(12, Math.round(TEXT_SIZE_LABEL_PX * scale));
+    const btnSize = Math.max(12, Math.round(TEXT_SIZE_BASE_PX  * scale));
 
     try { if (typeof textSize === 'function') textSize(base); } catch(e) {}
 
-   
     try {
       const labels = document.querySelectorAll('.setting-label');
       labels.forEach(l => { try { l.style.fontSize = label + 'px'; } catch(e){} });
     } catch(e) {}
 
-   
     try {
       const buttons = document.querySelectorAll('button[data-text-size-val]');
-      buttons.forEach(b => { try { b.style.fontSize = Math.max(12, Math.round(14 * scale)) + 'px'; } catch(e){} });
+      buttons.forEach(b => { try { b.style.fontSize = btnSize + 'px'; } catch(e){} });
     } catch(e) {}
 
-  
     try {
       const rootEl = (typeof settingsMenuContent !== 'undefined' && settingsMenuContent && settingsMenuContent.elt) ? settingsMenuContent.elt : document.getElementById('menu-settings-root');
       const root = (rootEl && rootEl.querySelector) ? rootEl : document.body;
@@ -311,7 +331,7 @@ function applyCurrentTextSize() {
       selLabels.forEach(el => { try { el.style.fontSize = label + 'px'; } catch(e){} });
 
       const btns = root.querySelectorAll('button, a');
-      btns.forEach(el => { try { el.style.fontSize = Math.max(12, Math.round(14 * scale)) + 'px'; } catch(e){} });
+      btns.forEach(el => { try { el.style.fontSize = btnSize + 'px'; } catch(e){} });
 
       const selects = root.querySelectorAll('select');
       selects.forEach(el => { try { el.style.fontSize = base + 'px'; } catch(e){} });
@@ -328,7 +348,7 @@ function applyCurrentTextSize() {
             const node = item && (item.elt || item);
             if (!node || !node.style) return;
             const tag = (node.tagName || '').toLowerCase();
-            const controlSize = (tag === 'input' || tag === 'select' || tag === 'button' || tag === 'a') ? Math.max(12, Math.round(14 * scale)) : label;
+            const controlSize = (tag === 'input' || tag === 'select' || tag === 'button' || tag === 'a') ? btnSize : label;
             try { node.style.fontSize = controlSize + 'px'; } catch(e){}
             try {
               const children = node.querySelectorAll && node.querySelectorAll('*');
@@ -341,10 +361,11 @@ function applyCurrentTextSize() {
       }
     } catch(e) {}
 
-    try { if (typeof updateTextSizeButtonStyles === 'function') updateTextSizeButtonStyles(); } catch(e) {}
+    try { updateTextSizeButtonStyles(); } catch(e) {}
   } catch(e) {}
 }
 
+/** Updates the loading overlay progress bar and scales the content to fit the viewport. */
 function updateLoadingOverlayDom() {
   try {
     const el = document.getElementById('gd-loading-overlay');
@@ -361,8 +382,8 @@ function updateLoadingOverlayDom() {
       if (content) {
          
           let s = 1;
-          if (typeof window !== 'undefined') s = window.innerHeight / 4000;
-          s = Math.max(0.18, Math.min(0.55, s));
+          if (typeof window !== 'undefined') s = window.innerHeight / LOADING_SCALE_HEIGHT_REF;
+          s = Math.max(LOADING_SCALE_MIN, Math.min(LOADING_SCALE_MAX, s));
           if (Math.abs((lastLoadingScale ?? 0) - s) > 0.0001) {
             content.style.transform = `scale(${s})`;
             lastLoadingScale = s;
@@ -395,6 +416,7 @@ function updateLoadingOverlayDom() {
   } catch (e) {}
 }
 
+/** Injects the global CSS stylesheet (font, buttons, sliders, checkboxes, terminal) once. */
 function injectCustomStyles() {
   try {
     if (typeof document === 'undefined' || !document.head) return;
@@ -569,6 +591,7 @@ function injectCustomStyles() {
   } catch (e) { console.warn('[game] injectCustomStyles failed', e); }
 }
 
+/** Opens the in-game settings overlay (category tabs + right-hand content column). */
 function openInGameSettings(currentVals) {
   if (settingsOverlayDiv) {
     settingsOverlayDiv.remove();
@@ -589,7 +612,7 @@ function openInGameSettings(currentVals) {
   } catch (e) {}
   try { applyCurrentTextSize(); } catch (e) {}
 
-  const { container, panel, close } = createZoomStablePanel(720, 540, 'gd-settings-overlay');
+  const { container, panel, close } = createZoomStablePanel(SETTINGS_PANEL_W, SETTINGS_PANEL_H, 'gd-settings-overlay');
   decorateSettingsPanel(panel);
 
   settingsOverlayDiv = container;
@@ -729,15 +752,18 @@ function openInGameSettings(currentVals) {
   });
 }
 
+/** Hides all settings category tab buttons and their backgrounds. */
 function hideCategoryButtons() {
   categoryBackgrounds.forEach(e => e && e.hide());
   categoryButtons.forEach(e => e && e.hide());
 }
 
+/** Hides the Save and Back-to-Menu buttons at the bottom of the settings panel. */
 function hideBottomButtons() {
   [saveBackground, btnSave, backMenuBackground, btnBackMenu].forEach(e => e && e.hide());
 }
 
+/** Creates a positioned, styled button via `styleButton`. */
 function makeBtn(label, x, y, w, h, cb) {
   const b = createButton(label);
   b.size(w, h).position(x, y);
@@ -746,6 +772,7 @@ function makeBtn(label, x, y, w, h, cb) {
   return b;
 }
 
+/** Creates a non-interactive positioned image element (used as button backgrounds). */
 function createBgImg(path, x, y, w, h, zIndex = '9998') {
   const img = createImg(path, '');
   img.size(w, h).position(x, y);
@@ -755,6 +782,7 @@ function createBgImg(path, x, y, w, h, zIndex = '9998') {
   return img;
 }
 
+/** Creates a positioned small-pixel-styled button. */
 function makeSmallBtn(label, x, y, w, h, cb) {
   const b = createButton(label);
   b.size(w, h).position(x, y);
@@ -763,6 +791,7 @@ function makeSmallBtn(label, x, y, w, h, cb) {
   return b;
 }
 
+/** Creates a right-aligned, absolutely positioned label div for legacy canvas-based settings. */
 function createSettingLabel(txt, x, y, maxWidth = 200) {
   const d = createDiv(txt);
   d.position(x, y);
@@ -777,6 +806,7 @@ function createSettingLabel(txt, x, y, maxWidth = 200) {
   return d;
 }
 
+/** Highlights the currently active text-size preset button in gold. */
 function updateTextSizeButtonStyles() {
   const buttons = selectAll('button[data-text-size-val]');
   buttons.forEach(btn => {
@@ -791,6 +821,7 @@ function updateTextSizeButtonStyles() {
   });
 }
 
+/** Syncs all active audio sliders to the current in-memory volume values. */
 function syncSlidersToSettings() {
   activeSettingElements.forEach(e => {
     if (!e.elt || e.elt.tagName !== 'INPUT' || e.elt.type !== 'range') return;
@@ -807,16 +838,19 @@ function syncSlidersToSettings() {
   });
 }
 
+/** Removes and clears all tracked active setting DOM elements. */
 function clearSubSettings() {
   activeSettingElements.forEach(e => e && e.remove());
   activeSettingElements = [];
 }
 
+/** Hides all main-menu buttons (Play, Settings, Exit). */
 function hideMainMenu() {
   [playButtonBackground, btnPlay, settingsButtonBackground, btnSettings, exitButtonBackground, btnExit]
     .forEach(e => e && e.hide());
 }
 
+/** Shows main-menu buttons, creating them if they don't exist yet. */
 function showMainMenu() {
   if (!btnPlay || !btnSettings || !btnExit) {
     createMainMenu();
@@ -826,6 +860,7 @@ function showMainMenu() {
     .forEach(e => e && e.show());
 }
 
+/** Destroys and clears all settings category + nav button elements. */
 function hideSettingsMenu() {
   [...categoryBackgrounds, ...categoryButtons, saveBackground, btnSave, backMenuBackground, btnBackMenu]
     .forEach(e => e && e.remove());
@@ -833,6 +868,7 @@ function hideSettingsMenu() {
   categoryButtons = [];
 }
 
+/** Applies transparent, absolutely-positioned style to legacy canvas-overlay buttons. */
 function styleButton(btn) {
   btn.style("background", "transparent");
   btn.style("border", "none");
@@ -846,6 +882,7 @@ function styleButton(btn) {
   }
 }
 
+/** Applies the pixel-art button texture, hover/out animations, and font styling. */
 function stylePixelButton(btn) {
   
   btn.style('background-color', 'transparent');
@@ -878,6 +915,7 @@ function stylePixelButton(btn) {
   btn.style('z-index', '20005');
 }
 
+/** Populates `ctx` with Master Volume, Music Volume, and SFX Volume sliders. */
 function buildAudioSettings(ctx) {
   ctx
     .addSliderRow("Master Volume", 0, 100, masterVol * 100, v => { 
@@ -898,6 +936,7 @@ function buildAudioSettings(ctx) {
     }, { isAudio: true });
 }
 
+/** Populates `ctx` with Tutorials, HUD, and Difficulty controls. */
 function buildGameplaySettings(ctx) {
   ctx
     .addCheckboxRow("Show Tutorials", showTutorialsSetting, { onChange: v => { showTutorialsSetting = v; persistSavedSettings(); } })
@@ -914,6 +953,7 @@ function buildGameplaySettings(ctx) {
     });
 }
 
+/** Populates `ctx` with click-to-rebind keybind rows, a Sensitivity slider, and Invert Y toggle. */
 function buildControlsSettings(ctx) {
   const KEYBIND_ACTIONS = [
     { key: 'moveUp',    label: 'Move Up' },
@@ -972,6 +1012,7 @@ function buildControlsSettings(ctx) {
   ctx.addCheckboxRow("Invert Y Axis", invertYAxis, { onChange: v => { invertYAxis = v; persistSavedSettings(); } });
 }
 
+/** Applies an SVG colour-blindness filter to the canvas, or clears it for "None". */
 function applyColorMode(mode) {
   // Inject SVG filter definitions once
   if (!document.getElementById('game-cb-filters')) {
@@ -1001,6 +1042,7 @@ function applyColorMode(mode) {
   if (canvas) canvas.style.filter = filterMap[mode] || '';
 }
 
+/** Populates `ctx` with Color Mode selector and Text Size preset buttons. */
 function buildAccessibilitySettings(ctx) {
   ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"], {
     value: colorModeSetting,
@@ -1064,6 +1106,7 @@ function buildAccessibilitySettings(ctx) {
   });
 }
 
+/** Looks up `key` in the active language table; falls back to English, then the key itself. */
 function t(key, ...args) {
   const code = (languageSetting || 'English').slice(0, 2).toLowerCase();
   const table = TRANSLATIONS[code] || TRANSLATIONS.en;
@@ -1071,6 +1114,7 @@ function t(key, ...args) {
   return typeof val === 'function' ? val(...args) : val;
 }
 
+/** Populates `ctx` with the Language selector. */
 function buildLanguageSettings(ctx) {
   ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"], {
     value: languageSetting,
@@ -1078,6 +1122,11 @@ function buildLanguageSettings(ctx) {
   });
 }
 
+/**
+ * Returns a builder object for populating a settings panel.
+ * All created elements are pushed into `activeSettingElements` for later cleanup.
+ * Methods: addSliderRow, addCheckboxRow, addSelectRow, pushElement
+ */
 function createSettingsContext({ container }) {
   
   const styleLabel = (el) => {
@@ -1119,10 +1168,7 @@ function createSettingsContext({ container }) {
   };
 
   const ctx = {
-    
-    layout: { labelX: 0, controlX: 0, labelWidth: 0, controlWidth: 0, spacingY: 0 },
-    
-    container: container, 
+    container,
 
     pushElement(el) {
       recordElement(el);
@@ -1148,9 +1194,7 @@ function createSettingsContext({ container }) {
       recordElement(slider);
       
       slider.input(() => {
-        try {
-          callback(slider.value());
-        } catch(e) { try { callback(slider.value()); } catch(e){} }
+        try { callback(slider.value()); } catch(e) {}
         try {
           if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
             const keyName = String(name || '').toLowerCase();
@@ -1241,7 +1285,7 @@ function createSettingsContext({ container }) {
       
       if (options.value) sel.value(options.value);
       sel.changed(() => {
-        try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e) { try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e){} }
+        try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e) {}
         try {
           if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
             const keyName = String(name || '').toLowerCase();
@@ -1261,6 +1305,7 @@ function createSettingsContext({ container }) {
   return ctx;
 }
 
+/** Creates the loading overlay DOM (progress bar + percentage) if it doesn't exist yet. */
 function ensureLoadingOverlayDom() {
   try {
     if (typeof document === 'undefined') return null;
