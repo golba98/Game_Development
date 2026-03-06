@@ -26,37 +26,34 @@ function playClickSFX() {
 
 // === Audio Unlock / Start ===
 function unlockAudioAndStart(cb) {
+  // 1. Immediately fire UI response
+  if (cb) cb();
+
+  // 2. Setup Audio asynchronous to the UI callback
   if (audioUnlocked) {
-    cb && cb();
     return;
   }
-
-  // Shared teardown: mark unlocked, start music, fire callback.
-  const finish = (logMsg) => {
-    audioUnlocked = true;
-    if (logMsg) console.log(logMsg);
-    startMenuMusicIfNeeded();
-    cb && cb();
-  };
+  
+  audioUnlocked = true;
 
   try {
     if (typeof userStartAudio === 'function') {
       userStartAudio()
-        .then(()  => finish('[unlockAudioAndStart] userStartAudio resolved — starting menu music'))
+        .then(()  => startMenuMusicIfNeeded())
         .catch(() => {
           try {
             getAudioContext().resume()
-              .then(()  => finish('[unlockAudioAndStart] AudioContext.resume succeeded — starting menu music'))
-              .catch(() => finish('[unlockAudioAndStart] resume rejected but marking audio unlocked'));
+              .then(()  => startMenuMusicIfNeeded())
+              .catch(() => {});
           } catch (e) {
-            finish('[unlockAudioAndStart] fallback unlock — starting menu music');
+            startMenuMusicIfNeeded();
           }
         });
     } else {
       try { getAudioContext().resume(); } catch (e) {}
-      finish('[unlockAudioAndStart] no userStartAudio — audioUnlocked set');
+      startMenuMusicIfNeeded();
     }
-  } catch (e) { finish(); }
+  } catch (e) {}
 }
 
 // === Music Control ===
