@@ -40,6 +40,8 @@ const WeatherSystem = {
   STAR_DRIFT_SPEED: 0,   // No drift, perfectly static
   starTime: 0,
 
+  particles: [],
+
   // Star color palette for natural variety
   STAR_COLORS: [
     [255, 255, 255],   // Pure white
@@ -128,10 +130,17 @@ const WeatherSystem = {
     ctx.globalCompositeOperation = 'lighter'; // Additive blending so stars glow on darkness
 
     for (const star of this.stars) {
-      const sx = ((star.x - offsetX) % fieldSize + fieldSize) % fieldSize;
-      const sy = ((star.y - offsetY) % fieldSize + fieldSize) % fieldSize;
+      // Shift star coordinates by parallax BEFORE modulo
+      // Parallax makes the stars scroll Slower than the foreground
+      const worldX = star.x - offsetX;
+      const worldY = star.y - offsetY;
 
-      if (sx > w + 8 || sy > h + 8) continue;
+      // Wrap the world coordinates around the field size
+      const sx = (worldX % fieldSize + fieldSize) % fieldSize;
+      const sy = (worldY % fieldSize + fieldSize) % fieldSize;
+
+      // If the wrapped coordinate is outside the actual viewport width/height, don't draw
+      if (sx > w + 10 || sy > h + 10 || sx < -10 || sy < -10) continue;
 
       // Multi-frequency twinkle
       const wave1 = Math.sin(time * star.twinkleSpeed1 + star.twinklePhase1);
@@ -231,48 +240,68 @@ const WeatherSystem = {
    * @param {number} camX - Camera world X (for star parallax)
    * @param {number} camY - Camera world Y (for star parallax)
    */
-  drawOverlay: function(w, h, lights, camX, camY) {
+  drawOverlay: function (w, h, lights, camX, camY) {
     if (this.currentColor[3] < 5) return;
 
-    if (!this.lightMap || this.lightMap.width !== w || this.lightMap.height !== h) {
-      if (this.lightMap) this.lightMap.remove();
-      this.lightMap = createGraphics(w, h);
+    // We keep a native resolution map for the darkness mask. It's much cheaper
+    // to draw a low-res black box and punch low-res holes in it, then scale it up.
+    const DOWNSCALE = 4;
+    const cw = Math.ceil(w / DOWNSCALE);
+    const ch = Math.ceil(h / DOWNSCALE);
+
+    // Initialize or resize the native darkness map
+    if (!this.nativeMap || this.nativeMap.width !== cw || this.nativeMap.height !== ch) {
+      if (this.nativeMap) this.nativeMap.width = this.nativeMap.height = 0; // Help GC
+      this.nativeMap = document.createElement('canvas');
+      this.nativeMap.width = cw;
+      this.nativeMap.height = ch;
     }
 
-    const lm = this.lightMap;
+    const ctx = this.nativeMap.getContext('2d', { willReadFrequently: true });
 
-    // Redraw darkness buffer every other frame for performance during night cycles
-    if (typeof frameCount === 'undefined' || frameCount % 2 === 0) {
-      lm.clear();
-      lm.background(this.currentColor[0], this.currentColor[1], this.currentColor[2], this.currentColor[3]);
+    // 1. Fill entire screen with darkness
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = `rgba(${this.currentColor[0]}, ${this.currentColor[1]}, ${this.currentColor[2]}, ${this.currentColor[3] / 255})`;
+    ctx.fillRect(0, 0, cw, ch);
 
-      if (lights && lights.length > 0) {
-        const ctx = lm.drawingContext;
-        lm.erase();
-        lm.noStroke();
-
-        for (const l of lights) {
-          ctx.save();
-          const rad = l.radius || 100;
-          const grd = ctx.createRadialGradient(l.x, l.y, rad * 0.1, l.x, l.y, rad);
-          grd.addColorStop(0, 'rgba(0,0,0,1)'); // Fully cut at centre
-          grd.addColorStop(1, 'rgba(0,0,0,0)'); // Fade to darkness at edge
-          ctx.fillStyle = grd;
-          ctx.beginPath();
-          ctx.arc(l.x, l.y, rad, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-        lm.noErase();
+    // 2. Erase holes for dynamic lights
+    if (lights && lights.length > 0) {
+      ctx.globalCompositeOperation = 'destination-out';
+      for (const l of lights) {
+        ctx.save();
+        
+        // Scale down light positions and radiuses to match the mini-buffer
+        const lx = l.x / DOWNSCALE;
+        const ly = l.y / DOWNSCALE;
+        const rad = (l.radius || 100) / DOWNSCALE;
+        
+        const grd = ctx.createRadialGradient(lx, ly, rad * 0.1, lx, ly, rad);
+        grd.addColorStop(0, "rgba(0,0,0,1)");   // Fully erase the darkness at center
+        grd.addColorStop(1, "rgba(0,0,0,0)");   // Fade out the deletion at edges
+        
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(lx, ly, rad, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
     }
 
-    // Since we are inside the game world transform (push/pop block), 
-    // we need to draw the lightMap at the camera's actual top-left corner
-    // so it perfectly covers the visible screen area without moving when the player moves.
-    const cx = typeof drawCamX !== 'undefined' ? drawCamX : 0;
-    const cy = typeof drawCamY !== 'undefined' ? drawCamY : 0;
-    image(lm, cx, cy);
+    // Restore P5 transform and draw the native mask scaled up
+    push();
+    drawingContext.save();
+    
+    // Smooth upscaling for the shadow mask
+    drawingContext.imageSmoothingEnabled = true;
+    drawingContext.drawImage(this.nativeMap, camX, camY, w, h);
+    
+    // Draw stars OVER the darkness mask so they aren't masked out by the 90% opacity black
+    if (showStars && this.currentColor[3] >= STAR_VISIBILITY_MIN_ALPHA) {
+      this.drawStars(drawingContext, w, h, this.currentColor[3], camX, camY);
+    }
+    
+    drawingContext.restore();
+    pop();
   },
 
   /** Returns an [r, g, b, a] tint for clouds based on current ambient darkness. */
@@ -391,6 +420,68 @@ const WeatherSystem = {
     noStroke();
     rect(0, -radius - 4, 6, 6);
 
+    pop();
+  },
+
+  /** Renders slow drifting ambient dust motes (Day) or glowing fireflies (Night) */
+  drawAmbientParticles: function (camX, camY, isNight) {
+    if (!showParticles || typeof width === 'undefined') return;
+
+    const vW = typeof virtualW !== 'undefined' ? virtualW : width / gameScale;
+    const vH = typeof virtualH !== 'undefined' ? virtualH : height / gameScale;
+    
+    // Initialize pool
+    if (this.particles.length === 0) {
+      for (let i = 0; i < 40; i++) {
+        this.particles.push({
+          x: Math.random() * 2000,
+          y: Math.random() * 2000,
+          vx: (Math.random() - 0.5) * 0.4,
+          vy: (Math.random() - 0.5) * 0.4,
+          size: Math.random() * 2.5 + 1,
+          phase: Math.random() * TWO_PI,
+          speed: Math.random() * 0.02 + 0.01
+        });
+      }
+    }
+
+    push();
+    noStroke();
+    
+    // Particles move independently of time but drift with wind and slow camera parallax
+    const offsetX = (camX || 0) * 0.8;
+    const offsetY = (camY || 0) * 0.8;
+
+    for (const p of this.particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.phase += p.speed;
+
+      const wrapScale = 2000;
+      if (p.x < 0) p.x += wrapScale;
+      if (p.x > wrapScale) p.x -= wrapScale;
+      if (p.y < 0) p.y += wrapScale;
+      if (p.y > wrapScale) p.y -= wrapScale;
+
+      const screenX = (((p.x - offsetX) % wrapScale) + wrapScale) % wrapScale;
+      const screenY = (((p.y - offsetY) % wrapScale) + wrapScale) % wrapScale;
+
+      if (screenX > -10 && screenX < vW + 10 && screenY > -10 && screenY < vH + 10) {
+        const pulse = (Math.sin(p.phase) + 1) / 2;
+        
+        if (isNight) {
+          const alpha = 50 + pulse * 150;
+          fill(150, 255, 50, alpha);
+          circle(screenX, screenY, p.size);
+          fill(150, 255, 50, alpha * 0.3);
+          circle(screenX, screenY, p.size * 3);
+        } else {
+          const alpha = 20 + pulse * 60;
+          fill(255, 250, 220, alpha);
+          circle(screenX, screenY, p.size);
+        }
+      }
+    }
     pop();
   }
 };
