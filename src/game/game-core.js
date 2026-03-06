@@ -657,7 +657,10 @@ function draw() {
   if (typeof WeatherSystem !== 'undefined') {
       const isNight = WeatherSystem.cycle > 0.8 || WeatherSystem.cycle < 0.2;
       WeatherSystem.drawAmbientParticles(smoothCamX, smoothCamY, isNight);
-      WeatherSystem.drawOverlay(smoothCamX, smoothCamY, logicalW * cellSize, logicalH * cellSize);
+      
+      const vW = Math.max(virtualW, logicalW * cellSize);
+      const vH = Math.max(virtualH, logicalH * cellSize);
+      WeatherSystem.drawOverlay(vW, vH, null, smoothCamX, smoothCamY);
   }
   // Night Ambience: Fireflies
   if (typeof WeatherSystem !== 'undefined' && (WeatherSystem.cycle < 0.3 || WeatherSystem.cycle > 0.7)) {
