@@ -132,12 +132,9 @@ const WeatherSystem = {
     for (const star of this.stars) {
       // Shift star coordinates by parallax BEFORE modulo
       // Parallax makes the stars scroll Slower than the foreground
-      const worldX = star.x - offsetX;
-      const worldY = star.y - offsetY;
-
-      // Wrap the world coordinates around the field size
-      const sx = (worldX % fieldSize + fieldSize) % fieldSize;
-      const sy = (worldY % fieldSize + fieldSize) % fieldSize;
+      
+      const sx = ((star.x - offsetX) % fieldSize + fieldSize) % fieldSize;
+      const sy = ((star.y - offsetY) % fieldSize + fieldSize) % fieldSize;
 
       // If the wrapped coordinate is outside the actual viewport width/height, don't draw
       if (sx > w + 10 || sy > h + 10 || sx < -10 || sy < -10) continue;
