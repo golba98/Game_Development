@@ -194,17 +194,39 @@ function createSettingsContext(layout) {
       // Align label vertically with checkbox
       this.pushElement(createSettingLabel(labelText, this.layout.labelX, this.y + 5, this.layout.labelWidth, domParent));
 
-      const chk = createCheckbox('', !!isChecked);
-      chk.parent(domParent);
+      const toggle = createDiv('');
+      toggle.parent(domParent);
+      toggle.position(this.layout.controlX, this.y);
+      toggle.style('z-index', '20000');
+      toggle.style('width', '36px');
+      toggle.style('height', '36px');
+      toggle.style('display', 'flex');
+      toggle.style('align-items', 'center');
+      toggle.style('justify-content', 'center');
+      toggle.style('border', '2px solid #ffcc00');
+      toggle.style('border-radius', '6px');
+      toggle.style('cursor', 'pointer');
+      toggle.style('font-size', '24px');
+      toggle.style('font-family', 'MyFont, sans-serif');
+      toggle.style('color', '#ffcc00');
+      toggle.style('user-select', 'none');
+      watchZoomNeutralElement(toggle);
 
-      chk.position(this.layout.controlX, this.y);
-      chk.style('z-index', '20000');
-      watchZoomNeutralElement(chk);
+      let checked = !!isChecked;
+      const updateVisual = (val) => {
+        toggle.html(val ? '✔' : '');
+        toggle.style('background', val ? 'rgba(184,134,11,0.35)' : 'rgba(255,255,255,0.05)');
+      };
+      updateVisual(checked);
 
-      if(chk.elt) chk.elt.classList.add('setting-checkbox');
+      const toggleHandler = () => {
+        checked = !checked;
+        updateVisual(checked);
+        if (typeof onChange === 'function') onChange(checked);
+      };
+      toggle.mousePressed(toggleHandler);
 
-      if (onChange) chk.changed(() => onChange(chk.checked()));
-      this.pushElement(chk);
+      this.pushElement(toggle);
 
       this.y += this.layout.spacingY;
       return this;
@@ -326,20 +348,11 @@ function buildAudioSettings(ctx) {
 
 function buildGameplaySettings(ctx) {
   ctx
-    .addCheckboxRow("Show Tutorials", showTutorials, v => {
-        showTutorials = v;
-        saveAllSettings();
-    })
-    .addCheckboxRow("Enable HUD", showHUD, v => {
-        showHUD = v;
-        saveAllSettings();
-    })
-    .addCheckboxRow("Show FPS", showFps, v => {
-        showFps = v;
-        saveAllSettings();
-    })
+    .addCheckboxRow("Show Tutorials", showTutorials, v => { showTutorials = v; saveAllSettings(); })
+    .addCheckboxRow("Show HUD", showHUD, v => { showHUD = v; saveAllSettings(); })
+    .addCheckboxRow("Show FPS", showFps, v => { showFps = v; saveAllSettings(); })
     .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
-      value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
+        value: difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1),
       onChange: (val) => {
         const normalized = val.toLowerCase();
         difficultySetting = normalized;
@@ -400,11 +413,46 @@ function buildControlsSettings(ctx) {
   ctrlRow("Attack", 'ATTACK');
 }
 
+function applyColorMode(mode) {
+  if (!document.getElementById('menu-cb-filters')) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'menu-cb-filters';
+    svg.setAttribute('style', 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none');
+    svg.innerHTML = `<defs>
+      <filter id="menu-cb-protanopia">
+        <feColorMatrix type="matrix" values="0.567 0.433 0 0 0  0.558 0.442 0 0 0  0 0.242 0.758 0 0  0 0 0 1 0"/>
+      </filter>
+      <filter id="menu-cb-deuteranopia">
+        <feColorMatrix type="matrix" values="0.625 0.375 0 0 0  0.7 0.3 0 0 0  0 0.3 0.7 0 0  0 0 0 1 0"/>
+      </filter>
+      <filter id="menu-cb-tritanopia">
+        <feColorMatrix type="matrix" values="0.95 0.05 0 0 0  0 0.433 0.567 0 0  0 0.475 0.525 0 0  0 0 0 1 0"/>
+      </filter>
+    </defs>`;
+    document.body.appendChild(svg);
+  }
+
+  const filterMap = {
+    'Protanopia':   'url(#menu-cb-protanopia)',
+    'Deuteranopia': 'url(#menu-cb-deuteranopia)',
+    'Tritanopia':   'url(#menu-cb-tritanopia)',
+    'Grayscale':    'grayscale(100%)',
+    'Sepia':        'sepia(80%)',
+    'Invert':       'invert(100%) hue-rotate(180deg)',
+    'High Contrast':'contrast(150%) saturate(120%)'
+  };
+  const canvas = document.querySelector('canvas');
+  if (canvas) canvas.style.filter = filterMap[mode] || '';
+  const body = document.body;
+  if (body) body.style.filter = filterMap[mode] || '';
+}
+
 function buildAccessibilitySettings(ctx) {
   ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia", "Grayscale", "Sepia", "Invert", "High Contrast"], {
       value: colorModeSetting,
       onChange: (v) => {
           colorModeSetting = v;
+          applyColorMode(colorModeSetting);
           saveAllSettings();
       }
   });

@@ -35,7 +35,9 @@ function saveAllSettings() {
   const settings = {
     masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting,
     sensitivitySetting, invertYAxis, showTutorials, showHUD,
-    languageSetting, colorModeSetting, userControls
+    sensitivitySetting, invertYAxis, showTutorials, showHUD,
+    languageSetting, colorModeSetting, userControls,
+    showFps, showStars, screenShakeEnabled, showParticles, showFireflyLighting, targetFps
   };
   localStorage.setItem("menuSettings", JSON.stringify(settings));
   console.log("💾 Saved Settings:", settings);
@@ -56,6 +58,12 @@ function loadAllSettings() {
     showHUD = s.showHUD ?? showHUD;
     languageSetting = s.languageSetting ?? languageSetting;
     colorModeSetting = s.colorModeSetting ?? colorModeSetting;
+    showFps = s.showFps ?? showFps;
+    showStars = s.showStars ?? showStars;
+    screenShakeEnabled = s.screenShakeEnabled ?? screenShakeEnabled;
+    showParticles = s.showParticles ?? showParticles;
+    showFireflyLighting = s.showFireflyLighting ?? showFireflyLighting;
+    targetFps = s.targetFps ?? targetFps;
     if (s.userControls) userControls = s.userControls;
 
     const storedDifficulty = normalizeDifficultyChoice(s.difficulty);
@@ -63,6 +71,7 @@ function loadAllSettings() {
     applyVolumes();
     applyCurrentTextSize();
     syncSlidersToSettings();
+    if (typeof applyColorMode === 'function') applyColorMode(colorModeSetting);
     console.log("✅ Loaded Settings:", s);
   } else {
     console.log("⚙️ No saved settings found. Using defaults.");
