@@ -13,7 +13,8 @@ function startPlayerAttack() {
 
   // Check stamina
   if (typeof sprintRemainingMs === 'number') {
-      const staminaCostMs = (PLAYER_ATTACK_STAMINA_COST / 100) * SPRINT_MAX_DURATION_MS;
+      const maxDur = typeof playerMaxStamina !== 'undefined' ? playerMaxStamina * 30 : 3000;
+      const staminaCostMs = (PLAYER_ATTACK_STAMINA_COST / 100) * maxDur;
       if (sprintRemainingMs < staminaCostMs) {
           verboseLog('[game] Not enough stamina to attack');
           return;
@@ -215,6 +216,15 @@ function keyPressed() {
     return;
   }
 
+  if (key === 'i' || key === 'I') {
+    try {
+      if (typeof openCharacterMenu === 'function') {
+        openCharacterMenu();
+      }
+    } catch (e) { console.warn('Failed to open character menu', e); }
+    return;
+  }
+
   if (key === 'o' || key === 'O') {
     try {
       verboseLog('[game] debug key O pressed — forcing inGameMenuVisible = true');
@@ -241,11 +251,145 @@ function keyPressed() {
       if (playerInventory && playerInventory['speed'] > 0) {
           playerInventory['speed']--;
           if (typeof sprintRemainingMs === 'number') {
-             sprintRemainingMs = SPRINT_MAX_DURATION_MS;
+             const maxDur = typeof playerMaxStamina !== 'undefined' ? playerMaxStamina * 30 : 3000;
+             sprintRemainingMs = maxDur;
              sprintActive = true;
           }
           spawnDamageText(t('speed_up'), playerPosition.x, playerPosition.y, [255, 215, 0]);
           try { playClickSFX(); } catch(e) {}
+      }
+      return;
+  }
+  
+  // --- Skills ---
+  if (key === 'q' || key === 'Q') {
+      if (playerMana >= 30) {
+          playerMana -= 30;
+          lastManaChange = typeof millis === 'function' ? millis() : Date.now();
+          verboseLog('[game] Cast AoE Spin Attack!');
+          
+          screenShakeTimer = 300;
+          screenShakeAmount = 6;
+          
+          let hitCount = 0;
+          for (let i = enemies.length - 1; i >= 0; i--) {
+              const e = enemies[i];
+              if (!e) continue;
+              const d = typeof dist === 'function' ? dist(playerPosition.x, playerPosition.y, e.x, e.y) : Math.hypot(e.x - playerPosition.x, e.y - playerPosition.y);
+              if (d <= 3.5) {
+                  const dmg = playerBaseDamage * 2;
+                  e.health = (e.health || 1) - dmg;
+                  spawnDamageText(`-${dmg}`, e.x, e.y, [255, 100, 255]);
+                  e.hurtTimer = 300;
+                  
+                  const angle = Math.atan2(e.y - playerPosition.y, e.x - playerPosition.x);
+                  e.x += Math.cos(angle) * 1.5;
+                  e.y += Math.sin(angle) * 1.5;
+                  
+                  if (e.health <= 0) {
+                      spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
+                      const xpGain = e.xpReward || 10;
+                      playerXP += xpGain;
+                      spawnDamageText(`+${xpGain} XP`, e.x, e.y - 1.5, [150, 200, 255]);
+                      
+                      while (playerXP >= xpToNextLevel) {
+                          playerXP -= xpToNextLevel;
+                          playerLevel++;
+                          statPoints++;
+                          xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
+                          spawnDamageText("LEVEL UP!", playerPosition.x, playerPosition.y - 2, [255, 215, 0]);
+                      }
+                      enemies.splice(i, 1);
+                  }
+                  hitCount++;
+              }
+          }
+          if (hitCount > 0) {
+              spawnDamageText(`SPIN HIT: ${hitCount}!`, playerPosition.x, playerPosition.y - 1, [255, 50, 255]);
+          } else {
+              spawnDamageText("SWOOSH", playerPosition.x, playerPosition.y - 1, [150, 150, 150]);
+          }
+      } else {
+          spawnDamageText("Need Mana!", playerPosition.x, playerPosition.y - 1, [50, 100, 255]);
+      }
+      return;
+  }
+
+  if (key === 'e' || key === 'E') {
+      if (playerMana >= 20) {
+          playerMana -= 20;
+          lastManaChange = typeof millis === 'function' ? millis() : Date.now();
+          verboseLog('[game] Cast Ranged Projectile!');
+          
+          const dir = lastDirection || 'S';
+          const pd = directionToDelta(dir);
+          const startX = playerPosition.x;
+          const startY = playerPosition.y;
+          const speed = 0.25;
+          
+          if (!window.projectiles) window.projectiles = []; // Ensure globals reference
+          projectiles.push({
+             x: startX,
+             y: startY,
+             vx: pd.dx * speed,
+             vy: pd.dy * speed,
+             life: 60,
+             update: function() {
+                 this.x += this.vx;
+                 this.y += this.vy;
+                 this.life--;
+                 if (this.life <= 0) return true;
+                 if (this.x < 0 || this.x >= logicalW || this.y < 0 || this.y >= logicalH) return true;
+                 if (isSolid(getTileState(Math.floor(this.x), Math.floor(this.y)))) {
+                     // Hit wall
+                     return true;
+                 }
+                 
+                 for (let i = enemies.length - 1; i >= 0; i--) {
+                     const e = enemies[i];
+                     if (!e) continue;
+                     const d = typeof dist === 'function' ? dist(this.x, this.y, e.x, e.y) : Math.hypot(e.x - this.x, e.y - this.y);
+                     if (d <= 0.8) {
+                         const dmg = playerBaseDamage;
+                         e.health = (e.health || 1) - dmg;
+                         spawnDamageText(`-${dmg}`, e.x, e.y, [200, 200, 255]);
+                         e.hurtTimer = 200;
+                         if (e.health <= 0) {
+                             spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
+                             const xpGain = e.xpReward || 10;
+                             playerXP += xpGain;
+                             spawnDamageText(`+${xpGain} XP`, e.x, e.y - 1.5, [150, 200, 255]);
+                             while (playerXP >= xpToNextLevel) {
+                                 playerXP -= xpToNextLevel;
+                                 playerLevel++;
+                                 statPoints++;
+                                 xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
+                                 spawnDamageText("LEVEL UP!", playerPosition.x, playerPosition.y - 2, [255, 215, 0]);
+                             }
+                             enemies.splice(i, 1);
+                         }
+                         return true; // remove projectile
+                     }
+                 }
+                 return false;
+             },
+             draw: function() {
+                 push();
+                 fill(100, 200, 255);
+                 stroke(255);
+                 strokeWeight(1.5);
+                 circle(this.x * cellSize + cellSize/2, this.y * cellSize + cellSize/2, 10);
+                 
+                 // Trail effect (simple)
+                 fill(100, 200, 255, 100);
+                 noStroke();
+                 circle((this.x - this.vx*2) * cellSize + cellSize/2, (this.y - this.vy*2) * cellSize + cellSize/2, 6);
+                 pop();
+             }
+          });
+          try { playClickSFX(); } catch(e){} // generic sound
+      } else {
+          spawnDamageText("Need Mana!", playerPosition.x, playerPosition.y - 1, [50, 100, 255]);
       }
       return;
   }

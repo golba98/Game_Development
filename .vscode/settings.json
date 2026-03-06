@@ -1,5 +1,5 @@
 {
-  "liveServer.settings.port": 5501,
-  "liveServer.settings.CustomBrowser": "microsoft-edge",
+  "liveServer.settings.port": 5503,
+  "liveServer.settings.CustomBrowser": "chrome",
   "liveServer.settings.advanceCustomBrowserCmdLine": "msedge --profile-directory=\"Profile 2\""
 }

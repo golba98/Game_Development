@@ -381,6 +381,12 @@ function draw() {
     if (!settingsOverlayDiv && !inGameMenuVisible && !isGameOver) {
       handleMovement();
       updateMovementInterpolation();
+      
+      // Mana Regeneration
+      if (playerMana < maxMana) {
+          playerMana = Math.min(maxMana, playerMana + 0.05 * (gameDelta / 16.67));
+      }
+
       updateEnemies();
       updateProjectiles();
       updateVFX();
@@ -657,110 +663,22 @@ function draw() {
           }
       }
       
-      WeatherSystem.drawOverlay(width, height, lights);
+      // Use virtual screen size so it scales naturally and covers the whole viewport
+      const vW = virtualW || (width / gameScale);
+      const vH = virtualH || (height / gameScale);
+      
+      // We pass the draw bounds and the camera position so the stars can parallax correctly 
+      WeatherSystem.drawOverlay(vW, vH, lights, drawCamX, drawCamY);
   }
 
 
 
-  // --- MINIMAP ---
-  if (showMinimap && mapImage) {
-    const mmW = 200;
-    const mmH = 200;
-    // Move to Bottom-Left
-    const mmX = 20;
-    const mmY = (virtualH || height) - mmH - 20;
-
-    push();
-    // Background Fog
-    fill(0, 0, 0, 180);
-    // Gold Border
-    stroke(MENU_GOLD_BORDER);
-    strokeWeight(3);
-    rect(mmX, mmY, mmW, mmH, 4);
-    noStroke();
-
-    // Map content
-    const mapAspect = mapImage.width / mapImage.height;
-    let drawW = mmW;
-    let drawH = mmW / mapAspect;
-    if (drawH > mmH) {
-       drawH = mmH;
-       drawW = mmH * mapAspect;
-    }
-    const offX = (mmW - drawW) / 2;
-    const offY = (mmH - drawH) / 2;
-    
-    // Draw map with slight transparency to blend better with fog
-    tint(255, 230);
-    if (minimapImage) {
-        image(minimapImage, mmX + offX, mmY + offY, drawW, drawH);
-    } else {
-        image(mapImage, mmX + offX, mmY + offY, drawW, drawH);
-    }
-    noTint();
-
-    // Draw Trees on Minimap
-    if (treeObjects && logicalW && logicalH) {
-       fill(15, 70, 15); // Dark Pine Green
-       stroke(0, 150);   // Black outline for contrast
-       strokeWeight(1);
-       for(const t of treeObjects) {
-          const pxRel = t.x / logicalW;
-          const pyRel = t.y / logicalH;
-          const tx = mmX + offX + (pxRel * drawW);
-          const ty = mmY + offY + (pyRel * drawH);
-          circle(tx, ty, 4);
-       }
-    }
-
-    // Draw Portal on Minimap
-    if (portalPos) {
-       fill(isPortalActive ? [255, 215, 0] : [100, 100, 100]);
-       stroke(0, 150);
-       strokeWeight(1);
-       const pxRel = portalPos.x / logicalW;
-       const pyRel = portalPos.y / logicalH;
-       const tx = mmX + offX + (pxRel * drawW);
-       const ty = mmY + offY + (pyRel * drawH);
-       rect(tx - 3, ty - 3, 6, 6);
-    }
-
-    // Player marker (Arrow)
-    if (playerPosition) {
-      const pX = isMoving ? renderX : playerPosition.x;
-      const pY = isMoving ? renderY : playerPosition.y;
-      
-      const pxRel = pX / logicalW;
-      const pyRel = pY / logicalH;
-      
-      const markerX = mmX + offX + (pxRel * drawW);
-      const markerY = mmY + offY + (pyRel * drawH);
-      
-      // Calculate rotation from last-known direction
-      const angle = DIRECTION_TO_ANGLE_MAP[lastDirection || 'S'] ?? HALF_PI;
-
-      push();
-      translate(markerX, markerY);
-      rotate(angle);
-      
-      // Arrow Shape
-      fill(255);
-      stroke(0, 0, 0, 150);
-      strokeWeight(1);
-      beginShape();
-      vertex(5, 0);    // Tip
-      vertex(-4, -4);  // Back Left
-      vertex(-2, 0);   // Inner Notch
-      vertex(-4, 4);   // Back Right
-      endShape(CLOSE);
-      pop();
-    }
-    pop();
-  }
-
+  // --- MINIMAP --- (Handled in game-hud.js via drawMinimap)
   if (hudEnabled) {
     drawDifficultyBadge();
+    drawXPBar();
     drawHealthBar();
+    drawManaBar();
     drawBossHealthBar();
     drawSprintMeter();
     drawInventory();
@@ -768,7 +686,8 @@ function draw() {
     drawCompass();
     if (showMinimap) drawMinimap();
     if (typeof WeatherSystem !== 'undefined') {
-      WeatherSystem.drawClock(width / 2, 40, 25);
+      const vW = virtualW || (width / gameScale);
+      WeatherSystem.drawClock(vW - 60, 40, 25);
     }
   }
 

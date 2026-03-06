@@ -229,6 +229,70 @@ function exitToMenu() {
 // No-op stub: in-game menu is now rendered via DOM overlay (drawInGameMenu_OLD removed).
 function drawInGameMenu() { return; }
 
+let characterMenuOverlay = null;
+
+function openCharacterMenu() {
+  if (characterMenuOverlay) {
+    characterMenuOverlay.close();
+    return;
+  }
+  if (inGameMenuVisible || isGameOver) return;
+  
+  inGameMenuVisible = true;
+  const { panel, close } = createZoomStablePanel(500, 420, 'gd-character-menu');
+  characterMenuOverlay = { close: () => { close(); characterMenuOverlay = null; inGameMenuVisible = false; } };
+  
+  _addPanelTitle(panel, "Character & Stats");
+
+  const content = createDiv('');
+  content.parent(panel);
+  content.style('color', '#fff');
+  content.style('font-size', '16px');
+  content.style('padding', '20px');
+  content.style('text-align', 'left');
+  content.style('font-family', 'sans-serif');
+  
+  const updateContent = () => {
+      content.html(`
+        <div style="display:flex; justify-content:space-between; margin-bottom: 20px; background:rgba(0,0,0,0.5); padding:10px; border-radius:5px;">
+            <div>
+                <strong>Level:</strong> ${playerLevel}<br/><br/>
+                <strong>XP:</strong> ${Math.floor(playerXP)} / ${xpToNextLevel}<br/>
+                <strong>Stat Points:</strong> <span style="color:gold">${statPoints}</span>
+            </div>
+            <div style="text-align:right;">
+                <strong>Health:</strong> ${playerHealth} / ${maxHealth}<br/><br/>
+                <strong>Stamina:</strong> ${playerMaxStamina}<br/>
+                <strong>Base Damage:</strong> ${playerBaseDamage}
+            </div>
+        </div>
+        <div style="margin-top:10px; text-align:center;">
+            <strong style="font-size:18px; color:gold;">Allocate Stats</strong><br/>
+            <div style="display:flex; justify-content:space-around; margin-top:15px;">
+                <button id="btn-up-hp" style="padding:10px; cursor:${statPoints>0?'pointer':'not-allowed'}; background:#2c3e50; color:white; border:2px solid ${statPoints>0?'#27ae60':'#555'}; border-radius:4px;" ${statPoints>0?'':'disabled'}>+1 Max Health</button>
+                <button id="btn-up-dmg" style="padding:10px; cursor:${statPoints>0?'pointer':'not-allowed'}; background:#2c3e50; color:white; border:2px solid ${statPoints>0?'#c0392b':'#555'}; border-radius:4px;" ${statPoints>0?'':'disabled'}>+1 Damage</button>
+                <button id="btn-up-sta" style="padding:10px; cursor:${statPoints>0?'pointer':'not-allowed'}; background:#2c3e50; color:white; border:2px solid ${statPoints>0?'#2980b9':'#555'}; border-radius:4px;" ${statPoints>0?'':'disabled'}>+20 Stamina</button>
+            </div>
+        </div>
+      `);
+      
+      const hpBtn = document.getElementById('btn-up-hp');
+      const dmgBtn = document.getElementById('btn-up-dmg');
+      const staBtn = document.getElementById('btn-up-sta');
+      
+      if (hpBtn) hpBtn.onclick = () => { if(statPoints>0){ maxHealth++; playerHealth++; statPoints--; updateContent(); try { playClickSFX(); } catch(e){} } };
+      if (dmgBtn) dmgBtn.onclick = () => { if(statPoints>0){ playerBaseDamage++; statPoints--; updateContent(); try { playClickSFX(); } catch(e){} } };
+      if (staBtn) staBtn.onclick = () => { if(statPoints>0){ playerMaxStamina += 20; statPoints--; updateContent(); try { playClickSFX(); } catch(e){} } };
+  };
+  
+  updateContent();
+
+  const closeBtn = _addMenuBtn(panel, "Close", () => {
+    characterMenuOverlay.close();
+  });
+  closeBtn.style('margin-top', '20px');
+}
+
 // Starts game music playback once the AudioContext is unlocked.
 function attemptStartGameMusic(reason = 'unknown') {
   if (!pendingGameMusicStart || gameMusicStarted || !gameMusic) return;

@@ -14,15 +14,83 @@ const DIRECTION_TO_ANGLE_MAP = {
   'NW': -Math.PI / 2 - Math.PI / 4,
 };
 
-function drawHealthBar() {
-  if (!heartImage) return;
-  const startX = 30;
-  const startY = 30;
-  const heartSpacing = 38;
-  const heartSize = 34;
+function drawXPBar() {
+  const vW = virtualW || (width / gameScale);
+  const vH = virtualH || (height / gameScale);
   
-  const containerW = (maxHealth * heartSpacing) + 25;
-  const containerH = 55;
+  const barW = Math.min(vW * 0.5, 400); // 50% of width, max 400px
+  const barH = 12;
+  const startX = (vW - barW) / 2;
+  const startY = vH - 60; // moved up gently to prevent bottom cutoff
+  
+  push();
+  
+  // UI Pulse Effect when XP is gained
+  const now = typeof millis === 'function' ? millis() : Date.now();
+  let pulseScale = 1.0;
+  if (now - lastXpChange < 300) {
+      pulseScale = map(now - lastXpChange, 0, 300, 1.05, 1.0);
+  }
+  
+  translate(startX + barW/2, startY + barH/2);
+  scale(pulseScale);
+  translate(-(startX + barW/2), -(startY + barH/2));
+
+  // Themed Background Container
+  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
+      image(BUTTON_BG, startX - 20, startY - 14, barW + 40, barH + 28);
+  } else {
+      stroke(0);
+      strokeWeight(4);
+      fill(20, 20, 20, 200);
+      rect(startX - 20, startY - 14, barW + 40, barH + 28, 4);
+  }
+  
+  // Gold Inner Border
+  stroke(MENU_GOLD_BORDER);
+  strokeWeight(2);
+  noFill();
+  rect(startX - 17, startY - 11, barW + 34, barH + 22, 2);
+
+  // Bar Background (empty part)
+  noStroke();
+  fill(30, 30, 40, 255);
+  rect(startX, startY, barW, barH, 4);
+
+  // Bar Fill
+  const xpPct = constrain(playerXP / xpToNextLevel, 0, 1);
+  if (xpPct > 0) {
+    fill(100, 200, 255, 255);
+    rect(startX, startY, barW * xpPct, barH, 4);
+    
+    // Glossy highlight
+    fill(255, 255, 255, 60);
+    rect(startX, startY, barW * xpPct, barH / 2, 4);
+  }
+
+  // Level Text
+  if (typeof uiFont !== 'undefined' && uiFont) textFont(uiFont);
+  fill(255);
+  noStroke();
+  textAlign(CENTER, CENTER);
+  let sz = typeof gTextSize === 'function' ? 14 : 14;
+  if (typeof gTextSize === 'function') gTextSize(sz); else textSize(sz);
+  text(`Lv ${playerLevel} (${playerXP}/${xpToNextLevel})`, startX + barW/2, startY - 20);
+  
+  // Stat points indicator
+  if (statPoints > 0) {
+      fill(255, 215, 0); // Gold for available stat points
+      text(`+${statPoints} Stat Points (Press I)`, startX + barW/2, startY - 40);
+  }
+
+  pop();
+}
+
+function drawHealthBar() {
+  const startX = 50; 
+  const startY = 30;
+  const barW = 160;
+  const barH = 18;
 
   push();
   
@@ -30,41 +98,126 @@ function drawHealthBar() {
   const now = millis();
   let pulseScale = 1.0;
   if (now - lastHealthChange < 200) {
-      pulseScale = map(now - lastHealthChange, 0, 200, 1.3, 1.0);
+      pulseScale = map(now - lastHealthChange, 0, 200, 1.1, 1.0);
   }
   
-  translate(startX + containerW/2, startY + containerH/2);
+  translate(startX + barW/2, startY + barH/2);
   scale(pulseScale);
-  translate(-(startX + containerW/2), -(startY + containerH/2));
+  translate(-(startX + barW/2), -(startY + barH/2));
 
   // Themed Background
-  if (BUTTON_BG) {
-      image(BUTTON_BG, startX - 15, startY - 12, containerW, containerH);
+  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
+      image(BUTTON_BG, startX - 30, startY - 12, barW + 42, barH + 24);
   } else {
       stroke(0);
       strokeWeight(4);
       fill(20, 20, 20, 180);
-      rect(startX - 15, startY - 12, containerW, containerH, 4);
+      rect(startX - 30, startY - 12, barW + 42, barH + 24, 4);
   }
   
   // Gold Inner Border
   stroke(MENU_GOLD_BORDER);
   strokeWeight(2);
   noFill();
-  rect(startX - 12, startY - 10, containerW - 6, containerH - 4, 2);
+  rect(startX - 27, startY - 10, barW + 36, barH + 20, 2);
 
-  for (let i = 0; i < maxHealth; i++) {
-    const x = startX + (i * heartSpacing);
-    if (i < playerHealth) {
-       tint(255, 255);
-       image(heartImage, x, startY - 2, heartSize, heartSize);
-    } else {
-       // Empty/Lost heart (silhouette)
-       tint(0, 150); 
-       image(heartImage, x, startY - 2, heartSize, heartSize);
-    }
+  // Background for the bar
+  noStroke();
+  fill(60, 20, 20);
+  rect(startX, startY, barW, barH, 2);
+
+  // Health Fill
+  const hpPct = constrain(playerHealth / maxHealth, 0, 1);
+  if (hpPct > 0) {
+      fill(220, 40, 40);
+      rect(startX, startY, barW * hpPct, barH, 2);
+      
+      // Glossy highlight
+      fill(255, 255, 255, 60);
+      rect(startX, startY, barW * hpPct, barH / 2, 2);
   }
-  noTint();
+
+  // Draw Heart Icon (If available)
+  if (typeof heartImage !== 'undefined' && heartImage) {
+      tint(255, 255);
+      image(heartImage, startX - 25, startY - 2, 22, 22);
+      noTint();
+  } else {
+      // Fallback heart icon
+      fill(255, 50, 50);
+      noStroke();
+      circle(startX - 14, startY + barH/2, 14);
+  }
+
+  // Text
+  if (typeof uiFont !== 'undefined' && uiFont) textFont(uiFont);
+  fill(255);
+  textAlign(CENTER, CENTER);
+  noStroke();
+  let sz = typeof gTextSize === 'function' ? 12 : 12;
+  if (typeof gTextSize === 'function') gTextSize(sz); else textSize(sz);
+  text(`${Math.floor(playerHealth)}/${maxHealth}`, startX + barW / 2, startY + barH / 2 + 1);
+
+  pop();
+}
+
+function drawManaBar() {
+  const startX = 50;
+  const startY = 65; // shifted closer to health bar
+  const barW = 160;
+  const barH = 14;
+
+  push();
+  
+  // Background Container
+  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
+      image(BUTTON_BG, startX - 30, startY - 10, barW + 42, barH + 20);
+  } else {
+      fill(20, 20, 20, 200);
+      stroke(0);
+      strokeWeight(4); // consistent border weight
+      rect(startX - 30, startY - 10, barW + 42, barH + 20, 4);
+  }
+
+  // Border
+  stroke(MENU_GOLD_BORDER);
+  strokeWeight(2);
+  noFill();
+  rect(startX - 27, startY - 8, barW + 36, barH + 16, 2);
+
+  // Background
+  noStroke();
+  fill(30, 30, 60);
+  rect(startX, startY, barW, barH, 2);
+
+  // Use mana max/min
+  const mPct = constrain(playerMana / maxMana, 0, 1);
+  if (mPct > 0) {
+      // Mana fill
+      fill(50, 100, 255);
+      rect(startX, startY, barW * mPct, barH, 2);
+      
+      // Glossy highlight
+      fill(255, 255, 255, 60);
+      rect(startX, startY, barW * mPct, barH / 2, 2);
+  }
+
+  // Draw Mana Icon (Simple Blue Bubble)
+  fill(50, 150, 255);
+  noStroke();
+  circle(startX - 14, startY + barH/2, 12);
+  fill(255, 255, 255, 100);
+  circle(startX - 15, startY + barH/2 - 2, 4);
+  
+  // Text
+  if (typeof uiFont !== 'undefined' && uiFont) textFont(uiFont);
+  fill(255);
+  textAlign(CENTER, CENTER);
+  noStroke();
+  let sz = typeof gTextSize === 'function' ? 10 : 10;
+  if (typeof gTextSize === 'function') gTextSize(sz); else textSize(sz);
+  text(`${Math.floor(playerMana)}/${maxMana}`, startX + barW / 2, startY + barH / 2 + 1);
+
   pop();
 }
 
@@ -118,76 +271,108 @@ function drawBossHealthBar() {
 }
 
 function drawMinimap() {
-  const vW = virtualW || (width / gameScale);
-  const vH = virtualH || (height / gameScale);
-  const mSize = 150;
-  const mX = 30;
-  const mY = vH - 180; // Above the bottom margin
-  
+  if (!showMinimap || !mapImage) return;
+  const mmW = 200;
+  const mmH = 200;
+  const mmX = 20;
+  const mmY = (virtualH || height) - mmH - 140; // Shifted up to avoid overlap with sprint meter
+
   push();
-  // Background
-  stroke(0, 150);
-  strokeWeight(4);
-  fill(20, 20, 30, 180);
-  rect(mX - 5, mY - 5, mSize + 10, mSize + 10, 5);
-  
-  // Gold Border
+  fill(0, 0, 0, 180);
   stroke(MENU_GOLD_BORDER);
-  strokeWeight(2);
-  noFill();
-  rect(mX - 3, mY - 3, mSize + 6, mSize + 6, 3);
-  
+  strokeWeight(3);
+  rect(mmX, mmY, mmW, mmH, 4);
   noStroke();
-  const mapW = logicalW * cellSize;
-  const mapH = logicalH * cellSize;
-  const scale = mSize / Math.max(mapW, mapH);
 
-  // 1. Draw Coins (Gold)
-  if (mapStates) {
-      fill(255, 215, 0, 200);
-      for (let i = 0; i < mapStates.length; i++) {
-          if (mapStates[i] === TILE_TYPES.COIN) {
-              const lx = i % logicalW;
-              const ly = Math.floor(i / logicalW);
-              rect(mX + (lx * cellSize * scale), mY + (ly * cellSize * scale), 3, 3);
-          }
-      }
+  const mapAspect = mapImage.width / mapImage.height;
+  let drawW = mmW;
+  let drawH = mmW / mapAspect;
+  if (drawH > mmH) {
+    drawH = mmH;
+    drawW = mmH * mapAspect;
+  }
+  const offX = (mmW - drawW) / 2;
+  const offY = (mmH - drawH) / 2;
+
+  tint(255, 230);
+  if (minimapImage) {
+    image(minimapImage, mmX + offX, mmY + offY, drawW, drawH);
+  } else {
+    image(mapImage, mmX + offX, mmY + offY, drawW, drawH);
+  }
+  noTint();
+
+  if (treeObjects && logicalW && logicalH) {
+    fill(15, 70, 15);
+    stroke(0, 150);
+    strokeWeight(1);
+    for (const tr of treeObjects) {
+      const pxRel = tr.x / logicalW;
+      const pyRel = tr.y / logicalH;
+      circle(mmX + offX + (pxRel * drawW), mmY + offY + (pyRel * drawH), 4);
+    }
   }
 
-  // 2. Draw Portal (Purple)
   if (portalPos) {
-      fill(180, 50, 255);
-      rect(mX + (portalPos.x * cellSize * scale) - 2, mY + (portalPos.y * cellSize * scale) - 2, 6, 6);
+    fill(isPortalActive ? [180, 50, 255] : [100, 100, 100]); // Purple when active to match compass
+    stroke(0, 150);
+    strokeWeight(1);
+    const px = mmX + offX + (portalPos.x / logicalW * drawW);
+    const py = mmY + offY + (portalPos.y / logicalH * drawH);
+    rect(px - 3, py - 3, 6, 6);
   }
 
-  // 3. Draw Enemies (Red)
-  if (enemies) {
-      fill(255, 50, 50);
-      for (const e of enemies) {
-          rect(mX + (e.x * cellSize * scale) - 2, mY + (e.y * cellSize * scale) - 2, 4, 4);
-      }
+  // Draw Enemies on Minimap (Red Dots)
+  if (typeof enemies !== 'undefined' && enemies && enemies.length > 0 && logicalW && logicalH) {
+    fill(255, 50, 50); // Red
+    stroke(0, 150);
+    strokeWeight(1);
+    for (const e of enemies) {
+      const px = mmX + offX + (e.x / logicalW * drawW);
+      const py = mmY + offY + (e.y / logicalH * drawH);
+      circle(px, py, 4);
+    }
   }
 
-  // 4. Draw Player (White Arrow)
+  // Draw Coins on Minimap (Gold Dots)
+  if (typeof mapStates !== 'undefined' && mapStates && typeof TILE_TYPES !== 'undefined' && logicalW && logicalH) {
+    fill(255, 215, 0); // Gold
+    stroke(0, 150);
+    strokeWeight(1);
+    for (let i = 0; i < mapStates.length; i++) {
+        if (mapStates[i] === TILE_TYPES.COIN) {
+            const cx = i % logicalW;
+            const cy = Math.floor(i / logicalW);
+            const px = mmX + offX + (cx / logicalW * drawW);
+            const py = mmY + offY + (cy / logicalH * drawH);
+            circle(px, py, 3);
+        }
+    }
+  }
+
   if (playerPosition) {
-      const pX = mX + (playerPosition.x * cellSize * scale);
-      const pY = mY + (playerPosition.y * cellSize * scale);
-      fill(255);
-      ellipse(pX, pY, 5, 5);
-      // Small direction indicator
-      stroke(255);
-      strokeWeight(2);
-      let dx = 0, dy = 0;
-      if (facing === 'left') dx = -5; else dx = 5;
-      line(pX, pY, pX + dx, pY);
+    const pX = isMoving ? renderX : playerPosition.x;
+    const pY = isMoving ? renderY : playerPosition.y;
+    const markerX = mmX + offX + (pX / logicalW * drawW);
+    const markerY = mmY + offY + (pY / logicalH * drawH);
+    const angle = DIRECTION_TO_ANGLE_MAP[lastDirection || 'S'] ?? HALF_PI;
+    push();
+    translate(markerX, markerY);
+    rotate(angle);
+    fill(255);
+    stroke(0, 0, 0, 150);
+    strokeWeight(1);
+    beginShape();
+    vertex(5, 0); vertex(-4, -4); vertex(-2, 0); vertex(-4, 4);
+    endShape(CLOSE);
+    pop();
   }
-  
   pop();
 }
 
 function drawScore() {
   const x = 30;
-  const y = 110; // Shifted down to avoid overlap with health (85)
+  const y = 105; // Shifted up due to compact health/mana bars
   
   push();
   
@@ -232,7 +417,7 @@ function drawInventory() {
   if (potions === 0 && speeds === 0) return;
 
   const startX = 30;
-  const startY = 150; // Shifted down to avoid overlap with gold (110)
+  const startY = 130; // Shifted up alongside score
   const slotW = 48;
   const slotH = 48;
   const slotSpacing = 8;
@@ -316,7 +501,7 @@ function drawVignette() {
 
 function drawDifficultyBadge() {
   const vW = virtualW || (width / gameScale);
-  const margin = 120; // Increased margin from 20 to 120 to move away from the corner
+  const margin = 180; // Shifted left to accommodate the clock
   const badgeSize = 32;
   const x = vW - margin - badgeSize;
   const y = 30; // Slightly lower for better visibility
@@ -390,8 +575,9 @@ function drawSprintMeter() {
   const now = millis();
   
   const pct = (typeof smoothSprintPct === 'number') ? smoothSprintPct : 0;
-  const actualPct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
-  
+  const maxDur = typeof playerMaxStamina !== 'undefined' ? playerMaxStamina * 30 : 3000;
+  const actualPct = (typeof sprintRemainingMs === 'number' && maxDur > 0) ? (sprintRemainingMs / maxDur) : 0;
+  lerpedSprintPct = lerp(lerpedSprintPct, smoothSprintPct, 0.2);
   // Show the bar if active, or not full, or in cooldown
   let targetAlpha = 0;
   if (sprintActive || actualPct < 0.99 || (sprintCooldownUntil > now)) {
@@ -715,76 +901,6 @@ function drawClouds() {
 }
 
 
-function _drawMinimapFull() {
-  if (!showMinimap || !mapImage) return;
-  const mmW = 200;
-  const mmH = 200;
-  const mmX = 20;
-  const mmY = (virtualH || height) - mmH - 20;
 
-  push();
-  fill(0, 0, 0, 180);
-  stroke(MENU_GOLD_BORDER);
-  strokeWeight(3);
-  rect(mmX, mmY, mmW, mmH, 4);
-  noStroke();
-
-  const mapAspect = mapImage.width / mapImage.height;
-  let drawW = mmW;
-  let drawH = mmW / mapAspect;
-  if (drawH > mmH) {
-    drawH = mmH;
-    drawW = mmH * mapAspect;
-  }
-  const offX = (mmW - drawW) / 2;
-  const offY = (mmH - drawH) / 2;
-
-  tint(255, 230);
-  if (minimapImage) {
-    image(minimapImage, mmX + offX, mmY + offY, drawW, drawH);
-  } else {
-    image(mapImage, mmX + offX, mmY + offY, drawW, drawH);
-  }
-  noTint();
-
-  if (treeObjects && logicalW && logicalH) {
-    fill(15, 70, 15);
-    stroke(0, 150);
-    strokeWeight(1);
-    for (const tr of treeObjects) {
-      const pxRel = tr.x / logicalW;
-      const pyRel = tr.y / logicalH;
-      circle(mmX + offX + (pxRel * drawW), mmY + offY + (pyRel * drawH), 4);
-    }
-  }
-
-  if (portalPos) {
-    fill(isPortalActive ? [255, 215, 0] : [100, 100, 100]);
-    stroke(0, 150);
-    strokeWeight(1);
-    const px = mmX + offX + (portalPos.x / logicalW * drawW);
-    const py = mmY + offY + (portalPos.y / logicalH * drawH);
-    rect(px - 3, py - 3, 6, 6);
-  }
-
-  if (playerPosition) {
-    const pX = isMoving ? renderX : playerPosition.x;
-    const pY = isMoving ? renderY : playerPosition.y;
-    const markerX = mmX + offX + (pX / logicalW * drawW);
-    const markerY = mmY + offY + (pY / logicalH * drawH);
-    const angle = DIRECTION_TO_ANGLE_MAP[lastDirection || 'S'] ?? HALF_PI;
-    push();
-    translate(markerX, markerY);
-    rotate(angle);
-    fill(255);
-    stroke(0, 0, 0, 150);
-    strokeWeight(1);
-    beginShape();
-    vertex(5, 0); vertex(-4, -4); vertex(-2, 0); vertex(-4, 4);
-    endShape(CLOSE);
-    pop();
-  }
-  pop();
-}
 
 window.locatePortal = locatePortal;

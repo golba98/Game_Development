@@ -240,6 +240,31 @@ function processTerminalCommand(cmd) {
         const ey = Math.floor(playerPosition.y + Math.sin(angle) * TERMINAL_SPAWN_DIST);
         spawnEnemy('beetle', ex, ey);
         log(`CRITICAL: Boss Beetle signature forced into local grid at [${ex}, ${ey}].`, 'terminal-error');
+    } else if (base === '/time') {
+        if (typeof WeatherSystem === 'undefined') {
+            log('ERROR: Weather system not active.', 'terminal-error');
+        } else if (parts[1] === 'day') {
+            WeatherSystem.cycle = 0.30; // CYCLE_DAY_START
+            WeatherSystem.calculateColor();
+            if (WeatherSystem.lightMap) WeatherSystem.lightMap.clear();
+            log('SUCCESS: Temporal shift complete. Time set to DAY.', 'terminal-success');
+        } else if (parts[1] === 'night') {
+            WeatherSystem.cycle = 0.90; // CYCLE_NIGHT_START
+            WeatherSystem.calculateColor();
+            log('SUCCESS: Temporal shift complete. Time set to NIGHT.', 'terminal-success');
+        } else {
+            log('USAGE: /time [day|night]', 'terminal-log');
+        }
+    } else if (base === '/health') {
+        const amt = parseInt(parts[1]);
+        if (!isNaN(amt) && amt > 0) {
+            maxHealth = amt;
+            playerHealth = amt;
+            lastHealthChange = millis();
+            log(`SUCCESS: Vitality protocols updated. Health set to ${amt}.`, 'terminal-success');
+        } else {
+            log('USAGE: /health [amount]', 'terminal-log');
+        }
     } else if (base === '/tutorial') {
         if (parts[1] === 'reset' || parts[1] === 'welcome') {
             hasShownWelcomeTutorial = false;
@@ -268,6 +293,8 @@ function processTerminalCommand(cmd) {
         log('  <span style="color:#fff">/scan boss</span>      - Check for active boss signatures.', '', true);
         log('  <span style="color:#fff">/locate boss</span>    - Get precise boss coordinates.', '', true);
         log('  <span style="color:#fff">/spawn boss</span>     - Force a boss beetle to spawn near you.', '', true);
+        log('  <span style="color:#fff">/time [day|night]</span> - Change the time of day.', '', true);
+        log('  <span style="color:#fff">/health [n]</span>     - Set max health to n.', '', true);
         log('  <span style="color:#fff">/tutorial reset</span> - Reset tutorial (shows on next reload).', '', true);
         log('  <span style="color:#fff">/clear</span>          - Wipe terminal log history.', '', true);
         log('  <span style="color:#fff">/exit</span>           - Disconnect from console.', '', true);

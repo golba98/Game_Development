@@ -38,6 +38,21 @@ let playerHurtTimer = 0;
 let isGameOver = false;
 let playerScore = 0;
 
+// --- RPG Progression & Mechanics ---
+let playerXP = 0;
+let playerLevel = 1;
+let xpToNextLevel = 100;
+let statPoints = 0;
+let lastXpChange = 0;
+
+let playerBaseDamage = 1;
+let playerMaxStamina = 100;
+let playerMana = 100;
+let maxMana = 100;
+let lastManaChange = 0;
+
+let equipment = { weapon: null, armor: null };
+
 // --- Tutorial Flags ---
 let isTutorialMap = (localStorage.getItem('tutorialComplete') !== 'true');
 let tutorialStep = 0;
@@ -491,6 +506,7 @@ let sprintCooldownUntil = 0;
 let sprintRemainingMs = SPRINT_MAX_DURATION_MS;
 let sprintLastUpdate = 0;
 let smoothSprintPct = 1.0; // starts at 1.0 = full bar; animated toward sprintEnergy each frame
+let lerpedSprintPct = 1.0;
 
 let mapImage;
 let mapOverlays = [];

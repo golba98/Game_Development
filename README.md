@@ -1,28 +1,26 @@
-PROJECT: TOP-DOWN PROCEDURAL RPG ENGINE
-=======================================
+# PROJECT: TOP-DOWN PROCEDURAL RPG ENGINE
+
 Version: 1.0.0
-Author:  Jordan Vorster
-Engine:  Custom JavaScript / p5.js
+Author: Jordan Vorster
+Engine: Custom JavaScript / p5.js
 
+## OVERVIEW
 
-OVERVIEW
---------
-This project is a robust 2D game engine built from scratch using JavaScript and 
-the p5.js library. It features a sophisticated procedural generation system that 
-creates unique, organic worlds containing forests, rivers, hills, and varied 
+This project is a robust 2D game engine built from scratch using JavaScript and
+the p5.js library. It features a sophisticated procedural generation system that
+creates unique, organic worlds containing forests, rivers, hills, and varied
 terrain types every time you play.
 
-Unlike standard static games, this engine uses a Client-Server architecture 
-(via Node.js) to allow for persistent world data, enabling players to generate, 
+Unlike standard static games, this engine uses a Client-Server architecture
+(via Node.js) to allow for persistent world data, enabling players to generate,
 edit, save, and load their unique map seeds.
 
+## INSTALLATION & SETUP
 
-INSTALLATION & SETUP
---------------------
 To fully utilize the Save/Load features, this game requires a local Node.js server.
 
-METHOD 1: LOCAL NODE SERVER
----------------------------
+## METHOD 1: LOCAL NODE SERVER
+
 1. PREREQUISITES:
    - Install Node.js from https://nodejs.org/
 
@@ -39,9 +37,9 @@ METHOD 1: LOCAL NODE SERVER
    - Open your web browser to: http://localhost:3000
    - The game will load and automatically fetch the active map.
 
-METHOD 2: QUICK PLAY (VS Code Live Server)
-------------------------------------------
-*Good for quick testing. Map saving will be restricted to temporary storage.*
+## METHOD 2: QUICK PLAY (VS Code Live Server)
+
+_Good for quick testing. Map saving will be restricted to temporary storage._
 
 1. Open the project folder in Visual Studio Code.
 2. Install the "Live Server" extension (by Ritwick Dey).
@@ -49,20 +47,20 @@ METHOD 2: QUICK PLAY (VS Code Live Server)
 4. Select "Open with Live Server".
 5. The game will launch in your default browser.
 
-METHOD 3: DOCKER CONTAINER (Recommended)
-------------------------------------------
-*Ensures a consistent environment isolated from your local machine settings.*
+## METHOD 3: DOCKER CONTAINER (Recommended)
+
+_Ensures a consistent environment isolated from your local machine settings._
 
 1. PREREQUISITES:
    - Install Docker Desktop from https://www.docker.com/products/docker-desktop/
-   - Note need an account thus sign in accordingly 
-   - Here after it will download a windows version of Linux and would need to restart your computer 
+   - Note need an account thus sign in accordingly
+   - Here after it will download a windows version of Linux and would need to restart your computer
    - NOTE keep the app open to do the following:
 
 2. BUILD THE IMAGE:
    - Open your terminal in the project root folder (where 'Dockerfile' is located).
    - Or open terminal and run the command:
-     cd "path_where_the_Dockerfile_is"  - Note: add your path
+     cd "path_where_the_Dockerfile_is" - Note: add your path
    - Run the command:
      docker build -t forest-rpg .
 
@@ -74,94 +72,92 @@ METHOD 3: DOCKER CONTAINER (Recommended)
 4. PLAYING:
    - Open your web browser to: http://localhost:3000/1-Menu_Index.html
 
-5. STOP 
+5. STOP
    - Once you're done playing run the following command to stop the server:
-   docker stop $(docker ps -q)
+     docker stop $(docker ps -q)
 
+## CONTROLS
 
-CONTROLS
---------
 Gameplay:
-  [W, A, S, D]   : Move Character
-  [Shift]        : Sprint (Consumes Stamina)
-  [Esc]          : Pause Menu / Back
+[W, A, S, D] : Move Character
+[Shift] : Sprint (Consumes Stamina)
+[Esc] : Pause Menu / Back
 
 System / Debug:
-  [P]            : Procedural Regeneration (Generate a fresh new world instantly)
-  [T]            : Toggle Assets (Switch between sprite textures and raw colors)
-  [Space]        : Jump (Experimental physics)
-  [F]            : Fullscreen NOTE: Currently has a problem 
-  [Ctrl + ']     : Open Terminal Cheat Console (Works in Menu & Game)
+[P] : Procedural Regeneration (Generate a fresh new world instantly)
+[T] : Toggle Assets (Switch between sprite textures and raw colors)
+[Space] : Jump (Experimental physics)
+[F] : Fullscreen NOTE: Currently has a problem
+[Ctrl + '] : Open Terminal Cheat Console (Works in Menu & Game)
 
-TERMINAL COMMANDS
------------------
-*Open the console with `Ctrl + '` to execute these commands:*
+## TERMINAL COMMANDS
 
-- `/kill all`        : Purge all enemy neural signatures from the current grid.
-- `/collect all`     : Instantly sequester all gold units on the map.
-- `/scan boss`       : Detect active elite signatures and check boss health.
-- `/locate boss`     : Lock onto boss coordinates and calculate distance.
-- `/spawn boss`      : Force an Elite Beetle signature into the local grid.
+_Open the console with `Ctrl + '` to execute these commands:_
+
+- `/kill all` : Purge all enemy neural signatures from the current grid.
+- `/collect all` : Instantly sequester all gold units on the map.
+- `/scan boss` : Detect active elite signatures and check boss health.
+- `/locate boss` : Lock onto boss coordinates and calculate distance.
+- `/spawn boss` : Force an Elite Beetle signature into the local grid.
 - `/tutorial welcome`: Manually trigger the Welcome Protocol panel.
-- `/tutorial reset`  : Clear user experience flags (shows tutorial on next load).
-- `/clear`           : Wipe the terminal log history.
-- `/exit`            : Disconnect from the command interface.
+- `/tutorial reset` : Clear user experience flags (shows tutorial on next load).
+- `/time [day|night]` : Manually shift the game's temporal phase.
+- `/health [num]` : Synchronize biological integrity to a specific health value.
+- `/clear` : Wipe the terminal log history.
+- `/exit` : Disconnect from the command interface.
 
-
-ENGINE FEATURES
----------------
+## ENGINE FEATURES
 
 1. PROCEDURAL GENERATION ALGORITHMS
    - **Perlin Noise Terrain**: Uses noise maps to generate organic forest distribution.
-   - **River Carving**: A custom pathfinding algorithm ("Drunken Walk" with bias) 
+   - **River Carving**: A custom pathfinding algorithm ("Drunken Walk" with bias)
      carves rivers from map edges, ensuring they meander naturally.
-   - **Cellular Automata Hills**: Hill generation uses a smoothing algorithm to 
+   - **Cellular Automata Hills**: Hill generation uses a smoothing algorithm to
      create natural-looking cliff shapes.
-   - **Connectivity Checks**: A flood-fill algorithm ensures the map is playable 
+   - **Connectivity Checks**: A flood-fill algorithm ensures the map is playable
      and that spawn points are not trapped by water or cliffs.
 
 2. RENDERING SYSTEM
-   - **Pixel-Perfect Scaling**: Custom canvas handling ensures crisp pixel art 
+   - **Pixel-Perfect Scaling**: Custom canvas handling ensures crisp pixel art
      visuals at any window resolution (4K compatible).
-   - **Parallax Layers**: Background clouds and foreground elements move at 
+   - **Parallax Layers**: Background clouds and foreground elements move at
      different speeds to create depth.
-   - **Dynamic Lighting/Weather**: (In progress) Support for cloud shadows.
+   - **Day/Night Cycle**: Sophisticated temporal system with shifting light, global darkness, and specialized light radius effects (torch light).
+   - **Dynamic Weather**: Support for cloud shadows, humidity-based tinting, and seasonal variations.
 
 3. SAVE/LOAD SYSTEM
-   - **JSON Map Payloads**: Maps are serialized into JSON files containing 
+   - **JSON Map Payloads**: Maps are serialized into JSON files containing
      terrain data, object locations, and metadata.
-   - **Server Persistence**: The `map_server.js` script handles read/write 
-     operations to the `/maps/` directory, allowing your world to persist 
+   - **Server Persistence**: The `map_server.js` script handles read/write
+     operations to the `/maps/` directory, allowing your world to persist
      between browser refreshes.
 
 4. USER INTERFACE (UI)
-   - **Zoom-Stable UI**: Menus and HUD elements automatically adjust scale based 
+   - **Zoom-Stable UI**: Menus and HUD elements automatically adjust scale based
      on browser zoom levels to remain usable.
    - **Toast Notifications**: Non-intrusive popups for game events (e.g., "Map Saved").
-   - **Settings Menu**: Fully functional audio mixers, difficulty settings, and 
+   - **Settings Menu**: Fully functional audio mixers, difficulty settings, and
      accessibility options (text size).
 
 5. AUDIO ENGINE
    - **Dynamic Mixing**: Master, Music, and SFX volume channels.
-   - **Context Recovery**: Automatically handles browser autoplay policies to 
+   - **Context Recovery**: Automatically handles browser autoplay policies to
      ensure audio resumes correctly after user interaction.
 
+## DIRECTORY STRUCTURE
 
-DIRECTORY STRUCTURE
--------------------
-/assets           -> Game sprites, music, and sound effects.
-/maps             -> JSON files for saved worlds (generated by the server).
-/scripts          -> Node.js utilities (map server, etc.).
-/src/shared/      -> Shared constants used by both menu and game.
-/src/game/        -> All game modules (map, enemies, movement, HUD, UI, weather, etc.).
-/src/menu/        -> All menu modules (audio, settings, UI, terminal, etc.).
-/vendor/          -> Local copies of p5.js and p5.sound (CDN used by default).
+/assets -> Game sprites, music, and sound effects.
+/maps -> JSON files for saved worlds (generated by the server).
+/scripts -> Node.js utilities (map server, etc.).
+/src/shared/ -> Shared constants used by both menu and game.
+/src/game/ -> All game modules (map, enemies, movement, HUD, UI, weather, etc.).
+/src/menu/ -> All menu modules (audio, settings, UI, terminal, etc.).
+/vendor/ -> Local copies of p5.js and p5.sound (CDN used by default).
 1-Menu_Index.html -> Entry point for the menu.
 3-Game_Index.html -> Entry point for the game.
 
+## TROUBLESHOOTING
 
-TROUBLESHOOTING
----------------
 - "Map not saving": Ensure `node scripts/map_server.js` is running.
 - "Audio not playing": Click anywhere on the screen to initialize the AudioContext.
 - "Blurry graphics": Ensure your browser zoom is set to 100%, though the engine

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(claude doctor:*)",
+      "Bash(cd \"C:\\\\Development\\\\1-JavaScript\\\\6-Game Development\" && awk 'NR>=5985 && NR<=6060' 4-Game.js)",
+      "Bash(cd \"C:\\\\Development\\\\1-JavaScript\\\\6-Game Development\" && awk 'NR>=7180 && NR<=7260' 4-Game.js)",
+      "Bash(cd \"C:\\\\Development\\\\1-JavaScript\\\\6-Game Development\" && awk 'NR>=8905 && NR<=8960' 4-Game.js)",
+      "Bash(cd \"C:\\\\Development\\\\1-JavaScript\\\\6-Game Development\" && python3 -c \"\nimport re\n\nwith open\\('4-Game.js', 'r', encoding='utf-8'\\) as f:\n    lines = f.readlines\\(\\)\n\n# Find all top-level function/let/const/var declarations\ntargets = [\n    'function logAssetTrackerStatus',\n    'function trackLoadImage',\n    'function trackLoadSound',\n    'function releaseImageReference',\n    'function clearObjectValues',\n    'function releaseGameAssets',\n    'function scheduleDeferredCharacterAssets',\n    'let TILE_IMAGES',\n    'let CUSTOM_ASSETS_OFF',\n    'let __ASSET_BACKUP',\n    'function backupCustomAssets',\n    'function removeCustomAssetsRuntime',\n    'function restoreCustomAssetsRuntime',\n    'function toggleCustomAssetsRuntime',\n    'function cleanImageBrown',\n]\n\nfor t in targets:\n    for i, line in enumerate\\(lines, 1\\):\n        if line.rstrip\\(\\).startswith\\(t\\):\n            print\\(f'{i}: {line.rstrip\\(\\)[:60]}'\\)\n            break\n\")",
+      "Bash(cd \"C:\\\\Development\\\\1-JavaScript\\\\6-Game Development\" && awk 'NR>=6748 && NR<=6820' 4-Game.js)",
+      "Bash(cd \"C:\\\\Development\\\\1-JavaScript\\\\6-Game Development\" && awk 'NR>=7140 && NR<=7190' 4-Game.js)",
+      "Bash(cd \"C:\\\\Development\\\\1-JavaScript\\\\6-Game Development\" && python3 scripts/refactor_game.py)",
+      "Bash(cd \"/c/Development/1-JavaScript/6-Game Development\" && python scripts/extract_modules.py)",
+      "Bash(cd \"/c/Development/1-JavaScript/6-Game Development\" && python scripts/refactor_game.py)",
+      "Bash(python3:*)"
+    ]
+  }
+}

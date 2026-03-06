@@ -267,7 +267,12 @@ const WeatherSystem = {
       }
     }
 
-    image(lm, 0, 0);
+    // Since we are inside the game world transform (push/pop block), 
+    // we need to draw the lightMap at the camera's actual top-left corner
+    // so it perfectly covers the visible screen area without moving when the player moves.
+    const cx = typeof drawCamX !== 'undefined' ? drawCamX : 0;
+    const cy = typeof drawCamY !== 'undefined' ? drawCamY : 0;
+    image(lm, cx, cy);
   },
 
   /** Returns an [r, g, b, a] tint for clouds based on current ambient darkness. */

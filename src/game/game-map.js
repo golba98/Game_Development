@@ -192,6 +192,8 @@ function generateMap_Part2() {
             const roll = Math.random();
             let enemyType = roll < 0.5 ? 'mantis' : 'maggot';
 
+
+
             // Only spawn ONE beetle per map
             if (!beetleSpawned && Math.random() < BEETLE_SPAWN_PROB) {
                 enemyType = 'beetle';

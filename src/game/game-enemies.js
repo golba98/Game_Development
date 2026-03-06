@@ -192,9 +192,9 @@ function spawnEnemy(type, x, y) {
   }
 }
 
-// Creates the boss Beetle enemy object. HP scales with currentLevel.
+// Creates the boss Beetle enemy object. HP and Damage scale with currentLevel.
 function createBeetle(startX, startY) {
-  const hpBonus = (currentLevel - 1) * BEETLE_HP_PER_LEVEL;
+  const hpBonus = (playerLevel - 1) * BEETLE_HP_PER_LEVEL;
   const totalHP = BEETLE_BASE_HP + hpBonus;
 
   return {
@@ -203,6 +203,7 @@ function createBeetle(startX, startY) {
     y: startY,
     health: totalHP,
     maxHealth: totalHP,
+    xpReward: 500,
     renderX: startX,
     renderY: startY,
     direction: 'S',
@@ -332,8 +333,10 @@ function createBeetle(startX, startY) {
           if (this.attackFrame === BEETLE_ATTACK_DAMAGE_FRAME) {
             const hitDist = dist(this.renderX, this.renderY, playerPosition.x, playerPosition.y);
             if (hitDist < BEETLE_HIT_RANGE && playerHurtTimer <= 0) {
-                playerHealth = Math.max(0, playerHealth - STANDARD_DAMAGE);
-                spawnDamageText(`-${STANDARD_DAMAGE}`, playerPosition.x, playerPosition.y, [255, 0, 0]);
+                let actualDmg = STANDARD_DAMAGE + Math.floor(playerLevel / 3);
+                if (typeof equipment !== 'undefined' && equipment.armor) actualDmg = Math.max(1, actualDmg - equipment.armor.defense);
+                playerHealth = Math.max(0, playerHealth - actualDmg);
+                spawnDamageText(`-${actualDmg}`, playerPosition.x, playerPosition.y, [255, 0, 0]);
                 playerHurtTimer = BEETLE_IFRAMES_MS;
                 screenShakeTimer = BEETLE_SHAKE_TIMER;
                 screenShakeAmount = BEETLE_SHAKE_AMOUNT;
@@ -409,12 +412,15 @@ function createBeetle(startX, startY) {
 
 // Creates a Mantis enemy: melee attacker that panics and charges when at 1 HP.
 function createMantis(startX, startY) {
+  const bonusHP = Math.floor(playerLevel / 2);
+  const totalHP = MANTIS_BASE_HP + bonusHP;
   return {
     type: 'mantis',
     x: startX,
     y: startY,
-    health: MANTIS_BASE_HP,
-    maxHealth: MANTIS_BASE_HP,
+    health: totalHP,
+    maxHealth: totalHP,
+    xpReward: 30 + (playerLevel * 2),
     hurtTimer: 0,
     panicTimer: 0,
     isPanicking: false,
@@ -445,10 +451,12 @@ function createMantis(startX, startY) {
                  if (playerPosition) {
                      const d = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
                      if (d < MANTIS_HIT_RANGE && playerHurtTimer <= 0) {
-                         playerHealth = Math.max(0, playerHealth - STANDARD_DAMAGE);
+                         let actualDmg = STANDARD_DAMAGE;
+                         if (typeof equipment !== 'undefined' && equipment.armor) actualDmg = Math.max(1, actualDmg - equipment.armor.defense);
+                         playerHealth = Math.max(0, playerHealth - actualDmg);
                          this.hasDealtDamage = true;
                          playerHurtTimer = STANDARD_IFRAMES_MS;
-                         spawnDamageText(`-${STANDARD_DAMAGE}`, playerPosition.x, playerPosition.y, [255, 0, 0]);
+                         spawnDamageText(`-${actualDmg}`, playerPosition.x, playerPosition.y, [255, 0, 0]);
 
                          _knockbackPlayer(
                            playerPosition.x - this.x,
@@ -655,12 +663,15 @@ function createMantis(startX, startY) {
 
 // Creates a Maggot enemy: ranged spitter that fires acid blobs at the player.
 function createMaggot(startX, startY) {
+  const bonusHP = Math.floor(playerLevel / 3);
+  const totalHP = MAGGOT_BASE_HP + bonusHP;
   return {
     type: 'maggot',
     x: startX,
     y: startY,
-    health: MAGGOT_BASE_HP,
-    maxHealth: MAGGOT_BASE_HP,
+    health: totalHP,
+    maxHealth: totalHP,
+    xpReward: 20 + (playerLevel * 2),
     hurtTimer: 0,
     panicTimer: 0,
     isPanicking: false,
@@ -836,6 +847,8 @@ function createMaggot(startX, startY) {
   };
 }
 
+
+
 // Fires an acid blob from (startX, startY) toward (targetX, targetY).
 function spawnAcidBlob(startX, startY, targetX, targetY, initialDir) {
     const angle = Math.atan2(targetY - startY, targetX - startX);
@@ -875,9 +888,10 @@ function spawnAcidBlob(startX, startY, targetX, targetY, initialDir) {
                 const d = Math.hypot(this.x - playerPosition.x, this.y - playerPosition.y);
                 if (d < ACID_BLOB_HIT_RADIUS) {
                     if (playerHurtTimer <= 0) {
-                        playerHealth = Math.max(0, playerHealth - STANDARD_DAMAGE);
-                        playerHurtTimer = STANDARD_IFRAMES_MS;
-                        spawnDamageText(`-${STANDARD_DAMAGE}`, playerPosition.x, playerPosition.y, [255, 0, 0]);
+                         let actualDmg = STANDARD_DAMAGE;
+                         if (typeof equipment !== 'undefined' && equipment.armor) actualDmg = Math.max(1, actualDmg - equipment.armor.defense);
+                         playerHealth = Math.max(0, playerHealth - actualDmg);
+                         spawnDamageText(`-${actualDmg}`, playerPosition.x, playerPosition.y, [255, 0, 0]);
 
                         _knockbackPlayer(this.vx, this.vy, ACID_BLOB_KNOCKBACK);
                     }
@@ -1059,13 +1073,23 @@ function updateVFX() {
         if (vfx[i].update(dt)) vfx.splice(i, 1);
     }
 }
-
-// Updates all enemies; removes any that glitch into solid tiles (except the beetle).
 function updateEnemies() {
+  const dt = gameDelta;
+
   if (!enemies) return;
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
     if (e.update) e.update();
+
+    if (e.health <= 0) {
+        if (e.xpReward) {
+            playerXP += e.xpReward;
+            spawnDamageText(`+${e.xpReward} XP`, e.x, e.y, [50, 200, 255]);
+        }
+        spawnSplat(e.x, e.y, DEATH_SPLAT_TYPE[e.type] ?? 'egg');
+        enemies.splice(i, 1);
+        continue;
+    }
 
     // Beetle is immune to crush damage due to its large size
     if (e.type === 'beetle') continue;

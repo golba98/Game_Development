@@ -366,13 +366,14 @@ function updateSprintState() {
     }
   } else {
 
-    if (sprintRemainingMs < SPRINT_MAX_DURATION_MS) {
-      sprintRemainingMs = Math.min(SPRINT_MAX_DURATION_MS, sprintRemainingMs + dt);
+    const maxDur = playerMaxStamina * 30;
+    if (sprintRemainingMs < maxDur) {
+      sprintRemainingMs = Math.min(maxDur, sprintRemainingMs + dt);
     }
 
 
-    if (sprintRemainingMs >= SPRINT_MAX_DURATION_MS) {
-      sprintRemainingMs = SPRINT_MAX_DURATION_MS;
+    if (sprintRemainingMs >= maxDur) {
+      sprintRemainingMs = maxDur;
       sprintCooldownUntil = 0;
     }
 
@@ -384,7 +385,8 @@ function updateSprintState() {
   }
 
   // Update smooth sprint percentage for UI with an adaptive lerp factor
-  const targetPct = (typeof sprintRemainingMs === 'number' && SPRINT_MAX_DURATION_MS > 0) ? (sprintRemainingMs / SPRINT_MAX_DURATION_MS) : 0;
+  const maxDur = playerMaxStamina * 30;
+  const targetPct = (typeof sprintRemainingMs === 'number' && maxDur > 0) ? (sprintRemainingMs / maxDur) : 0;
   // Adaptive lerp based on ~60fps baseline
   const lerpT = 1 - Math.pow(1 - 0.12, gameDelta / 16.67);
   smoothSprintPct = lerp(smoothSprintPct, targetPct, lerpT);
@@ -507,9 +509,10 @@ function _drawPlayerInternal() {
 
                     if (angleMatches) {
                         // Combo Damage (3rd hit deals double)
-                        let damage = ATTACK_DAMAGE_BASE;
+                        let damage = playerBaseDamage;
+                        if (equipment && equipment.weapon) damage += equipment.weapon.damage;
                         if (playerComboCount === 2) {
-                            damage = ATTACK_DAMAGE_CRITICAL;
+                            damage = Math.floor(damage * 1.5) + 1; // Critical hit scaling
                             verboseLog('[game] CRITICAL HIT! Combo step 3');
                         }
 
@@ -546,6 +549,20 @@ function _drawPlayerInternal() {
 
                         if (e.health <= 0) {
                             spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
+
+                            // XP & Leveling Logic
+                            const xpGain = e.xpReward || 10;
+                            playerXP += xpGain;
+                            lastXpChange = typeof millis === 'function' ? millis() : Date.now();
+                            spawnDamageText(`+${xpGain} XP`, e.x, e.y - 1, [150, 200, 255]);
+                            
+                            while (playerXP >= xpToNextLevel) {
+                                playerXP -= xpToNextLevel;
+                                playerLevel++;
+                                statPoints++;
+                                xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
+                                spawnDamageText("LEVEL UP!", playerPosition.x, playerPosition.y - 1.5, [255, 215, 0]);
+                            }
 
                             // Loot Drop Logic
                             if (random() < LOOT_DROP_CHANCE) {
