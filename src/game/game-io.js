@@ -353,7 +353,8 @@ function persistSavedSettings(immediate = false) {
         masterVol, musicVol, sfxVol, textSizeSetting,
         difficulty: difficultySetting, sensitivitySetting,
         invertYAxis, hudEnabled, showTutorialsSetting,
-        colorModeSetting, languageSetting
+        colorModeSetting, languageSetting, showFps,
+        showStars, screenShakeEnabled, showParticles, showFireflyLighting, targetFps
       };
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       localStorage.setItem(KEYBINDS_KEY, JSON.stringify(playerKeybinds));
@@ -397,6 +398,20 @@ function loadLocalSettings() {
     if (typeof parsed.invertYAxis        === 'boolean') invertYAxis         = parsed.invertYAxis;
     if (typeof parsed.hudEnabled         === 'boolean') hudEnabled          = parsed.hudEnabled;
     if (typeof parsed.showTutorialsSetting === 'boolean') showTutorialsSetting = parsed.showTutorialsSetting;
+    if (typeof parsed.showFps            === 'boolean') showFps             = parsed.showFps;
+    if (typeof parsed.targetFps          === 'number')  targetFps           = parsed.targetFps;
+    if (typeof parsed.showStars          === 'boolean') showStars           = parsed.showStars;
+    if (typeof parsed.screenShakeEnabled === 'boolean') screenShakeEnabled  = parsed.screenShakeEnabled;
+    if (typeof parsed.showParticles      === 'boolean') {
+      const oldState = showParticles;
+      showParticles = parsed.showParticles;
+      if (oldState && !showParticles && typeof vfx !== 'undefined') {
+        for (let i = vfx.length - 1; i >= 0; i--) {
+          if (vfx[i].type === 'firefly') vfx.splice(i, 1);
+        }
+      }
+    }
+    if (typeof parsed.showFireflyLighting === 'boolean') showFireflyLighting = parsed.showFireflyLighting;
     if (typeof parsed.colorModeSetting   === 'string') { colorModeSetting = parsed.colorModeSetting; applyColorMode(colorModeSetting); }
     if (typeof parsed.languageSetting    === 'string')  languageSetting     = parsed.languageSetting;
     if (typeof applyVolumes === 'function') applyVolumes();
@@ -456,6 +471,7 @@ window.addEventListener('message', (ev) => {
     switch (ev.data.type) {
       case 'game-activated': {
         try {
+          loadLocalSettings();
           pendingGameActivated = true;
           if (typeof _confirmResize === 'function') {
             try { _confirmResize(); pendingGameActivated = false; } catch (e) { console.warn('[game] _confirmResize failed', e); }

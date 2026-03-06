@@ -9,6 +9,9 @@ function preload() {
 }
 
 function setup() {
+  const loadingOverlay = document.getElementById('gd-loading-overlay');
+  if (loadingOverlay) loadingOverlay.remove();
+
   canvas = createCanvas(windowWidth, windowHeight);
   canvas.style('z-index', '1');
 
@@ -19,6 +22,7 @@ function setup() {
 
   loadAllSettings();
   injectCustomStyles();
+  applyFPS();
 
   videoBuffer = createGraphics(width, height);
   initializeMenuBackgroundVideo(bgVideo);
@@ -74,13 +78,23 @@ function setup() {
       }
 
       else if (ev.data.type === 'sync-settings') {
-        console.log('[menu] received settings sync from game', ev.data);
-
-
         if (typeof ev.data.masterVol === 'number') masterVol = ev.data.masterVol;
         if (typeof ev.data.musicVol === 'number') musicVol = ev.data.musicVol;
         if (typeof ev.data.sfxVol === 'number') sfxVol = ev.data.sfxVol;
         if (typeof ev.data.difficulty === 'string') difficultySetting = ev.data.difficulty;
+        if (typeof ev.data.showTutorialsSetting === 'boolean') showTutorials = ev.data.showTutorialsSetting;
+        if (typeof ev.data.hudEnabled === 'boolean') showHUD = ev.data.hudEnabled;
+        if (typeof ev.data.showFps === 'boolean') showFps = ev.data.showFps;
+        if (typeof ev.data.targetFps === 'number') targetFps = ev.data.targetFps;
+        if (typeof ev.data.showStars === 'boolean') showStars = ev.data.showStars;
+        if (typeof ev.data.screenShakeEnabled === 'boolean') screenShakeEnabled = ev.data.screenShakeEnabled;
+        if (typeof ev.data.showParticles === 'boolean') showParticles = ev.data.showParticles;
+        if (typeof ev.data.showFireflyLighting === 'boolean') showFireflyLighting = ev.data.showFireflyLighting;
+        if (typeof ev.data.colorModeSetting === 'string') colorModeSetting = ev.data.colorModeSetting;
+        if (typeof ev.data.invertYAxis === 'boolean') invertYAxis = ev.data.invertYAxis;
+        if (typeof ev.data.sensitivitySetting === 'number') sensitivitySetting = ev.data.sensitivitySetting;
+        if (typeof ev.data.textSizeSetting === 'number') textSizeSetting = ev.data.textSizeSetting;
+        if (typeof ev.data.languageSetting === 'string') languageSetting = ev.data.languageSetting;
 
 
         applyVolumes();
@@ -153,6 +167,16 @@ function setup() {
     }, 400);
   }
 
+function applyFPS() {
+  if (typeof frameRate === 'function') {
+    if (targetFps && targetFps > 0) {
+      frameRate(targetFps);
+    } else {
+      frameRate(60); // fallback
+    }
+  }
+}
+
 // === Draw / Render Loop ===
 function draw() {
   if (inGame) return;
@@ -200,6 +224,40 @@ function draw() {
     fill(0, fadeAlpha);
     rect(0, 0, width, height);
     fadeAlpha = max(0, fadeAlpha - 10);
+  }
+
+  // Draw FPS Overlay if enabled
+  if (showFps && typeof frameRate !== 'undefined') {
+    const currentFps = frameRate();
+    if (currentFps > 0) {
+      fpsHistory.push(currentFps);
+      if (fpsHistory.length > 60) fpsHistory.shift();
+    }
+
+    let avgFps = 0, low1Fps = 0;
+    if (fpsHistory.length > 0) {
+      avgFps = fpsHistory.reduce((a, b) => a + b) / fpsHistory.length;
+      const sorted = [...fpsHistory].sort((a, b) => a - b);
+      const low1Index = Math.max(0, Math.floor(sorted.length * 0.01));
+      low1Fps = sorted[low1Index];
+    }
+
+    push();
+    fill(0, 180);
+    stroke(180, 150, 50);
+    strokeWeight(2);
+    rect(width - 150, height - 70, 130, 56, 4); // Adjusted box to fit more text
+    
+    fill(255);
+    noStroke();
+    textSize(20);
+    textAlign(LEFT, CENTER);
+    text(`AVG: ${Math.round(avgFps)}`, width - 140, height - 54);
+    
+    fill(200, 100, 100);
+    textSize(16);
+    text(`1% LOW: ${Math.round(low1Fps)}`, width - 140, height - 32);
+    pop();
   }
 }
 

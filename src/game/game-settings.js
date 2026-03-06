@@ -13,9 +13,9 @@ const SETTINGS_PANEL_W = 720;
 const SETTINGS_PANEL_H = 540;
 
 // --- Loading Overlay Scale Clamps ---
-const LOADING_SCALE_HEIGHT_REF = 4000; // Reference height for scale calculation
-const LOADING_SCALE_MIN        = 0.18;
-const LOADING_SCALE_MAX        = 0.55;
+const LOADING_SCALE_HEIGHT_REF = 1080; // Reference height for scale calculation
+const LOADING_SCALE_MIN        = 0.5;
+const LOADING_SCALE_MAX        = 1.5;
 
 // --- Zoom Detection Constants ---
 const ZOOM_PROBE_DPI = 96; // Standard screen DPI used by browsers for CSS 1in
@@ -308,9 +308,10 @@ function applyCurrentTextSize() {
   try {
     const scale = getTextScale();
 
-    const base    = Math.max(10, Math.round(TEXT_SIZE_BASE_PX  * scale));
-    const label   = Math.max(12, Math.round(TEXT_SIZE_LABEL_PX * scale));
-    const btnSize = Math.max(12, Math.round(TEXT_SIZE_BASE_PX  * scale));
+    // Base values aligned with the inline styles used by createSettingsContext
+    const base    = Math.max(14, Math.round(18 * scale));
+    const label   = Math.max(16, Math.round(20 * scale));
+    const btnSize = Math.max(14, Math.round(18 * scale));
 
     try { if (typeof textSize === 'function') textSize(base); } catch(e) {}
 
@@ -338,6 +339,9 @@ function applyCurrentTextSize() {
 
       const inputs = root.querySelectorAll('input');
       inputs.forEach(el => { try { el.style.fontSize = base + 'px'; } catch(e){} });
+
+      const headings = root.querySelectorAll('h1, h2, h3');
+      headings.forEach(el => { try { el.style.fontSize = Math.round(32 * scale) + 'px'; } catch(e){} });
     } catch(e) {}
 
     
@@ -719,6 +723,7 @@ function openInGameSettings(currentVals) {
     const builder = CATEGORY_BUILDERS[label];
     if (builder) builder(ctx);
     syncSlidersToSettings();
+    try { applyCurrentTextSize(); } catch (e) {}
   };
 
   SETTINGS_CATEGORIES.forEach(label => {
@@ -941,6 +946,7 @@ function buildGameplaySettings(ctx) {
   ctx
     .addCheckboxRow("Show Tutorials", showTutorialsSetting, { onChange: v => { showTutorialsSetting = v; persistSavedSettings(); } })
     .addCheckboxRow("Enable HUD", hudEnabled, { onChange: v => { hudEnabled = v; persistSavedSettings(); } })
+    .addCheckboxRow("Show FPS", showFps, { onChange: v => { showFps = v; persistSavedSettings(); } })
     .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
       value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
       onChange: (val) => {
@@ -951,6 +957,34 @@ function buildGameplaySettings(ctx) {
         saveLocalSettings(); 
       }
     });
+}
+
+/** Populates `ctx` with Graphics toggles. */
+function buildGraphicsSettings(ctx) {
+  const fpsLabels = ["30", "60", "90", "120", "144", "165", "200", "350", "Uncapped"];
+  const currentFpsLabel = targetFps === 999 ? "Uncapped" : String(targetFps);
+
+  ctx
+    .addSelectRow("Max FPS", fpsLabels, {
+      value: fpsLabels.includes(currentFpsLabel) ? currentFpsLabel : "Uncapped",
+      onChange: v => {
+        targetFps = (v === "Uncapped") ? 999 : Number(v);
+        persistSavedSettings();
+        if (typeof applyFPS === 'function') applyFPS();
+      }
+    })
+    .addCheckboxRow("Show Stars", showStars, { onChange: v => { showStars = v; persistSavedSettings(); } })
+    .addCheckboxRow("Screen Shake", screenShakeEnabled, { onChange: v => { screenShakeEnabled = v; persistSavedSettings(); } })
+    .addCheckboxRow("Ambient Particles", showParticles, { onChange: v => { 
+        showParticles = v; 
+        if (!v && typeof vfx !== 'undefined') {
+          for (let i = vfx.length - 1; i >= 0; i--) {
+            if (vfx[i].type === 'firefly') vfx.splice(i, 1);
+          }
+        }
+        persistSavedSettings(); 
+    } })
+    .addCheckboxRow("Firefly Lighting", showFireflyLighting, { onChange: v => { showFireflyLighting = v; persistSavedSettings(); } });
 }
 
 /** Populates `ctx` with click-to-rebind keybind rows, a Sensitivity slider, and Invert Y toggle. */
@@ -1037,6 +1071,10 @@ function applyColorMode(mode) {
     'Protanopia':   'url(#game-cb-protanopia)',
     'Deuteranopia': 'url(#game-cb-deuteranopia)',
     'Tritanopia':   'url(#game-cb-tritanopia)',
+    'Grayscale':    'grayscale(100%)',
+    'Sepia':        'sepia(80%)',
+    'Invert':       'invert(100%) hue-rotate(180deg)',
+    'High Contrast':'contrast(150%) saturate(120%)'
   };
   const canvas = document.querySelector('canvas');
   if (canvas) canvas.style.filter = filterMap[mode] || '';
@@ -1044,7 +1082,7 @@ function applyColorMode(mode) {
 
 /** Populates `ctx` with Color Mode selector and Text Size preset buttons. */
 function buildAccessibilitySettings(ctx) {
-  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"], {
+  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia", "Grayscale", "Sepia", "Invert", "High Contrast"], {
     value: colorModeSetting,
     onChange: v => { colorModeSetting = v; applyColorMode(v); persistSavedSettings(); }
   });
@@ -1317,7 +1355,6 @@ function ensureLoadingOverlayDom() {
 
     let el = document.getElementById('gd-loading-overlay');
     
-  
     if (el && !document.getElementById('gd-loading-content')) {
         el.remove();
         el = null;
@@ -1325,67 +1362,11 @@ function ensureLoadingOverlayDom() {
 
     if (el) return el;
 
-  
-    const fontPath = 'assets/3-GUI/font.ttf'; 
-    const styleId = 'gd-loading-style';
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement('style');
-      style.id = styleId;
-      style.innerHTML = `
-        @font-face { font-family: 'PixelGameFont'; src: url('${fontPath}'); }
-        #gd-loading-overlay {
-          font-family: 'PixelGameFont', 'Courier New', monospace !important;
-          background-color: #000000 !important;
-          color: #ffcc00;
-        }
-        .gd-loading-message {
-          font-size: 20px;
-          text-transform: uppercase;
-          margin-bottom: 8px;
-          text-shadow: 1px 1px 0px #111;
-          letter-spacing: 1px;
-        }
-        .gd-progress-container {
-          width: 220px;
-          max-width: 60%;
-          height: 16px;
-          border: 1px solid #ffcc00;
-          background-color: #111;
-          padding: 1px;
-          margin-bottom: 4px;
-        }
-        .gd-progress-fill {
-          height: 100%;
-          width: 0%;
-          background-color: #ffcc00;
-          transition: width 0.1s linear;
-        }
-        .gd-progress-text {
-          font-size: 14px;
-          color: #888;
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
- 
     el = document.createElement('div');
     el.id = 'gd-loading-overlay';
-    Object.assign(el.style, {
-      position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      zIndex: '2147483647', userSelect: 'none', opacity: '1' 
-    });
-
-   
+    
     const content = document.createElement('div');
     content.id = 'gd-loading-content';
-    Object.assign(content.style, {
-        display: 'flex', flexDirection: 'column', 
-        alignItems: 'center', justifyContent: 'center',
-        transformOrigin: 'center center', 
-        transition: 'transform 0.1s ease-out' 
-    });
 
     const msg = document.createElement('div');
     msg.className = 'gd-loading-message';
@@ -1410,7 +1391,6 @@ function ensureLoadingOverlayDom() {
     el.appendChild(content);
     document.body.appendChild(el);
 
-   
     makeElementZoomInvariant(content, 'top center');
 
     return el;
@@ -1440,7 +1420,7 @@ const TRANSLATIONS = {
     tut_move:'• W/A/S/D: Move', tut_sprint:'• SHIFT (Hold): Sprint',
     tut_jump:'• SPACE: Jump', tut_attack:'• LEFT CLICK or E: Attack',
     tut_items:'• [1] / [2]: Use Items',
-    tut_objective:'OBJECTIVE:', tut_objective_text:'Fight, collect coins, then enter the Portal!',
+    tut_objective:'OBJETIVO:', tut_objective_text:'Fight, collect coins, then enter the Portal!',
     tut_step_move:'Move', tut_step_sprint:'Sprint', tut_step_fight:'Fight',
     tut_step_collect:'Collect', tut_step_portal:'Portal',
     tut_wasd:'Use W A S D to move!', tut_head_north:'Head North through the gap!', tut_gap:'Gap',
@@ -1591,6 +1571,7 @@ const TRANSLATIONS = {
 const CATEGORY_BUILDERS = {
   Audio: buildAudioSettings,
   Gameplay: buildGameplaySettings,
+  Graphics: buildGraphicsSettings,
   Controls: buildControlsSettings,
   Accessibility: buildAccessibilitySettings,
   Language: buildLanguageSettings

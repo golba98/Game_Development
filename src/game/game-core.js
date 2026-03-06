@@ -58,6 +58,7 @@ function setup() {
   `;
   document.head.appendChild(canvasStyle);
 
+  applyFPS();
  
   pixelDensity(window.devicePixelRatio || 1);
 
@@ -177,9 +178,22 @@ function setup() {
       } catch (e) {}
     }
   });
+
+  applyFPS();
   
   if (gameMusic) gameMusic.setVolume(musicVol * masterVol);
   if (pendingGameActivated) { try { _confirmResize(); pendingGameActivated = false; } catch (e) {} }
+}
+
+function applyFPS() {
+  if (typeof frameRate === 'function') {
+    if (targetFps && targetFps > 0) {
+      frameRate(targetFps);
+      verboseLog('[game] framerate target set to ' + targetFps);
+    } else {
+      frameRate(60); // fallback
+    }
+  }
 }
 
 function windowResized() {
@@ -253,7 +267,12 @@ function draw() {
   gameDelta = (typeof deltaTime !== 'undefined') ? Math.min(deltaTime, 50) : FRAME_TIME_MS;
 
   if (typeof WeatherSystem !== 'undefined' && !inGameMenuVisible && !settingsOverlayDiv && !isGameOver) {
+    const wasNight = isNightTime();
     WeatherSystem.update(gameDelta);
+    const nowNight = isNightTime();
+    // Spawn ghosts when night begins; despawn when night ends
+    if (!wasNight && nowNight) spawnNightGhosts();
+    else if (wasNight && !nowNight) despawnGhosts();
   }
 
   if (genPhase > 0) {
@@ -353,16 +372,16 @@ function draw() {
 
   // START WORLD TRANSFORM
   push();
-  
-  let shakeX = 0;
-  let shakeY = 0;
-  if (screenShakeTimer > 0) {
-      shakeX = random(-screenShakeAmount, screenShakeAmount);
-      shakeY = random(-screenShakeAmount, screenShakeAmount);
+  // Apply Screen Shake inside camera transform
+  if (screenShakeTimer > 0 && screenShakeEnabled) {
+      translate(random(-screenShakeAmount, screenShakeAmount), random(-screenShakeAmount, screenShakeAmount));
+      screenShakeTimer -= gameDelta;
+  } else if (screenShakeTimer > 0) {
+      // Still decrement the timer even if visually disabled so logic completes
       screenShakeTimer -= gameDelta;
   }
   
-  translate(-drawCamX + shakeX, -drawCamY + shakeY);
+  translate(-drawCamX, -drawCamY);
   
   if (mapImage) image(mapImage, 0, 0);
 
@@ -451,19 +470,15 @@ function draw() {
       }
     }
 
-    if (mapStates && logicalW && logicalH) {
-      for (let i = 0; i < mapStates.length; i++) {
-        if (mapStates[i] === TILE_TYPES.COIN) {
+    if (typeof activeCoins !== 'undefined' && activeCoins) {
+      for (const coin of activeCoins) {
           if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
           const d = drawablePool[drawablePoolIdx++];
           d.type = 'coin';
-          const lx = i % logicalW;
-          const ly = Math.floor(i / logicalW);
-          d.tileX = lx;
-          d.tileY = ly;
-          d.baseY = (ly * cellSize) + cellSize;
+          d.tileX = coin.x;
+          d.tileY = coin.y;
+          d.baseY = (coin.y * cellSize) + cellSize;
           currentDrawables.push(d);
-        }
       }
     }
 
@@ -571,6 +586,10 @@ function draw() {
           try { drawPlayer(); } catch (e) {}
           break;
         case 'enemy':
+          // Ghosts are batched after the main loop under one blend-mode switch
+          if (d.entity && d.entity.type === 'ghost') break;
+          try { d.entity.draw(); } catch (e) {}
+          break;
         case 'projectile':
         case 'vfx':
           try { d.entity.draw(); } catch (e) {}
@@ -603,6 +622,23 @@ function draw() {
         }
       }
     }
+
+    // Batch-draw all ghosts under a single blend-mode switch (no allocation).
+    if (enemies && enemies.length) {
+      let hasGhosts = false;
+      for (let gi = 0; gi < enemies.length; gi++) {
+        if (enemies[gi].type === 'ghost') { hasGhosts = true; break; }
+      }
+      if (hasGhosts) {
+        drawingContext.globalCompositeOperation = 'screen';
+        for (let gi = 0; gi < enemies.length; gi++) {
+          if (enemies[gi].type === 'ghost') {
+            try { enemies[gi].draw(); } catch (e) {}
+          }
+        }
+        drawingContext.globalCompositeOperation = 'source-over';
+      }
+    }
   } catch (e) {}
 
   drawClouds();
@@ -617,59 +653,73 @@ function draw() {
     }
   }
 
-  pop(); // END WORLD TRANSFORM
-
+  // Night  // Weather Overlay Pass
+  if (typeof WeatherSystem !== 'undefined') {
+      const isNight = WeatherSystem.cycle > 0.8 || WeatherSystem.cycle < 0.2;
+      WeatherSystem.drawAmbientParticles(smoothCamX, smoothCamY, isNight);
+      WeatherSystem.drawOverlay(smoothCamX, smoothCamY, logicalW * cellSize, logicalH * cellSize);
+  }
   // Night Ambience: Fireflies
   if (typeof WeatherSystem !== 'undefined' && (WeatherSystem.cycle < 0.3 || WeatherSystem.cycle > 0.7)) {
-      if (random(1) < 0.03) { 
+      if (showParticles && random(1) < 0.03) {
           spawnFirefly();
       }
   }
 
+  // --- Night overlay — drawn INSIDE the world transform so scale(gameScale) applies ---
   if (typeof WeatherSystem !== 'undefined') {
       const lights = [];
       if (playerPosition) {
           const pX = isMoving ? renderX : playerPosition.x;
           const pY = isMoving ? renderY : playerPosition.y;
-          // Calculate screen coordinates based on camera (defined in draw scope)
-          // We assume drawCamX/Y are available. If not, we recalculate or use globals if available.
-          // Since drawCamX is local to draw(), we might need to recalculate or ensure scope.
-          // Let's rely on drawCamX/Y being in scope as this is inside draw().
-          
           const screenX = (pX * cellSize + cellSize/2) - drawCamX;
           const screenY = (pY * cellSize + cellSize/2) - drawCamY;
-          
+
           lights.push({
-              x: screenX, 
-              y: screenY, 
-              radius: 300 + Math.sin(millis() / 200) * 10 // Breathing light effect
+              x: screenX,
+              y: screenY,
+              radius: 450 + Math.sin(millis() / 200) * 10
           });
       }
       // Add lights from VFX (like fireflies)
       if (vfx && vfx.length) {
           for (const effect of vfx) {
+              if (!showFireflyLighting && effect.type === 'firefly') continue;
               if (typeof effect.getLight === 'function') {
                   const l = effect.getLight();
                   if (l) {
-                      const screenX = l.worldX - drawCamX;
-                      const screenY = l.worldY - drawCamY;
                       lights.push({
-                          x: screenX,
-                          y: screenY,
-                          radius: l.radius
+                          x: l.worldX - drawCamX,
+                          y: l.worldY - drawCamY,
+                          radius: l.radius || 40
                       });
                   }
               }
           }
       }
-      
-      // Use virtual screen size so it scales naturally and covers the whole viewport
-      const vW = virtualW || (width / gameScale);
-      const vH = virtualH || (height / gameScale);
-      
-      // We pass the draw bounds and the camera position so the stars can parallax correctly 
+      // Add lights from enemies (ghost glow)
+      if (enemies && enemies.length) {
+          for (const e of enemies) {
+              if (typeof e.getLight === 'function') {
+                  const l = e.getLight();
+                  if (l) {
+                      lights.push({
+                          x: l.worldX - drawCamX,
+                          y: l.worldY - drawCamY,
+                          radius: l.radius || 40
+                      });
+                  }
+              }
+          }
+      }
+
+      // Virtual screen size + overscan; round to prevent lightMap recreation from float drift
+      const vW = Math.ceil(virtualW || (width / gameScale)) + 20;
+      const vH = Math.ceil(virtualH || (height / gameScale)) + 20;
       WeatherSystem.drawOverlay(vW, vH, lights, drawCamX, drawCamY);
   }
+
+  pop(); // END WORLD TRANSFORM
 
 
 
@@ -688,6 +738,69 @@ function draw() {
     if (typeof WeatherSystem !== 'undefined') {
       const vW = virtualW || (width / gameScale);
       WeatherSystem.drawClock(vW - 60, 40, 25);
+    }
+    if (showFps && typeof frameRate === 'function') {
+      const vW = virtualW || (width / gameScale);
+      
+      const currentFps = frameRate();
+      if (currentFps > 0) {
+        fpsHistory.push(currentFps);
+        if (fpsHistory.length > 60) fpsHistory.shift();
+      }
+
+      let avgFps = 0, low1Fps = 0;
+      if (fpsHistory.length > 0) {
+        avgFps = fpsHistory.reduce((a, b) => a + b) / fpsHistory.length;
+        const sorted = [...fpsHistory].sort((a, b) => a - b);
+        const low1Index = Math.max(0, Math.floor(sorted.length * 0.01));
+        low1Fps = sorted[low1Index];
+      }
+
+      push();
+      
+      // Pixel Art Bronze Frame
+      const boxW = 110;
+      const boxH = 46;
+      const boxX = vW - 120;
+      const boxY = 80;
+      
+      // Drop shadow
+      noStroke();
+      fill(0, 120);
+      rect(boxX + 2, boxY + 2, boxW, boxH, 2);
+      
+      // Dark metallic backing
+      stroke(50, 40, 30);
+      strokeWeight(3);
+      fill(35, 30, 25);
+      rect(boxX, boxY, boxW, boxH, 2);
+      
+      // Inner gold inlay
+      stroke(180, 150, 50);
+      strokeWeight(1.5);
+      noFill();
+      rect(boxX + 2, boxY + 2, boxW - 4, boxH - 4, 1);
+      
+      // Corner rivets
+      fill(100, 90, 80);
+      noStroke();
+      rect(boxX + 4, boxY + 4, 2, 2);
+      rect(boxX + boxW - 6, boxY + 4, 2, 2);
+      rect(boxX + 4, boxY + boxH - 6, 2, 2);
+      rect(boxX + boxW - 6, boxY + boxH - 6, 2, 2);
+
+      // Text rendering
+      gTextSize(14);
+      
+      fill(220, 220, 220); // Silver/grey 
+      textAlign(LEFT, CENTER);
+      text(`AVG: ${Math.round(avgFps)}`, boxX + 12, boxY + 14);
+      
+      fill(200, 100, 100);
+      gTextSize(12);
+      text(`1% LOW: ${Math.round(low1Fps)}`, boxX + 12, boxY + 30);
+      
+      pop();
     }
   }
 
