@@ -146,8 +146,8 @@ const WeatherSystem = {
 
       const alpha = starOpacity * twinkle;
       const [r, g, b] = star.color;
-      const px = Math.floor(sx);
-      const py = Math.floor(sy);
+      const px = Math.floor(sx + (camX || 0));
+      const py = Math.floor(sy + (camY || 0));
 
       if (star.hasGlow) {
         const glowAlpha = alpha * STAR_GLOW_ALPHA_FACTOR;
