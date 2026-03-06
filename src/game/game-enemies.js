@@ -10,7 +10,7 @@ const CARDINAL_DIRECTIONS = [
 ];
 
 // Death splat type per enemy — 'acid' for ranged, 'egg' for others
-const DEATH_SPLAT_TYPE = { mantis: 'acid', maggot: 'egg', beetle: 'egg' };
+const DEATH_SPLAT_TYPE = { mantis: 'acid', maggot: 'egg', beetle: 'egg', ghost: 'acid' };
 
 // Damage-text drift velocities (tiles/frame-normalised)
 const DAMAGE_TEXT_DRIFT_VEL = 0.02;
@@ -99,8 +99,8 @@ const BEETLE_STUCK_NUDGE      = 2;     // tiles nudged in a random direction whe
 const BEETLE_MELEE_RANGE      = 1.4;   // tile distance at which beetle starts an attack
 const BEETLE_DIRECT_RANGE     = 8;     // within this range beetle tries straight-line movement
 const BEETLE_CLOSE_RANGE      = 6;     // threshold for switching to faster chase speed
-const BEETLE_SPEED_CLOSE      = 0.08;  // chase speed (tiles/frame) when near player
-const BEETLE_SPEED_FAR        = 0.06;  // chase speed (tiles/frame) when farther away; also lunge speed
+const BEETLE_SPEED_CLOSE      = 0.055;  // chase speed (tiles/frame) when near player
+const BEETLE_SPEED_FAR        = 0.04;  // chase speed (tiles/frame) when farther away; also lunge speed
 const BEETLE_PATHFIND_LIMIT   = 40;    // max nodes for beetle's pathfinding BFS
 const BEETLE_LUNGE_FRAMES     = 4;     // attack frames during which beetle lunges forward
 const BEETLE_ATTACK_ANIM_MS   = 100;   // ms per attack animation frame
@@ -156,6 +156,34 @@ const MAGGOT_WANDER_PROB      = 0.01;
 const MAGGOT_WANDER_MIN_MS    = 1500;
 const MAGGOT_WANDER_MAX_MS    = 3000;
 
+// --- Ghost Constants ---
+const GHOST_BASE_HP           = 4;
+const GHOST_MOVE_COLS         = 3;     // frames per row in GhostMove.png
+const GHOST_ANIM_MS           = 120;   // ms per walk animation frame
+const GHOST_AGGRO_RANGE       = 10;    // tile radius — ghosts sense the player from further away
+const GHOST_ATTACK_RANGE      = 1.3;   // tile distance to deal damage
+const GHOST_HIT_RANGE         = 1.5;   // tile radius for hit check
+const GHOST_KNOCKBACK         = 0.6;   // tiles pushed on ghost hit
+const GHOST_ATTACK_COOLDOWN_MS = 1800;
+const GHOST_IFRAMES_MS        = STANDARD_IFRAMES_MS;
+const GHOST_AGGRO_MOVE_MS     = 350;   // ms between steps when chasing — slightly faster than mantis
+const GHOST_WANDER_PROB       = 0.015;
+const GHOST_WANDER_MIN_MS     = 800;
+const GHOST_WANDER_MAX_MS     = 2000;
+const GHOST_RENDER_LERP       = 0.12;
+const GHOST_LERP_THRESHOLD    = 0.01;
+const GHOST_BASE_ALPHA        = 140;   // semi-transparent base opacity (0–255)
+const GHOST_PULSE_SPEED       = 2000;  // ms per alpha pulse cycle
+const GHOST_PULSE_DEPTH       = 40;    // alpha oscillation range
+const GHOST_LIGHT_RADIUS      = 50;    // px radius for eerie glow
+const GHOST_LIGHT_INTENSITY   = 0.12;
+const GHOST_ATTACK_COLS       = 3;     // frames per row in GhostAttack.png
+const GHOST_ATTACK_ANIM_MS    = 140;   // ms per attack animation frame
+const GHOST_ATTACK_DAMAGE_FRAME = 1;   // frame on which the hit is checked (middle of 0-1-2)
+const GHOST_SPAWN_COUNT_NORMAL = 4;
+const GHOST_SPAWN_COUNT_HARD   = 8;
+const GHOST_SPAWN_COUNT_EASY   = 2;
+
 // --- Acid Blob (Projectile) Constants ---
 const ACID_BLOB_SPEED         = 0.15;  // tiles per frame at 60 fps
 const ACID_BLOB_MAX_DIST      = 10;    // tiles before the blob expires
@@ -189,6 +217,8 @@ function spawnEnemy(type, x, y) {
     enemies.push(createMaggot(x, y));
   } else if (type === 'beetle') {
     enemies.push(createBeetle(x, y));
+  } else if (type === 'ghost') {
+    enemies.push(createGhost(x, y));
   }
 }
 
@@ -849,6 +879,309 @@ function createMaggot(startX, startY) {
 
 
 
+/**
+ * Returns true when the day/night cycle is currently in the night phase.
+ * Night: cycle < CYCLE_NIGHT_END (0.20) or cycle >= CYCLE_NIGHT_START (0.90).
+ */
+function isNightTime() {
+  if (typeof WeatherSystem === 'undefined') return false;
+  const t = WeatherSystem.cycle;
+  return t < CYCLE_NIGHT_END || t >= CYCLE_NIGHT_START;
+}
+
+/**
+ * Spawns ghost enemies around the player when night begins.
+ * Called from the weather update check and from /time night.
+ */
+function spawnNightGhosts() {
+  // Don't double-spawn — check if ghosts already exist
+  if (enemies.some(e => e.type === 'ghost')) return;
+
+  let count = GHOST_SPAWN_COUNT_NORMAL;
+  if (typeof difficultySetting !== 'undefined') {
+    if (difficultySetting === 'hard') count = GHOST_SPAWN_COUNT_HARD;
+    else if (difficultySetting === 'easy') count = GHOST_SPAWN_COUNT_EASY;
+  }
+
+  for (let i = 0; i < count; i++) {
+    let gx, gy, attempts = 0, valid = false;
+    do {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 8 + Math.random() * 12;
+      gx = Math.floor(playerPosition.x + Math.cos(angle) * dist);
+      gy = Math.floor(playerPosition.y + Math.sin(angle) * dist);
+      gx = Math.max(1, Math.min(gx, logicalW - 2));
+      gy = Math.max(1, Math.min(gy, logicalH - 2));
+      attempts++;
+      const ts = getTileState(gx, gy);
+      valid = !isSolid(ts) && ts !== TILE_TYPES.RIVER;
+    } while (attempts < 50 && !valid);
+    if (valid) spawnEnemy('ghost', gx, gy);
+  }
+}
+
+/**
+ * Removes all ghost enemies (they fade away when day arrives).
+ */
+function despawnGhosts() {
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    if (enemies[i].type === 'ghost') {
+      spawnDamageText('vanished', enemies[i].x, enemies[i].y, [180, 200, 255]);
+      enemies.splice(i, 1);
+    }
+  }
+}
+
+/**
+ * Maps a direction to the Ghost spritesheet row.
+ * Ghost layout: Row 0 = South, Row 1 = North, Row 2 = East, Row 3 = West.
+ */
+function getDirectionSpriteRow_Ghost(dir) {
+  if (dir === 'S') return 0;
+  if (dir === 'N') return 1;
+  if (dir === 'E') return 2;
+  return 3; // W
+}
+
+// Creates a Ghost enemy. Only appears at night; semi-transparent, emits eerie glow.
+function createGhost(startX, startY) {
+  const bonusHP = Math.floor(playerLevel / 2);
+  const totalHP = GHOST_BASE_HP + bonusHP;
+  return {
+    type: 'ghost',
+    x: startX,
+    y: startY,
+    health: totalHP,
+    maxHealth: totalHP,
+    xpReward: 40 + (playerLevel * 3),
+    hurtTimer: 0,
+    renderX: startX,
+    renderY: startY,
+    direction: 'S',
+    moving: false,
+    animFrame: 0,
+    animTimer: 0,
+    moveTimer: 0,
+    attacking: false,
+    attackFrame: 0,
+    attackTimer: 0,
+    attackCooldown: 0,
+    hasDealtDamage: false,
+
+    update: function() {
+      const dt = gameDelta;
+
+      // Ghosts vanish at dawn
+      if (!isNightTime()) {
+        this.health = 0;
+        return;
+      }
+
+      // --- Attack Animation State ---
+      if (this.attacking) {
+        this.attackTimer += dt;
+        if (this.attackTimer > GHOST_ATTACK_ANIM_MS) {
+          this.attackTimer = 0;
+          this.attackFrame++;
+
+          if (this.attackFrame === GHOST_ATTACK_DAMAGE_FRAME && !this.hasDealtDamage) {
+            if (playerPosition) {
+              const d = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
+              if (d < GHOST_HIT_RANGE && playerHurtTimer <= 0) {
+                let actualDmg = STANDARD_DAMAGE;
+                if (typeof equipment !== 'undefined' && equipment.armor) actualDmg = Math.max(1, actualDmg - equipment.armor.defense);
+                playerHealth = Math.max(0, playerHealth - actualDmg);
+                this.hasDealtDamage = true;
+                playerHurtTimer = GHOST_IFRAMES_MS;
+                spawnDamageText(`-${actualDmg}`, playerPosition.x, playerPosition.y, [180, 200, 255]);
+                _knockbackPlayer(
+                  playerPosition.x - this.x,
+                  playerPosition.y - this.y,
+                  GHOST_KNOCKBACK
+                );
+              }
+            }
+          }
+
+          if (this.attackFrame >= GHOST_ATTACK_COLS) {
+            this.attacking = false;
+            this.attackCooldown = GHOST_ATTACK_COOLDOWN_MS;
+            this.attackFrame = 0;
+          }
+        }
+        return; // don't move while attacking
+      }
+
+      if (this.hurtTimer > 0)      this.hurtTimer      -= dt;
+      if (this.attackCooldown > 0)  this.attackCooldown  -= dt;
+
+      // --- Smooth render interpolation ---
+      this.animTimer += dt;
+      if (this.animTimer > GHOST_ANIM_MS) {
+        this.animTimer = 0;
+        this.animFrame = (this.animFrame + 1) % GHOST_MOVE_COLS;
+      }
+
+      if (Math.abs(this.renderX - this.x) > GHOST_LERP_THRESHOLD) this.renderX = lerp(this.renderX, this.x, GHOST_RENDER_LERP);
+      else this.renderX = this.x;
+      if (Math.abs(this.renderY - this.y) > GHOST_LERP_THRESHOLD) this.renderY = lerp(this.renderY, this.y, GHOST_RENDER_LERP);
+      else this.renderY = this.y;
+
+      if (this.moveTimer > 0) {
+        this.moveTimer -= dt;
+        return;
+      }
+
+      // --- Aggro Logic ---
+      if (playerPosition) {
+        const d = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
+
+        // Start attack animation when in range
+        if (d < GHOST_ATTACK_RANGE && this.attackCooldown <= 0) {
+          this.attacking = true;
+          this.attackFrame = 0;
+          this.attackTimer = 0;
+          this.hasDealtDamage = false;
+          const dx = playerPosition.x - this.x;
+          const dy = playerPosition.y - this.y;
+          if (Math.abs(dx) > Math.abs(dy)) {
+            this.direction = dx > 0 ? 'E' : 'W';
+          } else {
+            this.direction = dy > 0 ? 'S' : 'N';
+          }
+          return;
+        }
+
+        // Chase player
+        if (d < GHOST_AGGRO_RANGE) {
+          // Ghosts can phase through trees — use a relaxed walkability check
+          const nextStep = findNextStep(this.x, this.y, playerPosition.x, playerPosition.y);
+          if (nextStep) {
+            const dx = nextStep.x - this.x;
+            const dy = nextStep.y - this.y;
+            if      (dx > 0) this.direction = 'E';
+            else if (dx < 0) this.direction = 'W';
+            else if (dy > 0) this.direction = 'S';
+            else if (dy < 0) this.direction = 'N';
+            this.x = nextStep.x;
+            this.y = nextStep.y;
+            this.moveTimer = GHOST_AGGRO_MOVE_MS;
+            return;
+          }
+
+          // Fallback: direct cardinal step (ghosts ignore trees)
+          const dx = playerPosition.x - this.x;
+          const dy = playerPosition.y - this.y;
+          let moveX = 0, moveY = 0, newDir = this.direction;
+          if (Math.abs(dx) > Math.abs(dy)) {
+            moveX = dx > 0 ? 1 : -1;
+            newDir = dx > 0 ? 'E' : 'W';
+          } else {
+            moveY = dy > 0 ? 1 : -1;
+            newDir = dy > 0 ? 'S' : 'N';
+          }
+          const nx = this.x + moveX;
+          const ny = this.y + moveY;
+          if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH) {
+            const ts = getTileState(nx, ny);
+            // Ghosts phase through everything except rivers and map edges
+            if (ts !== TILE_TYPES.RIVER) {
+              this.x = nx;
+              this.y = ny;
+              this.direction = newDir;
+              this.moveTimer = GHOST_AGGRO_MOVE_MS;
+              return;
+            }
+          }
+          return;
+        }
+      }
+
+      // --- Idle Wander ---
+      if (Math.random() < GHOST_WANDER_PROB) {
+        const choice = CARDINAL_DIRECTIONS[Math.floor(Math.random() * CARDINAL_DIRECTIONS.length)];
+        const nx = this.x + choice.dx;
+        const ny = this.y + choice.dy;
+        if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH) {
+          const ts = getTileState(nx, ny);
+          if (ts !== TILE_TYPES.RIVER) {
+            this.x = nx;
+            this.y = ny;
+            this.direction = choice.dir;
+            this.moveTimer = GHOST_WANDER_MIN_MS + Math.random() * GHOST_WANDER_MAX_MS;
+          }
+        }
+      }
+    },
+
+    draw: function() {
+      let sprite = ghostMoveSprite;
+      let frame = this.animFrame;
+      let cols = GHOST_MOVE_COLS;
+
+      if (this.attacking && ghostAttackSprite) {
+        sprite = ghostAttackSprite;
+        frame = this.attackFrame;
+        cols = GHOST_ATTACK_COLS;
+      }
+
+      if (!sprite) return;
+
+      const row = getDirectionSpriteRow_Ghost(this.direction);
+      const fw = sprite.width / cols;
+      const fh = sprite.height / 4;
+
+      const destX = this.renderX * cellSize;
+      const destY = this.renderY * cellSize;
+
+      const drawH = cellSize * 1.3;
+      const drawW = drawH * (fw / fh);
+      const drawX = destX + (cellSize - drawW) / 2;
+      const drawY = destY + (cellSize - drawH); // anchor bottom
+
+      // Pulsing alpha for ghostly breathing effect
+      const pulse = Math.sin(millis() / GHOST_PULSE_SPEED) * GHOST_PULSE_DEPTH;
+      const alpha = Math.max(40, Math.min(220, GHOST_BASE_ALPHA + pulse));
+
+      // Blend mode is set once for all ghosts in the draw loop (game-core.js)
+      // to avoid per-ghost GPU pipeline flushes.
+      let tx = 0, ty = 0;
+      if (this.attacking && this.attackFrame < 2) { tx = random(-2, 2); ty = random(-2, 2); }
+
+      if (this.hurtTimer > 0) {
+        tint(255, 100, 100, alpha);
+      } else {
+        tint(160, 210, 255, alpha);
+      }
+      image(sprite, drawX + tx, drawY + ty, drawW, drawH,
+            frame * fw, row * fh, fw, fh);
+      noTint();
+
+      // Health bar (only when damaged)
+      if (this.health < this.maxHealth) {
+        const barW = cellSize * 0.8;
+        const barX = destX + (cellSize - barW) / 2;
+        const barY = drawY - 8;
+        fill(0, 150);
+        noStroke();
+        rect(barX, barY, barW, 4);
+        fill(100, 180, 255);
+        rect(barX, barY, barW * (this.health / this.maxHealth), 4);
+      }
+    },
+
+    getLight: function() {
+      return {
+        worldX: this.renderX * cellSize,
+        worldY: this.renderY * cellSize,
+        radius: GHOST_LIGHT_RADIUS,
+        color: [100, 180, 255],
+        intensity: GHOST_LIGHT_INTENSITY
+      };
+    }
+  };
+}
+
 // Fires an acid blob from (startX, startY) toward (targetX, targetY).
 function spawnAcidBlob(startX, startY, targetX, targetY, initialDir) {
     const angle = Math.atan2(targetY - startY, targetX - startX);
@@ -1091,8 +1424,8 @@ function updateEnemies() {
         continue;
     }
 
-    // Beetle is immune to crush damage due to its large size
-    if (e.type === 'beetle') continue;
+    // Beetle is immune to crush damage due to its large size; ghost phases through terrain
+    if (e.type === 'beetle' || e.type === 'ghost') continue;
 
     const tx = Math.floor(e.x + 0.5);
     const ty = Math.floor(e.y + 0.5);
