@@ -11,6 +11,8 @@ function getDifficultyLabel(value) {
 
 // === Settings UI / Builders ===
 function showSettingsMenu() {
+  hideCategoryButtons();
+  hideBottomButtons();
   clearSubSettings();
   ensureSettingsMenuRoot();
 
@@ -79,12 +81,14 @@ function showSettingsMenu() {
 }
 
 function hideCategoryButtons() {
-  categoryBackgrounds.forEach(e => e && e.hide());
-  categoryButtons.forEach(e => e && e.hide());
+  categoryBackgrounds.forEach(e => e && e.remove());
+  categoryButtons.forEach(e => e && e.remove());
+  categoryBackgrounds = [];
+  categoryButtons = [];
 }
 
 function hideBottomButtons() {
-  [saveBackground, btnSave, backMenuBackground, btnBackMenu].forEach(e => e && e.hide());
+  [saveBackground, btnSave, backMenuBackground, btnBackMenu].forEach(e => e && e.remove());
 }
 
 function showSubSettings(label) {
@@ -297,6 +301,7 @@ function createSettingsContext(layout) {
 const CATEGORY_BUILDERS = {
   Audio: buildAudioSettings,
   Gameplay: buildGameplaySettings,
+  Graphics: buildGraphicsSettings,
   Controls: buildControlsSettings,
   Accessibility: buildAccessibilitySettings,
   Language: buildLanguageSettings
@@ -329,6 +334,10 @@ function buildGameplaySettings(ctx) {
         showHUD = v;
         saveAllSettings();
     })
+    .addCheckboxRow("Show FPS", showFps, v => {
+        showFps = v;
+        saveAllSettings();
+    })
     .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
       value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
       onChange: (val) => {
@@ -337,6 +346,25 @@ function buildGameplaySettings(ctx) {
         saveAllSettings();
       }
     });
+}
+
+function buildGraphicsSettings(ctx) {
+  const fpsLabels = ["30", "60", "90", "120", "144", "165", "200", "350", "Uncapped"];
+  const currentFpsLabel = targetFps === 999 ? "Uncapped" : String(targetFps);
+
+  ctx
+    .addSelectRow("Max FPS", fpsLabels, {
+      value: fpsLabels.includes(currentFpsLabel) ? currentFpsLabel : "Uncapped",
+      onChange: v => {
+        targetFps = (v === "Uncapped") ? 999 : Number(v);
+        saveAllSettings();
+        if (typeof applyFPS === 'function') applyFPS();
+      }
+    })
+    .addCheckboxRow("Show Stars", showStars, v => { showStars = v; saveAllSettings(); })
+    .addCheckboxRow("Screen Shake", screenShakeEnabled, v => { screenShakeEnabled = v; saveAllSettings(); })
+    .addCheckboxRow("Ambient Particles", showParticles, v => { showParticles = v; saveAllSettings(); })
+    .addCheckboxRow("Firefly Lighting", showFireflyLighting, v => { showFireflyLighting = v; saveAllSettings(); });
 }
 
 function buildControlsSettings(ctx) {
@@ -373,7 +401,7 @@ function buildControlsSettings(ctx) {
 }
 
 function buildAccessibilitySettings(ctx) {
-  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia"], {
+  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia", "Grayscale", "Sepia", "Invert", "High Contrast"], {
       value: colorModeSetting,
       onChange: (v) => {
           colorModeSetting = v;
