@@ -290,7 +290,10 @@ const WeatherSystem = {
     
     // Smooth upscaling for the shadow mask
     drawingContext.imageSmoothingEnabled = true;
-    drawingContext.drawImage(this.nativeMap, camX, camY, w, h);
+
+    // Draw darkness mask slightly larger than the screen to hide screen-shake edges or floating point map borders
+    const overscan = 100;
+    drawingContext.drawImage(this.nativeMap, camX - (overscan / 2), camY - (overscan / 2), w + overscan, h + overscan);
     
     // Draw stars OVER the darkness mask so they aren't masked out by the 90% opacity black
     if (showStars && this.currentColor[3] >= STAR_VISIBILITY_MIN_ALPHA) {
