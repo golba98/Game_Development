@@ -335,18 +335,14 @@ function drawMinimap() {
   }
 
   // Draw Coins on Minimap (Gold Dots)
-  if (typeof mapStates !== 'undefined' && mapStates && typeof TILE_TYPES !== 'undefined' && logicalW && logicalH) {
+  if (typeof activeCoins !== 'undefined' && activeCoins && logicalW && logicalH) {
     fill(255, 215, 0); // Gold
     stroke(0, 150);
     strokeWeight(1);
-    for (let i = 0; i < mapStates.length; i++) {
-        if (mapStates[i] === TILE_TYPES.COIN) {
-            const cx = i % logicalW;
-            const cy = Math.floor(i / logicalW);
-            const px = mmX + offX + (cx / logicalW * drawW);
-            const py = mmY + offY + (cy / logicalH * drawH);
-            circle(px, py, 3);
-        }
+    for (const coin of activeCoins) {
+        const px = mmX + offX + (coin.x / logicalW * drawW);
+        const py = mmY + offY + (coin.y / logicalH * drawH);
+        circle(px, py, 3);
     }
   }
 
@@ -677,18 +673,14 @@ function drawSprintMeter() {
 }
 
 function findNearestCoin(px, py) {
-    if (!mapStates || !logicalW || !logicalH) return null;
+    if (typeof activeCoins === 'undefined' || !activeCoins || activeCoins.length === 0) return null;
     let nearest = null;
     let minDist = Infinity;
-    for (let i = 0; i < mapStates.length; i++) {
-        if (mapStates[i] === TILE_TYPES.COIN) {
-            const cx = i % logicalW;
-            const cy = Math.floor(i / logicalW);
-            const d = Math.hypot(cx - px, cy - py);
-            if (d < minDist) {
-                minDist = d;
-                nearest = { x: cx, y: cy };
-            }
+    for (const coin of activeCoins) {
+        const d = Math.hypot(coin.x - px, coin.y - py);
+        if (d < minDist) {
+            minDist = d;
+            nearest = { x: coin.x, y: coin.y };
         }
     }
     return nearest;

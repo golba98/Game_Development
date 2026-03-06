@@ -158,6 +158,7 @@ function createMainMenu() {
 
 // === Visual Helpers ===
 function fadeTo(callback) {
+  fadeInProgress = true;
   let fadeOut = true;
   const step = () => {
     fadeAlpha += fadeOut ? 15 : -15;
@@ -166,7 +167,10 @@ function fadeTo(callback) {
       callback();
       fadeOut = false;
     }
-    if (fadeAlpha === 0) return;
+    if (fadeAlpha === 0) {
+      fadeInProgress = false;
+      return;
+    }
     setTimeout(step, 20);
   };
   step();

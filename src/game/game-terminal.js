@@ -234,12 +234,28 @@ function processTerminalCommand(cmd) {
         } else {
             log('ERROR: Unable to lock on. No boss signature found.', 'terminal-error');
         }
+    } else if (base === '/kill' && parts[1] === 'boss') {
+        const boss = enemies.find(e => e.type === 'beetle');
+        if (boss) {
+            spawnSplat(boss.x, boss.y, 'egg');
+            spawnDamageText('TERMINATED', boss.x, boss.y, [255, 80, 80]);
+            boss.health = 0;
+            log('SUCCESS: Boss Beetle neutralized. Threat eliminated.', 'terminal-success');
+        } else {
+            log('ERROR: No boss signature detected. Nothing to kill.', 'terminal-error');
+        }
     } else if (base === '/spawn' && parts[1] === 'boss') {
         const angle = Math.random() * TWO_PI;
         const ex = Math.floor(playerPosition.x + Math.cos(angle) * TERMINAL_SPAWN_DIST);
         const ey = Math.floor(playerPosition.y + Math.sin(angle) * TERMINAL_SPAWN_DIST);
         spawnEnemy('beetle', ex, ey);
         log(`CRITICAL: Boss Beetle signature forced into local grid at [${ex}, ${ey}].`, 'terminal-error');
+    } else if (base === '/spawn' && parts[1] === 'ghost') {
+        const angle = Math.random() * TWO_PI;
+        const ex = Math.floor(playerPosition.x + Math.cos(angle) * TERMINAL_SPAWN_DIST);
+        const ey = Math.floor(playerPosition.y + Math.sin(angle) * TERMINAL_SPAWN_DIST);
+        spawnEnemy('ghost', ex, ey);
+        log(`WARNING: Spectral anomaly materialized at [${ex}, ${ey}]. The veil thins...`, 'terminal-error');
     } else if (base === '/time') {
         if (typeof WeatherSystem === 'undefined') {
             log('ERROR: Weather system not active.', 'terminal-error');
@@ -247,11 +263,13 @@ function processTerminalCommand(cmd) {
             WeatherSystem.cycle = 0.30; // CYCLE_DAY_START
             WeatherSystem.calculateColor();
             if (WeatherSystem.lightMap) WeatherSystem.lightMap.clear();
+            despawnGhosts();
             log('SUCCESS: Temporal shift complete. Time set to DAY.', 'terminal-success');
         } else if (parts[1] === 'night') {
             WeatherSystem.cycle = 0.90; // CYCLE_NIGHT_START
             WeatherSystem.calculateColor();
-            log('SUCCESS: Temporal shift complete. Time set to NIGHT.', 'terminal-success');
+            spawnNightGhosts();
+            log('SUCCESS: Temporal shift complete. Time set to NIGHT. Ghosts emerge from the shadows...', 'terminal-success');
         } else {
             log('USAGE: /time [day|night]', 'terminal-log');
         }
@@ -292,7 +310,9 @@ function processTerminalCommand(cmd) {
         log('  <span style="color:#fff">/collect all</span>    - Collect all coins on the map.', '', true);
         log('  <span style="color:#fff">/scan boss</span>      - Check for active boss signatures.', '', true);
         log('  <span style="color:#fff">/locate boss</span>    - Get precise boss coordinates.', '', true);
+        log('  <span style="color:#fff">/kill boss</span>      - Instantly kill the boss beetle.', '', true);
         log('  <span style="color:#fff">/spawn boss</span>     - Force a boss beetle to spawn near you.', '', true);
+        log('  <span style="color:#fff">/spawn ghost</span>    - Force a ghost to spawn near you.', '', true);
         log('  <span style="color:#fff">/time [day|night]</span> - Change the time of day.', '', true);
         log('  <span style="color:#fff">/health [n]</span>     - Set max health to n.', '', true);
         log('  <span style="color:#fff">/tutorial reset</span> - Reset tutorial (shows on next reload).', '', true);

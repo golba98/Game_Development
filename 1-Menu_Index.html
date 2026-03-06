@@ -5,20 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Modern Game Menu</title>
 
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/addons/p5.sound.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/addons/p5.sound.min.js"></script>
 
 
-    <script src="src/shared/shared-constants.js"></script>
-    <script src="src/menu/menu-globals.js"></script>
-    <script src="src/menu/menu-audio.js"></script>
-    <script src="src/menu/menu-io.js"></script>
-    <script src="src/menu/menu-video.js"></script>
-    <script src="src/menu/menu-zoom.js"></script>
-    <script src="src/menu/menu-ui.js"></script>
-    <script src="src/menu/menu-terminal.js"></script>
-    <script src="src/menu/menu-settings.js"></script>
-    <script src="src/menu/menu-core.js"></script>
+    <script defer src="src/shared/shared-constants.js"></script>
+    <script defer src="src/menu/menu-globals.js"></script>
+    <script defer src="src/menu/menu-audio.js"></script>
+    <script defer src="src/menu/menu-io.js"></script>
+    <script defer src="src/menu/menu-video.js"></script>
+    <script defer src="src/menu/menu-zoom.js"></script>
+    <script defer src="src/menu/menu-ui.js"></script>
+    <script defer src="src/menu/menu-terminal.js"></script>
+    <script defer src="src/menu/menu-settings.js"></script>
+    <script defer src="src/menu/menu-core.js"></script>
 
 
     <style>
@@ -49,10 +49,35 @@
         position: absolute; 
         z-index: 10; 
       }
+      @font-face { 
+        font-family: 'PixelGameFont'; 
+        src: url('assets/3-GUI/font.ttf'); 
+        font-display: swap;
+      }
+      #gd-loading-overlay {
+        font-family: 'PixelGameFont', 'Courier New', monospace !important;
+        background-color: #000000 !important;
+        color: #ffcc00;
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        z-index: 2147483647; user-select: none; opacity: 1;
+      }
+      .gd-loading-message {
+        font-size: 40px; text-transform: uppercase; margin-bottom: 16px;
+        text-shadow: 2px 2px 0px #111; letter-spacing: 2px;
+      }
+      #gd-loading-content {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        transform-origin: center center; transition: transform 0.1s ease-out;
+      }
     </style>
   </head>
 
   <body>
-  
+    <div id="gd-loading-overlay">
+      <div id="gd-loading-content">
+        <div class="gd-loading-message">LOADING MENU...</div>
+      </div>
+    </div>
   </body>
 </html>

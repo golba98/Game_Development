@@ -401,12 +401,19 @@ function keyPressed() {
 }
 
 
-// ── Escape key handler (simple) ──
+// ── Escape key handler (Terminal-aware) ──
 try {
   window.addEventListener('keydown', (ev) => {
     if (ev && ev.key === 'Escape') {
       ev.preventDefault();
-      if (!ev.repeat) togglePauseMenuFromEscape();
+      ev.stopImmediatePropagation();
+      if (!ev.repeat) {
+          if (typeof isTerminalOpen !== 'undefined' && isTerminalOpen) {
+              if (typeof toggleTerminal === 'function') toggleTerminal();
+          } else {
+              togglePauseMenuFromEscape();
+          }
+      }
     }
   }, { capture: true });
 } catch (e) { /* ignore */ }

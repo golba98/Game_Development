@@ -657,10 +657,6 @@ function draw() {
   if (typeof WeatherSystem !== 'undefined') {
       const isNight = WeatherSystem.cycle > 0.8 || WeatherSystem.cycle < 0.2;
       WeatherSystem.drawAmbientParticles(smoothCamX, smoothCamY, isNight);
-      
-      const vW = Math.max(virtualW, logicalW * cellSize);
-      const vH = Math.max(virtualH, logicalH * cellSize);
-      WeatherSystem.drawOverlay(vW, vH, null, smoothCamX, smoothCamY);
   }
   // Night Ambience: Fireflies
   if (typeof WeatherSystem !== 'undefined' && (WeatherSystem.cycle < 0.3 || WeatherSystem.cycle > 0.7)) {
@@ -716,9 +712,9 @@ function draw() {
           }
       }
 
-      // Virtual screen size + overscan; round to prevent lightMap recreation from float drift
-      const vW = Math.ceil(virtualW || (width / gameScale)) + 20;
-      const vH = Math.ceil(virtualH || (height / gameScale)) + 20;
+      // Virtual screen size + overscan; ensure it covers the largest logical map bounding coordinates to avoid side-stripes
+      const vW = Math.ceil(Math.max(virtualW || (width / gameScale), logicalW * cellSize));
+      const vH = Math.ceil(Math.max(virtualH || (height / gameScale), logicalH * cellSize));
       WeatherSystem.drawOverlay(vW, vH, lights, drawCamX, drawCamY);
   }
 

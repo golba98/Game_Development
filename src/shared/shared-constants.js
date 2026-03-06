@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS = Object.freeze({
 const SETTINGS_CATEGORIES = Object.freeze([
   "Audio",
   "Gameplay",
+  "Graphics",
   "Controls",
   "Accessibility",
   "Language"

@@ -127,6 +127,9 @@ function setup() {
       } catch (e) {}
       try { startMenuMusicIfNeeded(); } catch (e) { console.warn('startMenuMusicIfNeeded failed', e); }
       try { enableMenuBackgroundVideo(); } catch (e) { console.warn('enableMenuBackgroundVideo failed', e); }
+      showingSettings = false;
+      activeCategory = null;
+      try { hideSettingsMenu(); } catch (e) {}
       showMainMenu();
       setTimeout(() => { try { window.focus(); } catch (e) {} }, 50);
 
@@ -223,7 +226,9 @@ function draw() {
   if (fadeAlpha > 0) {
     fill(0, fadeAlpha);
     rect(0, 0, width, height);
-    fadeAlpha = max(0, fadeAlpha - 10);
+    if (!fadeInProgress) {
+      fadeAlpha = max(0, fadeAlpha - 10);
+    }
   }
 
   // Draw FPS Overlay if enabled

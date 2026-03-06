@@ -39,32 +39,70 @@
         -ms-overflow-style: none;
         scrollbar-width: none;
       }
+      @font-face { 
+        font-family: 'PixelGameFont'; 
+        src: url('assets/3-GUI/font.ttf'); 
+        font-display: swap;
+      }
+      #gd-loading-overlay {
+        font-family: 'PixelGameFont', 'Courier New', monospace !important;
+        background-color: #000000 !important;
+        color: #ffcc00;
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        z-index: 2147483647; user-select: none; opacity: 1;
+      }
+      .gd-loading-message {
+        font-size: 40px; text-transform: uppercase; margin-bottom: 16px;
+        text-shadow: 2px 2px 0px #111; letter-spacing: 2px;
+      }
+      .gd-progress-container {
+        width: 220px; max-width: 60%; height: 16px; border: 1px solid #ffcc00;
+        background-color: #111; padding: 1px; margin-bottom: 4px;
+      }
+      .gd-progress-fill {
+        height: 100%; width: 0%; background-color: #ffcc00; transition: width 0.1s linear;
+      }
+      .gd-progress-text { font-size: 14px; color: #888; }
+      #gd-loading-content {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        transform-origin: center center; transition: transform 0.1s ease-out;
+      }
     </style>
   </head>
   <body>
+    <div id="gd-loading-overlay">
+      <div id="gd-loading-content">
+        <div class="gd-loading-message">LOADING MAP...</div>
+        <div class="gd-progress-container">
+          <div class="gd-progress-fill"></div>
+        </div>
+        <div class="gd-progress-text">0%</div>
+      </div>
+    </div>
     <div id="game-root" aria-live="polite" aria-busy="true"></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/addons/p5.sound.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/addons/p5.sound.min.js"></script>
 
-    <script src="src/shared/shared-constants.js"></script>
-    <script src="src/game/game-globals.js"></script>
-    <script src="src/game/game-assets.js"></script>
-    <script src="src/game/game-map.js"></script>
-    <script src="src/game/game-enemies.js"></script>
-    <script src="src/game/game-movement.js"></script>
-    <script src="src/game/game-hud.js"></script>
-    <script src="src/game/game-ui.js"></script>
-    <script src="src/game/game-ui-rpg.js"></script>
-    <script src="src/game/game-settings.js"></script>
-    <script src="src/game/game-io.js"></script>
-    <script src="src/game/game-terminal.js"></script>
-    <script src="src/game/game-tutorial.js"></script>
-    <script src="src/game/game-input.js"></script>
-    <script src="src/game/game-world.js"></script>
-    <script src="src/game/game-utils.js"></script>
-    <script src="src/game/game-weather.js"></script>
-    <script src="src/game/game-core.js"></script>
+    <script defer src="src/shared/shared-constants.js"></script>
+    <script defer src="src/game/game-globals.js"></script>
+    <script defer src="src/game/game-assets.js"></script>
+    <script defer src="src/game/game-map.js"></script>
+    <script defer src="src/game/game-enemies.js"></script>
+    <script defer src="src/game/game-movement.js"></script>
+    <script defer src="src/game/game-hud.js"></script>
+    <script defer src="src/game/game-ui.js"></script>
+    <script defer src="src/game/game-ui-rpg.js"></script>
+    <script defer src="src/game/game-settings.js"></script>
+    <script defer src="src/game/game-io.js"></script>
+    <script defer src="src/game/game-terminal.js"></script>
+    <script defer src="src/game/game-tutorial.js"></script>
+    <script defer src="src/game/game-input.js"></script>
+    <script defer src="src/game/game-world.js"></script>
+    <script defer src="src/game/game-utils.js"></script>
+    <script defer src="src/game/game-weather.js"></script>
+    <script defer src="src/game/game-core.js"></script>
 
     <script>
       (function () {

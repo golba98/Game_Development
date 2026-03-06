@@ -197,6 +197,10 @@ function handleItemInteraction(targetX, targetY) {
       playerScore += COIN_SCORE_VALUE;
       lastScoreChange = millis(); // Trigger UI pulse
       spawnDamageText(`+${COIN_SCORE_VALUE} GOLD`, targetX, targetY, [255, 255, 0]);
+      if (typeof activeCoins !== 'undefined' && activeCoins) {
+         const coinIdx = activeCoins.findIndex(c => c.x === targetX && c.y === targetY);
+         if (coinIdx !== -1) activeCoins.splice(coinIdx, 1);
+      }
       consumed = true;
       break;
   }
@@ -606,6 +610,9 @@ function _drawPlayerInternal() {
                     const lootRoll = Math.random();
                     if (lootRoll < CUT_COIN_CHANCE) {
                         mapStates[idx] = TILE_TYPES.COIN;
+                        if (typeof activeCoins !== 'undefined' && activeCoins) {
+                            activeCoins.push({ x: cutX, y: cutY });
+                        }
                     } else if (lootRoll < CUT_HEALTH_CHANCE) {
                         mapStates[idx] = TILE_TYPES.HEALTH;
                     }

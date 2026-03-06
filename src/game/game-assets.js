@@ -191,6 +191,38 @@ function preload() {
       (err) => { console.warn('[game] failed to load Eggsplosion.png', err); }
     );
 
+    trackLoadImage('ghost_move', 'assets/2-Characters/5-Enemies/GhostMove.png',
+      (img) => {
+        try {
+          const cols = 3, rows = 4, targetH = 64;
+          const targetW = Math.round(targetH * ((img.width / cols) / (img.height / rows)));
+          img.resize(targetW * cols, targetH * rows);
+          ghostMoveSprite = img;
+          verboseLog('[game] loaded + downscaled GhostMove.png safely');
+        } catch (e) {
+          ghostMoveSprite = img;
+          verboseLog('[game] loaded GhostMove.png (raw, downscale failed)', e);
+        }
+      },
+      (err) => { console.warn('[game] failed to load GhostMove.png', err); }
+    );
+
+    trackLoadImage('ghost_attack', 'assets/2-Characters/5-Enemies/GhostAttack.png',
+      (img) => {
+        try {
+          const cols = 3, rows = 4, targetH = 64;
+          const targetW = Math.round(targetH * ((img.width / cols) / (img.height / rows)));
+          img.resize(targetW * cols, targetH * rows);
+          ghostAttackSprite = img;
+          verboseLog('[game] loaded + downscaled GhostAttack.png safely');
+        } catch (e) {
+          ghostAttackSprite = img;
+          verboseLog('[game] loaded GhostAttack.png (raw, downscale failed)', e);
+        }
+      },
+      (err) => { console.warn('[game] failed to load GhostAttack.png', err); }
+    );
+
     trackLoadImage('powerup_sprite', 'assets/2-Characters/5-Enemies/EggCluster.png',
       (img) => { powerupSprite = img; verboseLog('[game] loaded EggCluster.png'); },
       (err) => { console.warn('[game] failed to load EggCluster.png', err); }

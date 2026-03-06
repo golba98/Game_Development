@@ -236,12 +236,14 @@ function generateMap_Part2() {
      }
 
      // --- Phase 6: Scatter Coins ---
+     activeCoins = [];
      for (let i = 0; i < COIN_SCATTER_COUNT; i++) {
         let cx = Math.floor(Math.random() * logicalW);
         let cy = Math.floor(Math.random() * logicalH);
         const idx = cy * logicalW + cx;
         if (mapStates[idx] === TILE_TYPES.GRASS) {
             mapStates[idx] = TILE_TYPES.COIN;
+            activeCoins.push({ x: cx, y: cy });
         }
      }
 

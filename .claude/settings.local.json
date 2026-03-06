@@ -12,7 +12,9 @@
       "Bash(cd \"C:\\\\Development\\\\1-JavaScript\\\\6-Game Development\" && python3 scripts/refactor_game.py)",
       "Bash(cd \"/c/Development/1-JavaScript/6-Game Development\" && python scripts/extract_modules.py)",
       "Bash(cd \"/c/Development/1-JavaScript/6-Game Development\" && python scripts/refactor_game.py)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(mv:*)"
     ]
   }
 }
