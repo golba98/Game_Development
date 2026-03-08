@@ -2,36 +2,37 @@
 // Extracted from 4-Game.js
 
 // --- Input Tuning Constants ---
-const COMBO_WINDOW_MS        = 800;  // ms within which successive attacks chain into a combo
-const ESC_TOGGLE_DEBOUNCE_MS = 300;  // ms minimum between ESC-triggered pause toggles
-const POTION_HEAL_AMOUNT     = 2;    // HP restored when consuming a potion from inventory
-const MOUSE_ATTACK_MIN_DIST  = 0.5;  // minimum tile distance from player for mouse-aim to override key direction
+const COMBO_WINDOW_MS = 800; // ms within which successive attacks chain into a combo
+const ESC_TOGGLE_DEBOUNCE_MS = 300; // ms minimum between ESC-triggered pause toggles
+const POTION_HEAL_AMOUNT = 2; // HP restored when consuming a potion from inventory
+const MOUSE_ATTACK_MIN_DIST = 0.5; // minimum tile distance from player for mouse-aim to override key direction
 
 // Initiates a player attack: consumes stamina, resolves direction, advances combo counter.
 function startPlayerAttack() {
   if (isAttacking || playerAttackCooldownTimer > 0 || isDashing) return;
 
   // Check stamina
-  if (typeof sprintRemainingMs === 'number') {
-      const maxDur = typeof playerMaxStamina !== 'undefined' ? playerMaxStamina * 30 : 3000;
-      const staminaCostMs = (PLAYER_ATTACK_STAMINA_COST / 100) * maxDur;
-      if (sprintRemainingMs < staminaCostMs) {
-          verboseLog('[game] Not enough stamina to attack');
-          return;
-      }
-      sprintRemainingMs -= staminaCostMs;
+  if (typeof sprintRemainingMs === "number") {
+    const maxDur =
+      typeof playerMaxStamina !== "undefined" ? playerMaxStamina * 30 : 3000;
+    const staminaCostMs = (PLAYER_ATTACK_STAMINA_COST / 100) * maxDur;
+    if (sprintRemainingMs < staminaCostMs) {
+      verboseLog("[game] Not enough stamina to attack");
+      return;
+    }
+    sprintRemainingMs -= staminaCostMs;
   }
 
   // Determine attack direction: held keys → mouse position → lastDirection
-  const keyLeft  = keyIsDown(playerKeybinds.moveLeft);
+  const keyLeft = keyIsDown(playerKeybinds.moveLeft);
   const keyRight = keyIsDown(playerKeybinds.moveRight);
-  const keyUp    = keyIsDown(playerKeybinds.moveUp);
-  const keyDown  = keyIsDown(playerKeybinds.moveDown);
+  const keyUp = keyIsDown(playerKeybinds.moveUp);
+  const keyDown = keyIsDown(playerKeybinds.moveDown);
 
   let attackDir = null;
   if (keyLeft || keyRight || keyUp || keyDown) {
     const dx = (keyRight ? 1 : 0) - (keyLeft ? 1 : 0);
-    const dy = (keyDown  ? 1 : 0) - (keyUp   ? 1 : 0);
+    const dy = (keyDown ? 1 : 0) - (keyUp ? 1 : 0);
     if (dx !== 0 || dy !== 0) attackDir = deltaToDirection(dx, dy);
   }
 
@@ -43,36 +44,47 @@ function startPlayerAttack() {
       const my = (mouseY / gameScale + camY) / cellSize;
       const dx = mx - playerPosition.x;
       const dy = my - playerPosition.y;
-      if (Math.abs(dx) > MOUSE_ATTACK_MIN_DIST || Math.abs(dy) > MOUSE_ATTACK_MIN_DIST) {
+      if (
+        Math.abs(dx) > MOUSE_ATTACK_MIN_DIST ||
+        Math.abs(dy) > MOUSE_ATTACK_MIN_DIST
+      ) {
         attackDir = deltaToDirection(dx, dy);
       }
-    } catch(e) {}
+    } catch (e) {}
   }
 
-  if (!attackDir) attackDir = lastDirection || 'S';
+  if (!attackDir) attackDir = lastDirection || "S";
 
   // Lock in direction so hit detection and animation are in sync
   lastDirection = attackDir;
-  if (attackDir.includes('W')) facing = 'left';
-  else if (attackDir.includes('E')) facing = 'right';
+  if (attackDir.includes("W")) facing = "left";
+  else if (attackDir.includes("E")) facing = "right";
 
   const now = millis();
   if (now - lastAttackTime < COMBO_WINDOW_MS) {
-      playerComboCount = (playerComboCount + 1) % 3;
+    playerComboCount = (playerComboCount + 1) % 3;
   } else {
-      playerComboCount = 0;
+    playerComboCount = 0;
   }
   lastAttackTime = now;
 
-  verboseLog('[game] startPlayerAttack triggered. Combo=', playerComboCount, 'Dir=', lastDirection);
+  verboseLog(
+    "[game] startPlayerAttack triggered. Combo=",
+    playerComboCount,
+    "Dir=",
+    lastDirection,
+  );
 
   // Debug check for assets
-  const dir = lastDirection || 'S';
+  const dir = lastDirection || "S";
   const sheet = attackSheets[dir];
-  if (!sheet && dir !== 'E') {
-      console.warn('[game] Missing attack sheet for', dir, attackSheets);
-  } else if (dir === 'E' && !attackSheets['W']) {
-      console.warn('[game] Missing attack sheet for E (fallback W) in', attackSheets);
+  if (!sheet && dir !== "E") {
+    console.warn("[game] Missing attack sheet for", dir, attackSheets);
+  } else if (dir === "E" && !attackSheets["W"]) {
+    console.warn(
+      "[game] Missing attack sheet for E (fallback W) in",
+      attackSheets,
+    );
   }
 
   isAttacking = true;
@@ -86,24 +98,34 @@ function startPlayerAttack() {
 // Handles mouse clicks: focuses window, guards against DOM UI, triggers left-click attack.
 function mousePressed() {
   // Ensure keyboard focus is on this window for WASD input
-  try { window.focus(); } catch (e) {}
+  try {
+    window.focus();
+  } catch (e) {}
 
   if (isTerminalOpen) return;
   if (isGameOver) return;
 
-  if (activeTutorial) { activeTutorial = null; return; }
+  if (activeTutorial) {
+    activeTutorial = null;
+    return;
+  }
 
   // Ignore clicks if interacting with DOM UI
   try {
-    if (typeof event !== 'undefined' && event.target) {
-        const el = event.target;
-        if (el.tagName === 'BUTTON' || el.closest('button') || el.closest('.gd-settings-overlay')) return;
+    if (typeof event !== "undefined" && event.target) {
+      const el = event.target;
+      if (
+        el.tagName === "BUTTON" ||
+        el.closest("button") ||
+        el.closest(".gd-settings-overlay")
+      )
+        return;
     }
-  } catch(e) {}
+  } catch (e) {}
 
   try {
     if (mouseButton === LEFT) {
-        startPlayerAttack();
+      startPlayerAttack();
     }
   } catch (e) {}
 }
@@ -115,10 +137,16 @@ function togglePauseMenuFromEscape() {
   _lastEscToggleAt = now;
 
   try {
-    try { if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize(); } catch(e) {}
-    try { if (typeof persistSavedSettings === 'function') persistSavedSettings(true); } catch(e) {}
+    try {
+      if (typeof applyCurrentTextSize === "function") applyCurrentTextSize();
+    } catch (e) {}
+    try {
+      if (typeof persistSavedSettings === "function")
+        persistSavedSettings(true);
+    } catch (e) {}
     if (settingsOverlayDiv) {
-      if (settingsOverlayDiv.closeZoomPanel) settingsOverlayDiv.closeZoomPanel();
+      if (settingsOverlayDiv.closeZoomPanel)
+        settingsOverlayDiv.closeZoomPanel();
       else settingsOverlayDiv.remove();
       settingsOverlayDiv = null;
       openInGameMenu();
@@ -130,34 +158,38 @@ function togglePauseMenuFromEscape() {
     } else {
       openInGameMenu();
     }
-  } catch (e) { console.warn('[game] toggling inGameMenuVisible failed', e); }
+  } catch (e) {
+    console.warn("[game] toggling inGameMenuVisible failed", e);
+  }
 }
 
 // Routes keyboard shortcuts: terminal toggle, jump, map regen, asset toggle, inventory use.
 function keyPressed() {
   if (key === "'" && keyIsDown(CONTROL)) {
-      toggleTerminal();
-      return false;
+    toggleTerminal();
+    return false;
   }
   if (isTerminalOpen) return; // Disable other inputs while terminal is open
 
-  if (activeTutorial) { activeTutorial = null; return false; }
+  if (activeTutorial) {
+    activeTutorial = null;
+    return false;
+  }
 
   if (isGameOver) return;
   if (keyCode === playerKeybinds.jump && !isJumping && !isMoving) {
-
     isJumping = true;
     jumpFrame = 0;
     jumpTimer = 0;
 
     // Move forward one tile in the jump direction if possible
     try {
-      const keyLeft  = keyIsDown(playerKeybinds.moveLeft);
+      const keyLeft = keyIsDown(playerKeybinds.moveLeft);
       const keyRight = keyIsDown(playerKeybinds.moveRight);
-      const keyUp    = keyIsDown(playerKeybinds.moveUp);
-      const keyDown  = keyIsDown(playerKeybinds.moveDown);
+      const keyUp = keyIsDown(playerKeybinds.moveUp);
+      const keyDown = keyIsDown(playerKeybinds.moveDown);
       const dx = (keyRight ? 1 : 0) - (keyLeft ? 1 : 0);
-      const dy = (keyDown  ? 1 : 0) - (keyUp   ? 1 : 0);
+      const dy = (keyDown ? 1 : 0) - (keyUp ? 1 : 0);
 
       if (dx !== 0 || dy !== 0) {
         const dir = deltaToDirection(dx, dy);
@@ -184,214 +216,303 @@ function keyPressed() {
           }
         }
       }
-    } catch (e) { console.warn('[game] jump-forward movement failed', e); }
+    } catch (e) {
+      console.warn("[game] jump-forward movement failed", e);
+    }
     return;
   }
-  if (key === 'm' || key === 'M') {
-      showMinimap = !showMinimap;
-      return;
+  if (key === "m" || key === "M") {
+    showMinimap = !showMinimap;
+    return;
   }
 
-  if (key === 'f' || key === 'F') {
+  if (key === "f" || key === "F") {
     fullscreen(!fullscreen());
     return;
   }
 
-  if (key === 't' || key === 'T') {
+  if (key === "t" || key === "T") {
     try {
       toggleCustomAssetsRuntime();
-      try { createMapImage(); redraw(); } catch (e) { console.warn('[game] createMapImage failed after custom asset toggle', e); }
-    } catch (e) { console.warn('[game] error toggling custom assets', e); }
-    return;
-  }
-
-  if (key === 'p' || key === 'P') {
-    try {
-      verboseLog('[game] key P pressed — generating new map (previous autosave will be archived)');
-      nextGenerateIsManual = true;
-      generateMap();
+      try {
+        createMapImage();
+        redraw();
+      } catch (e) {
+        console.warn(
+          "[game] createMapImage failed after custom asset toggle",
+          e,
+        );
+      }
     } catch (e) {
-      console.warn('[game] generateMap() failed from key press', e);
+      console.warn("[game] error toggling custom assets", e);
     }
     return;
   }
 
-  if (key === 'i' || key === 'I') {
+  if (key === "i" || key === "I") {
     try {
-      if (typeof openCharacterMenu === 'function') {
+      if (typeof openCharacterMenu === "function") {
         openCharacterMenu();
       }
-    } catch (e) { console.warn('Failed to open character menu', e); }
+    } catch (e) {
+      console.warn("Failed to open character menu", e);
+    }
     return;
   }
 
-  if (key === 'o' || key === 'O') {
+  if (key === "o" || key === "O") {
     try {
-      verboseLog('[game] debug key O pressed — forcing inGameMenuVisible = true');
+      verboseLog(
+        "[game] debug key O pressed — forcing inGameMenuVisible = true",
+      );
       inGameMenuVisible = true;
-    } catch (e) { console.warn('[game] debug O failed', e); }
+    } catch (e) {
+      console.warn("[game] debug O failed", e);
+    }
     return;
   }
 
   // --- Inventory Usage ---
-  if (key === '1') {
-      if (playerInventory && playerInventory['potion'] > 0) {
-          if (playerHealth < maxHealth) {
-              playerInventory['potion']--;
-              playerHealth = Math.min(maxHealth, playerHealth + POTION_HEAL_AMOUNT);
-              spawnDamageText(`+${POTION_HEAL_AMOUNT} HP`, playerPosition.x, playerPosition.y, [0, 255, 0]);
-              try { playClickSFX(); } catch(e) {}
-          } else {
-              spawnDamageText(t('full_hp'), playerPosition.x, playerPosition.y, [200, 200, 200]);
-          }
-      }
-      return;
-  }
-  if (key === '2') {
-      if (playerInventory && playerInventory['speed'] > 0) {
-          playerInventory['speed']--;
-          if (typeof sprintRemainingMs === 'number') {
-             const maxDur = typeof playerMaxStamina !== 'undefined' ? playerMaxStamina * 30 : 3000;
-             sprintRemainingMs = maxDur;
-             sprintActive = true;
-          }
-          spawnDamageText(t('speed_up'), playerPosition.x, playerPosition.y, [255, 215, 0]);
-          try { playClickSFX(); } catch(e) {}
-      }
-      return;
-  }
-  
-  // --- Skills ---
-  if (key === 'q' || key === 'Q') {
-      if (playerMana >= 30) {
-          playerMana -= 30;
-          lastManaChange = typeof millis === 'function' ? millis() : Date.now();
-          verboseLog('[game] Cast AoE Spin Attack!');
-          
-          screenShakeTimer = 300;
-          screenShakeAmount = 6;
-          
-          let hitCount = 0;
-          for (let i = enemies.length - 1; i >= 0; i--) {
-              const e = enemies[i];
-              if (!e) continue;
-              const d = typeof dist === 'function' ? dist(playerPosition.x, playerPosition.y, e.x, e.y) : Math.hypot(e.x - playerPosition.x, e.y - playerPosition.y);
-              if (d <= 3.5) {
-                  const dmg = playerBaseDamage * 2;
-                  e.health = (e.health || 1) - dmg;
-                  spawnDamageText(`-${dmg}`, e.x, e.y, [255, 100, 255]);
-                  e.hurtTimer = 300;
-                  
-                  const angle = Math.atan2(e.y - playerPosition.y, e.x - playerPosition.x);
-                  e.x += Math.cos(angle) * 1.5;
-                  e.y += Math.sin(angle) * 1.5;
-                  
-                  if (e.health <= 0) {
-                      spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
-                      const xpGain = e.xpReward || 10;
-                      playerXP += xpGain;
-                      spawnDamageText(`+${xpGain} XP`, e.x, e.y - 1.5, [150, 200, 255]);
-                      
-                      while (playerXP >= xpToNextLevel) {
-                          playerXP -= xpToNextLevel;
-                          playerLevel++;
-                          statPoints++;
-                          xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
-                          spawnDamageText("LEVEL UP!", playerPosition.x, playerPosition.y - 2, [255, 215, 0]);
-                      }
-                      enemies.splice(i, 1);
-                  }
-                  hitCount++;
-              }
-          }
-          if (hitCount > 0) {
-              spawnDamageText(`SPIN HIT: ${hitCount}!`, playerPosition.x, playerPosition.y - 1, [255, 50, 255]);
-          } else {
-              spawnDamageText("SWOOSH", playerPosition.x, playerPosition.y - 1, [150, 150, 150]);
-          }
+  if (key === "1") {
+    if (playerInventory && playerInventory["potion"] > 0) {
+      if (playerHealth < maxHealth) {
+        playerInventory["potion"]--;
+        playerHealth = Math.min(maxHealth, playerHealth + POTION_HEAL_AMOUNT);
+        spawnDamageText(
+          `+${POTION_HEAL_AMOUNT} HP`,
+          playerPosition.x,
+          playerPosition.y,
+          [0, 255, 0],
+        );
+        try {
+          playClickSFX();
+        } catch (e) {}
       } else {
-          spawnDamageText("Need Mana!", playerPosition.x, playerPosition.y - 1, [50, 100, 255]);
+        spawnDamageText(
+          t("full_hp"),
+          playerPosition.x,
+          playerPosition.y,
+          [200, 200, 200],
+        );
       }
-      return;
+    }
+    return;
+  }
+  if (key === "2") {
+    if (playerInventory && playerInventory["speed"] > 0) {
+      playerInventory["speed"]--;
+      if (typeof sprintRemainingMs === "number") {
+        const maxDur =
+          typeof playerMaxStamina !== "undefined"
+            ? playerMaxStamina * 30
+            : 3000;
+        sprintRemainingMs = maxDur;
+        sprintActive = true;
+      }
+      spawnDamageText(
+        t("speed_up"),
+        playerPosition.x,
+        playerPosition.y,
+        [255, 215, 0],
+      );
+      try {
+        playClickSFX();
+      } catch (e) {}
+    }
+    return;
   }
 
-  if (key === 'e' || key === 'E') {
-      if (playerMana >= 20) {
-          playerMana -= 20;
-          lastManaChange = typeof millis === 'function' ? millis() : Date.now();
-          verboseLog('[game] Cast Ranged Projectile!');
-          
-          const dir = lastDirection || 'S';
-          const pd = directionToDelta(dir);
-          const startX = playerPosition.x;
-          const startY = playerPosition.y;
-          const speed = 0.25;
-          
-          if (!window.projectiles) window.projectiles = []; // Ensure globals reference
-          projectiles.push({
-             x: startX,
-             y: startY,
-             vx: pd.dx * speed,
-             vy: pd.dy * speed,
-             life: 60,
-             update: function() {
-                 this.x += this.vx;
-                 this.y += this.vy;
-                 this.life--;
-                 if (this.life <= 0) return true;
-                 if (this.x < 0 || this.x >= logicalW || this.y < 0 || this.y >= logicalH) return true;
-                 if (isSolid(getTileState(Math.floor(this.x), Math.floor(this.y)))) {
-                     // Hit wall
-                     return true;
-                 }
-                 
-                 for (let i = enemies.length - 1; i >= 0; i--) {
-                     const e = enemies[i];
-                     if (!e) continue;
-                     const d = typeof dist === 'function' ? dist(this.x, this.y, e.x, e.y) : Math.hypot(e.x - this.x, e.y - this.y);
-                     if (d <= 0.8) {
-                         const dmg = playerBaseDamage;
-                         e.health = (e.health || 1) - dmg;
-                         spawnDamageText(`-${dmg}`, e.x, e.y, [200, 200, 255]);
-                         e.hurtTimer = 200;
-                         if (e.health <= 0) {
-                             spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
-                             const xpGain = e.xpReward || 10;
-                             playerXP += xpGain;
-                             spawnDamageText(`+${xpGain} XP`, e.x, e.y - 1.5, [150, 200, 255]);
-                             while (playerXP >= xpToNextLevel) {
-                                 playerXP -= xpToNextLevel;
-                                 playerLevel++;
-                                 statPoints++;
-                                 xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
-                                 spawnDamageText("LEVEL UP!", playerPosition.x, playerPosition.y - 2, [255, 215, 0]);
-                             }
-                             enemies.splice(i, 1);
-                         }
-                         return true; // remove projectile
-                     }
-                 }
-                 return false;
-             },
-             draw: function() {
-                 push();
-                 fill(100, 200, 255);
-                 stroke(255);
-                 strokeWeight(1.5);
-                 circle(this.x * cellSize + cellSize/2, this.y * cellSize + cellSize/2, 10);
-                 
-                 // Trail effect (simple)
-                 fill(100, 200, 255, 100);
-                 noStroke();
-                 circle((this.x - this.vx*2) * cellSize + cellSize/2, (this.y - this.vy*2) * cellSize + cellSize/2, 6);
-                 pop();
-             }
-          });
-          try { playClickSFX(); } catch(e){} // generic sound
-      } else {
-          spawnDamageText("Need Mana!", playerPosition.x, playerPosition.y - 1, [50, 100, 255]);
+  // --- Skills ---
+  if (key === "q" || key === "Q") {
+    if (playerMana >= 30) {
+      playerMana -= 30;
+      lastManaChange = typeof millis === "function" ? millis() : Date.now();
+      verboseLog("[game] Cast AoE Spin Attack!");
+
+      screenShakeTimer = 300;
+      screenShakeAmount = 6;
+
+      let hitCount = 0;
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (!e) continue;
+        const d =
+          typeof dist === "function"
+            ? dist(playerPosition.x, playerPosition.y, e.x, e.y)
+            : Math.hypot(e.x - playerPosition.x, e.y - playerPosition.y);
+        if (d <= 3.5) {
+          const dmg = playerBaseDamage * 2;
+          e.health = (e.health || 1) - dmg;
+          spawnDamageText(`-${dmg}`, e.x, e.y, [255, 100, 255]);
+          e.hurtTimer = 300;
+
+          const angle = Math.atan2(
+            e.y - playerPosition.y,
+            e.x - playerPosition.x,
+          );
+          e.x += Math.cos(angle) * 1.5;
+          e.y += Math.sin(angle) * 1.5;
+
+          if (e.health <= 0) {
+            spawnSplat(e.x, e.y, e.type === "mantis" ? "acid" : "egg");
+            const xpGain = e.xpReward || 10;
+            playerXP += xpGain;
+            spawnDamageText(`+${xpGain} XP`, e.x, e.y - 1.5, [150, 200, 255]);
+
+            while (playerXP >= xpToNextLevel) {
+              playerXP -= xpToNextLevel;
+              playerLevel++;
+              statPoints++;
+              xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
+              spawnDamageText(
+                "LEVEL UP!",
+                playerPosition.x,
+                playerPosition.y - 2,
+                [255, 215, 0],
+              );
+            }
+            enemies.splice(i, 1);
+          }
+          hitCount++;
+        }
       }
-      return;
+      if (hitCount > 0) {
+        spawnDamageText(
+          `SPIN HIT: ${hitCount}!`,
+          playerPosition.x,
+          playerPosition.y - 1,
+          [255, 50, 255],
+        );
+      } else {
+        spawnDamageText(
+          "SWOOSH",
+          playerPosition.x,
+          playerPosition.y - 1,
+          [150, 150, 150],
+        );
+      }
+    } else {
+      spawnDamageText(
+        "Need Mana!",
+        playerPosition.x,
+        playerPosition.y - 1,
+        [50, 100, 255],
+      );
+    }
+    return;
+  }
+
+  if (key === "e" || key === "E") {
+    if (playerMana >= 20) {
+      playerMana -= 20;
+      lastManaChange = typeof millis === "function" ? millis() : Date.now();
+      verboseLog("[game] Cast Ranged Projectile!");
+
+      const dir = lastDirection || "S";
+      const pd = directionToDelta(dir);
+      const startX = playerPosition.x;
+      const startY = playerPosition.y;
+      const speed = 0.25;
+
+      if (!window.projectiles) window.projectiles = []; // Ensure globals reference
+      projectiles.push({
+        x: startX,
+        y: startY,
+        vx: pd.dx * speed,
+        vy: pd.dy * speed,
+        life: 60,
+        update: function () {
+          this.x += this.vx;
+          this.y += this.vy;
+          this.life--;
+          if (this.life <= 0) return true;
+          if (
+            this.x < 0 ||
+            this.x >= logicalW ||
+            this.y < 0 ||
+            this.y >= logicalH
+          )
+            return true;
+          if (isSolid(getTileState(Math.floor(this.x), Math.floor(this.y)))) {
+            // Hit wall
+            return true;
+          }
+
+          for (let i = enemies.length - 1; i >= 0; i--) {
+            const e = enemies[i];
+            if (!e) continue;
+            const d =
+              typeof dist === "function"
+                ? dist(this.x, this.y, e.x, e.y)
+                : Math.hypot(e.x - this.x, e.y - this.y);
+            if (d <= 0.8) {
+              const dmg = playerBaseDamage;
+              e.health = (e.health || 1) - dmg;
+              spawnDamageText(`-${dmg}`, e.x, e.y, [200, 200, 255]);
+              e.hurtTimer = 200;
+              if (e.health <= 0) {
+                spawnSplat(e.x, e.y, e.type === "mantis" ? "acid" : "egg");
+                const xpGain = e.xpReward || 10;
+                playerXP += xpGain;
+                spawnDamageText(
+                  `+${xpGain} XP`,
+                  e.x,
+                  e.y - 1.5,
+                  [150, 200, 255],
+                );
+                while (playerXP >= xpToNextLevel) {
+                  playerXP -= xpToNextLevel;
+                  playerLevel++;
+                  statPoints++;
+                  xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
+                  spawnDamageText(
+                    "LEVEL UP!",
+                    playerPosition.x,
+                    playerPosition.y - 2,
+                    [255, 215, 0],
+                  );
+                }
+                enemies.splice(i, 1);
+              }
+              return true; // remove projectile
+            }
+          }
+          return false;
+        },
+        draw: function () {
+          push();
+          fill(100, 200, 255);
+          stroke(255);
+          strokeWeight(1.5);
+          circle(
+            this.x * cellSize + cellSize / 2,
+            this.y * cellSize + cellSize / 2,
+            10,
+          );
+
+          // Trail effect (simple)
+          fill(100, 200, 255, 100);
+          noStroke();
+          circle(
+            (this.x - this.vx * 2) * cellSize + cellSize / 2,
+            (this.y - this.vy * 2) * cellSize + cellSize / 2,
+            6,
+          );
+          pop();
+        },
+      });
+      try {
+        playClickSFX();
+      } catch (e) {} // generic sound
+    } else {
+      spawnDamageText(
+        "Need Mana!",
+        playerPosition.x,
+        playerPosition.y - 1,
+        [50, 100, 255],
+      );
+    }
+    return;
   }
 
   if (keyCode === playerKeybinds.cut) {
@@ -400,35 +521,36 @@ function keyPressed() {
   }
 }
 
-
 // ── Escape key handler (Terminal-aware) ──
 try {
-  window.addEventListener('keydown', (ev) => {
-    if (ev && ev.key === 'Escape') {
-      ev.preventDefault();
-      ev.stopImmediatePropagation();
-      if (!ev.repeat) {
-          if (typeof isTerminalOpen !== 'undefined' && isTerminalOpen) {
-              if (typeof toggleTerminal === 'function') toggleTerminal();
+  window.addEventListener(
+    "keydown",
+    (ev) => {
+      if (ev && ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        if (!ev.repeat) {
+          if (typeof isTerminalOpen !== "undefined" && isTerminalOpen) {
+            if (typeof toggleTerminal === "function") toggleTerminal();
           } else {
-              togglePauseMenuFromEscape();
+            togglePauseMenuFromEscape();
           }
+        }
       }
-    }
-  }, { capture: true });
-} catch (e) { /* ignore */ }
-
+    },
+    { capture: true },
+  );
+} catch (e) {
+  /* ignore */
+}
 
 // ── WASD + P key handler ──
-window.addEventListener('keydown', (ev) => {
+window.addEventListener("keydown", (ev) => {
   if (isGameOver || isTerminalOpen) return;
-  const k = ev.key ? ev.key.toUpperCase() : '';
-  if (k === 'W' || k === 'A' || k === 'S' || k === 'D') {
-    try { tryMoveDirection(k); } catch (e) {}
-  }
-  if (k === 'P') {
-    verboseLog('[game] P pressed - Starting Phase 1');
-    genPhase = 1;
-    return;
+  const k = ev.key ? ev.key.toUpperCase() : "";
+  if (k === "W" || k === "A" || k === "S" || k === "D") {
+    try {
+      tryMoveDirection(k);
+    } catch (e) {}
   }
 });

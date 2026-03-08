@@ -1,31 +1,31 @@
-
 // --- Day/Night Cycle Phase Boundaries (0–1 fraction of full cycle) ---
-const CYCLE_NIGHT_END    = 0.20; // Night ends; dawn begins
-const CYCLE_DAWN_MID     = 0.25; // Dawn transitions from night→dawn to dawn→day
-const CYCLE_DAY_START    = 0.30; // Day begins (dawn ends)
-const CYCLE_DAY_END      = 0.60; // Day ends; dusk begins
-const CYCLE_DUSK_MID     = 0.75; // Dusk transitions from day→dusk to dusk→night
-const CYCLE_NIGHT_START  = 0.90; // Night resumes (dusk ends)
+const CYCLE_NIGHT_END = 0.2; // Night ends; dawn begins
+const CYCLE_DAWN_MID = 0.25; // Dawn transitions from night→dawn to dawn→day
+const CYCLE_DAY_START = 0.3; // Day begins (dawn ends)
+const CYCLE_DAY_END = 0.6; // Day ends; dusk begins
+const CYCLE_DUSK_MID = 0.75; // Dusk transitions from day→dusk to dusk→night
+const CYCLE_NIGHT_START = 0.9; // Night resumes (dusk ends)
 
 // --- Star Rendering Constants ---
-const STAR_VISIBILITY_MIN_ALPHA = 60;   // Overlay alpha below which stars are hidden
-const STAR_VISIBILITY_SCALE     = 80;   // Alpha range over which stars fade in
-const STAR_GLOW_ALPHA_FACTOR    = 0.25; // Halo opacity as fraction of core alpha
-const STAR_GLOW_MIN_SIZE        = 3;    // Minimum star size that can have a glow halo
-const STAR_GLOW_PROB            = 0.6;  // Probability a large star gets a glow halo
-const STAR_SEED                 = 54321;
+const STAR_VISIBILITY_MIN_ALPHA = 60; // Overlay alpha below which stars are hidden
+const STAR_VISIBILITY_SCALE = 80; // Alpha range over which stars fade in
+const STAR_GLOW_ALPHA_FACTOR = 0.25; // Halo opacity as fraction of core alpha
+const STAR_GLOW_MIN_SIZE = 3; // Minimum star size that can have a glow halo
+const STAR_GLOW_PROB = 0.6; // Probability a large star gets a glow halo
+const STAR_SEED = 54321;
 
 const WeatherSystem = {
   // Config
   dayDurationSeconds: 120, // Reduced from 300 to 120 for faster cycle
-  cycle: CYCLE_DAY_START,  // Start at full day to avoid initial "orange" filter
+  cycle: CYCLE_DAY_START, // Start at full day to avoid initial "orange" filter
 
   // Colors (r, g, b, alpha) — standard dark-to-light transition
   colors: {
-    night: [5, 5, 12, 230],     // Deep, almost black night (high contrast with torch)
-    dawn: [200, 220, 255, 40],  // Soft blue/white dawn (removed orange)
-    day: [0, 0, 0, 0],          // Clear (no overlay)
-    dusk: [15, 15, 40, 140]     // Deep blue dusk
+    night: [5, 5, 12, 230], // Deep, almost black night (high contrast with torch)
+    dawn: [200, 220, 255, 40], // Soft blue/white dawn (removed orange)
+    day: [0, 0, 0, 0], // Clear (no overlay)
+    sunset: [30, 12, 8, 60], // Subtle warm evening tint
+    dusk: [15, 15, 40, 140], // Deep blue dusk
   },
 
   currentColor: [0, 0, 0, 0],
@@ -36,27 +36,27 @@ const WeatherSystem = {
   starsGenerated: false,
   STAR_COUNT: 500,
   STAR_FIELD_SIZE: 4000,
-  PARALLAX_FACTOR: 1.0,  // Stars fixed to world coordinates (1:1 with camera)
-  STAR_DRIFT_SPEED: 0,   // No drift, perfectly static
+  PARALLAX_FACTOR: 1.0, // Stars fixed to world coordinates (1:1 with camera)
+  STAR_DRIFT_SPEED: 0, // No drift, perfectly static
   starTime: 0,
 
   particles: [],
 
   // Star color palette for natural variety
   STAR_COLORS: [
-    [255, 255, 255],   // Pure white
-    [255, 255, 255],   // Pure white (more common)
-    [200, 220, 255],   // Cool blue-white
-    [180, 200, 255],   // Blue
-    [255, 240, 220],   // Warm white
-    [255, 220, 180],   // Warm yellow-white
-    [255, 200, 200],   // Faint reddish
+    [255, 255, 255], // Pure white
+    [255, 255, 255], // Pure white (more common)
+    [200, 220, 255], // Cool blue-white
+    [180, 200, 255], // Blue
+    [255, 240, 220], // Warm white
+    [255, 220, 180], // Warm yellow-white
+    [255, 200, 200], // Faint reddish
   ],
 
   /** Park-Miller LCG: returns a deterministic PRNG seeded by `seed`. */
-  _seededRandom: function(seed) {
+  _seededRandom: function (seed) {
     let s = seed;
-    return function() {
+    return function () {
       // Multiplier 16807 (7^5), modulus 2147483647 (2^31 - 1, Mersenne prime)
       s = (s * 16807) % 2147483647;
       return (s - 1) / 2147483646;
@@ -64,7 +64,7 @@ const WeatherSystem = {
   },
 
   /** Populates `this.stars` with deterministically placed, sized, and coloured stars. */
-  generateStars: function() {
+  generateStars: function () {
     this.stars = [];
     const rng = this._seededRandom(STAR_SEED);
     const fieldSize = this.STAR_FIELD_SIZE;
@@ -83,14 +83,14 @@ const WeatherSystem = {
 
         // 55% small, 25% medium, 20% large
         const sizeRoll = rng();
-        const size = sizeRoll < 0.55 ? 2 : (sizeRoll < 0.80 ? 3 : 4);
+        const size = sizeRoll < 0.55 ? 2 : sizeRoll < 0.8 ? 3 : 4;
 
         // Multi-frequency twinkle for natural look
-        const twinkleSpeed1 = 1.0 + rng() * 2.5;  // Primary oscillation
-        const twinkleSpeed2 = 3.0 + rng() * 4.0;  // Secondary faster flicker
+        const twinkleSpeed1 = 1.0 + rng() * 2.5; // Primary oscillation
+        const twinkleSpeed2 = 3.0 + rng() * 4.0; // Secondary faster flicker
         const twinklePhase1 = rng() * Math.PI * 2;
         const twinklePhase2 = rng() * Math.PI * 2;
-        const twinkleDepth = 0.3 + rng() * 0.5;   // Dim range (0.3 = subtle, 0.8 = dramatic)
+        const twinkleDepth = 0.3 + rng() * 0.5; // Dim range (0.3 = subtle, 0.8 = dramatic)
 
         const colorIdx = Math.floor(rng() * this.STAR_COLORS.length);
         const color = this.STAR_COLORS[colorIdx];
@@ -98,10 +98,16 @@ const WeatherSystem = {
         const hasGlow = size >= STAR_GLOW_MIN_SIZE && rng() < STAR_GLOW_PROB;
 
         this.stars.push({
-          x, y, size, color, hasGlow,
-          twinkleSpeed1, twinkleSpeed2,
-          twinklePhase1, twinklePhase2,
-          twinkleDepth
+          x,
+          y,
+          size,
+          color,
+          hasGlow,
+          twinkleSpeed1,
+          twinkleSpeed2,
+          twinklePhase1,
+          twinklePhase2,
+          twinkleDepth,
         });
         count++;
       }
@@ -110,13 +116,16 @@ const WeatherSystem = {
   },
 
   /** Draws the star field onto the given 2D context, scaled by current darkness alpha. */
-  drawStars: function(ctx, w, h, darknessAlpha, camX, camY) {
+  drawStars: function (ctx, w, h, darknessAlpha, camX, camY) {
     if (darknessAlpha < STAR_VISIBILITY_MIN_ALPHA) return;
 
     if (!this.starsGenerated) this.generateStars();
 
     // Star visibility scales with darkness
-    const starOpacity = Math.min(1.0, (darknessAlpha - STAR_VISIBILITY_MIN_ALPHA) / STAR_VISIBILITY_SCALE);
+    const starOpacity = Math.min(
+      1.0,
+      (darknessAlpha - STAR_VISIBILITY_MIN_ALPHA) / STAR_VISIBILITY_SCALE,
+    );
     const time = this.starTime;
     const fieldSize = this.STAR_FIELD_SIZE;
 
@@ -127,14 +136,14 @@ const WeatherSystem = {
     const offsetY = (camY || 0) * this.PARALLAX_FACTOR + driftY;
 
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter'; // Additive blending so stars glow on darkness
+    ctx.globalCompositeOperation = "lighter"; // Additive blending so stars glow on darkness
 
     for (const star of this.stars) {
       // Shift star coordinates by parallax BEFORE modulo
       // Parallax makes the stars scroll Slower than the foreground
-      
-      const sx = ((star.x - offsetX) % fieldSize + fieldSize) % fieldSize;
-      const sy = ((star.y - offsetY) % fieldSize + fieldSize) % fieldSize;
+
+      const sx = (((star.x - offsetX) % fieldSize) + fieldSize) % fieldSize;
+      const sy = (((star.y - offsetY) % fieldSize) + fieldSize) % fieldSize;
 
       // If the wrapped coordinate is outside the actual viewport width/height, don't draw
       if (sx > w + 10 || sy > h + 10 || sx < -10 || sy < -10) continue;
@@ -142,7 +151,10 @@ const WeatherSystem = {
       // Multi-frequency twinkle
       const wave1 = Math.sin(time * star.twinkleSpeed1 + star.twinklePhase1);
       const wave2 = Math.sin(time * star.twinkleSpeed2 + star.twinklePhase2);
-      const twinkle = 1.0 - star.twinkleDepth * (0.6 * (0.5 + 0.5 * wave1) + 0.4 * (0.5 + 0.5 * wave2));
+      const twinkle =
+        1.0 -
+        star.twinkleDepth *
+          (0.6 * (0.5 + 0.5 * wave1) + 0.4 * (0.5 + 0.5 * wave2));
 
       const alpha = starOpacity * twinkle;
       const [r, g, b] = star.color;
@@ -162,7 +174,7 @@ const WeatherSystem = {
   },
 
   /** Advances the day/night cycle by `dt` ms and recalculates the overlay colour. */
-  update: function(dt) {
+  update: function (dt) {
     const increment = dt / 1000 / this.dayDurationSeconds;
     this.cycle = (this.cycle + increment) % 1.0;
     this.starTime += dt / 1000;
@@ -170,23 +182,58 @@ const WeatherSystem = {
   },
 
   /** Resets the cycle to the start of day and clears the light map. */
-  reset: function() {
+  reset: function () {
     this.cycle = CYCLE_DAY_START;
     this.starTime = 0;
     this.calculateColor();
     if (this.lightMap) this.lightMap.clear();
   },
 
+  /** Provide a smooth ease-in-out Sine interpolation algorithm for butter-smooth visual fading. */
+  easeInOutSine: function (t) {
+    return -(Math.cos(Math.PI * t) - 1) / 2;
+  },
+
   /**
-   * Maps the current cycle fraction to an RGBA overlay colour.
+   * Returns the player torch light radius based on the current cycle.
+   * During full day the radius is huge (effectively no visible circle).
+   * During dusk it smoothly shrinks. At night it is at its smallest.
+   * During dawn it smoothly grows back.
+   */
+  getLightRadius: function () {
+    const DAY_RADIUS = 900; // So large the circle edge is off-screen
+    const NIGHT_RADIUS = 350; // Tight torch glow
+    const t = this.cycle;
+
+    if (t < CYCLE_NIGHT_END) {
+      return NIGHT_RADIUS;
+    } else if (t < CYCLE_DAY_START) {
+      // Dawn: grow from night → day
+      let lerpT = (t - CYCLE_NIGHT_END) / (CYCLE_DAY_START - CYCLE_NIGHT_END);
+      lerpT = this.easeInOutSine(lerpT);
+      return NIGHT_RADIUS + (DAY_RADIUS - NIGHT_RADIUS) * lerpT;
+    } else if (t < CYCLE_DAY_END) {
+      return DAY_RADIUS;
+    } else if (t < CYCLE_NIGHT_START) {
+      // Dusk: shrink from day → night
+      let lerpT = (t - CYCLE_DAY_END) / (CYCLE_NIGHT_START - CYCLE_DAY_END);
+      lerpT = this.easeInOutSine(lerpT);
+      return DAY_RADIUS + (NIGHT_RADIUS - DAY_RADIUS) * lerpT;
+    } else {
+      return NIGHT_RADIUS;
+    }
+  },
+
+  /**
+   * Maps the current cycle fraction to an RGBA overlay colour natively.
    * Cycle phases:
    *   [0, NIGHT_END)       → night
    *   [NIGHT_END, DAY_START) → dawn (night→dawn→day crossfade)
    *   [DAY_START, DAY_END)   → day
-   *   [DAY_END, NIGHT_START) → dusk (day→dusk→night crossfade)
+   *   [DAY_END, NIGHT_START) → dusk (day→sunset→dusk→night crossfade)
    *   [NIGHT_START, 1)     → night
    */
-  calculateColor: function() {
+  calculateColor: function () {
     const t = this.cycle;
 
     if (t < CYCLE_NIGHT_END) {
@@ -195,23 +242,56 @@ const WeatherSystem = {
     } else if (t < CYCLE_DAY_START) {
       // Dawn crossfade: night → dawn → day
       if (t < CYCLE_DAWN_MID) {
-        const lerpT = (t - CYCLE_NIGHT_END) / (CYCLE_DAWN_MID - CYCLE_NIGHT_END);
-        this.currentColor = this.lerpColor(this.colors.night, this.colors.dawn, lerpT);
+        let lerpT = (t - CYCLE_NIGHT_END) / (CYCLE_DAWN_MID - CYCLE_NIGHT_END);
+        this.currentColor = this.lerpColor(
+          this.colors.night,
+          this.colors.dawn,
+          this.easeInOutSine(lerpT),
+        );
       } else {
-        const lerpT = (t - CYCLE_DAWN_MID) / (CYCLE_DAY_START - CYCLE_DAWN_MID);
-        this.currentColor = this.lerpColor(this.colors.dawn, this.colors.day, lerpT);
+        let lerpT = (t - CYCLE_DAWN_MID) / (CYCLE_DAY_START - CYCLE_DAWN_MID);
+        this.currentColor = this.lerpColor(
+          this.colors.dawn,
+          this.colors.day,
+          this.easeInOutSine(lerpT),
+        );
       }
     } else if (t < CYCLE_DAY_END) {
       // Full day
       this.currentColor = [...this.colors.day];
     } else if (t < CYCLE_NIGHT_START) {
-      // Dusk crossfade: day → dusk → night
-      if (t < CYCLE_DUSK_MID) {
-        const lerpT = (t - CYCLE_DAY_END) / (CYCLE_DUSK_MID - CYCLE_DAY_END);
-        this.currentColor = this.lerpColor(this.colors.day, this.colors.dusk, lerpT);
+      // Dusk crossfade: day → sunset → dusk → night
+
+      // We will slice the day->night region (0.60 to 0.90) into three equal segments
+      const segmentDur = (CYCLE_NIGHT_START - CYCLE_DAY_END) / 3;
+      const sunsetStart = CYCLE_DAY_END;
+      const duskStart = sunsetStart + segmentDur;
+      const nightStart = duskStart + segmentDur;
+
+      if (t < duskStart) {
+        // Segment 1: Day (clear) to Sunset (amber/pink)
+        let lerpT = (t - sunsetStart) / segmentDur;
+        this.currentColor = this.lerpColor(
+          this.colors.day,
+          this.colors.sunset,
+          this.easeInOutSine(lerpT),
+        );
+      } else if (t < nightStart) {
+        // Segment 2: Sunset to Dusk (Deep blue)
+        let lerpT = (t - duskStart) / segmentDur;
+        this.currentColor = this.lerpColor(
+          this.colors.sunset,
+          this.colors.dusk,
+          this.easeInOutSine(lerpT),
+        );
       } else {
-        const lerpT = (t - CYCLE_DUSK_MID) / (CYCLE_NIGHT_START - CYCLE_DUSK_MID);
-        this.currentColor = this.lerpColor(this.colors.dusk, this.colors.night, lerpT);
+        // Segment 3: Dusk to Night (Almost black)
+        let lerpT = (t - nightStart) / segmentDur;
+        this.currentColor = this.lerpColor(
+          this.colors.dusk,
+          this.colors.night,
+          this.easeInOutSine(lerpT),
+        );
       }
     } else {
       // Full night
@@ -219,13 +299,13 @@ const WeatherSystem = {
     }
   },
 
-  /** Linear interpolation between two RGBA colour arrays. */
-  lerpColor: function(c1, c2, t) {
+  /** Linear interpolation between two RGBA colour arrays based on smoothing factor 't' */
+  lerpColor: function (c1, c2, t) {
     return [
       c1[0] + (c2[0] - c1[0]) * t,
       c1[1] + (c2[1] - c1[1]) * t,
       c1[2] + (c2[2] - c1[2]) * t,
-      c1[3] + (c2[3] - c1[3]) * t
+      c1[3] + (c2[3] - c1[3]) * t,
     ];
   },
 
@@ -247,35 +327,39 @@ const WeatherSystem = {
     const ch = Math.ceil(h / DOWNSCALE);
 
     // Initialize or resize the native darkness map
-    if (!this.nativeMap || this.nativeMap.width !== cw || this.nativeMap.height !== ch) {
+    if (
+      !this.nativeMap ||
+      this.nativeMap.width !== cw ||
+      this.nativeMap.height !== ch
+    ) {
       if (this.nativeMap) this.nativeMap.width = this.nativeMap.height = 0; // Help GC
-      this.nativeMap = document.createElement('canvas');
+      this.nativeMap = document.createElement("canvas");
       this.nativeMap.width = cw;
       this.nativeMap.height = ch;
     }
 
-    const ctx = this.nativeMap.getContext('2d', { willReadFrequently: true });
+    const ctx = this.nativeMap.getContext("2d", { willReadFrequently: true });
 
     // 1. Fill entire screen with darkness
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalCompositeOperation = "source-over";
     ctx.fillStyle = `rgba(${this.currentColor[0]}, ${this.currentColor[1]}, ${this.currentColor[2]}, ${this.currentColor[3] / 255})`;
     ctx.fillRect(0, 0, cw, ch);
 
     // 2. Erase holes for dynamic lights
     if (lights && lights.length > 0) {
-      ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalCompositeOperation = "destination-out";
       for (const l of lights) {
         ctx.save();
-        
+
         // Scale down light positions and radiuses to match the mini-buffer
         const lx = l.x / DOWNSCALE;
         const ly = l.y / DOWNSCALE;
         const rad = (l.radius || 100) / DOWNSCALE;
-        
+
         const grd = ctx.createRadialGradient(lx, ly, rad * 0.1, lx, ly, rad);
-        grd.addColorStop(0, "rgba(0,0,0,1)");   // Fully erase the darkness at center
-        grd.addColorStop(1, "rgba(0,0,0,0)");   // Fade out the deletion at edges
-        
+        grd.addColorStop(0, "rgba(0,0,0,1)"); // Fully erase the darkness at center
+        grd.addColorStop(1, "rgba(0,0,0,0)"); // Fade out the deletion at edges
+
         ctx.fillStyle = grd;
         ctx.beginPath();
         ctx.arc(lx, ly, rad, 0, Math.PI * 2);
@@ -287,25 +371,31 @@ const WeatherSystem = {
     // Restore P5 transform and draw the native mask scaled up
     push();
     drawingContext.save();
-    
+
     // Smooth upscaling for the shadow mask
     drawingContext.imageSmoothingEnabled = true;
 
     // Draw darkness mask slightly larger than the screen to hide screen-shake edges or floating point map borders
     const overscan = 100;
-    drawingContext.drawImage(this.nativeMap, camX - (overscan / 2), camY - (overscan / 2), w + overscan, h + overscan);
-    
+    drawingContext.drawImage(
+      this.nativeMap,
+      camX - overscan / 2,
+      camY - overscan / 2,
+      w + overscan,
+      h + overscan,
+    );
+
     // Draw stars OVER the darkness mask so they aren't masked out by the 90% opacity black
     if (showStars && this.currentColor[3] >= STAR_VISIBILITY_MIN_ALPHA) {
       this.drawStars(drawingContext, w, h, this.currentColor[3], camX, camY);
     }
-    
+
     drawingContext.restore();
     pop();
   },
 
   /** Returns an [r, g, b, a] tint for clouds based on current ambient darkness. */
-  getCloudTint: function() {
+  getCloudTint: function () {
     const alpha = this.currentColor[3];
     const brightness = map(alpha, 0, 200, 255, 40); // Darken clouds significantly at night
 
@@ -314,11 +404,16 @@ const WeatherSystem = {
     const g = map(this.currentColor[1], 0, 255, 255, 100);
     const b = map(this.currentColor[2], 0, 255, 255, 120);
 
-    return [Math.min(r, brightness), Math.min(g, brightness), Math.min(b, brightness), 240];
+    return [
+      Math.min(r, brightness),
+      Math.min(g, brightness),
+      Math.min(b, brightness),
+      240,
+    ];
   },
 
   /** Draws a pixel-art clock widget centred at (x, y) with the given radius. */
-  drawClock: function(x, y, radius) {
+  drawClock: function (x, y, radius) {
     push();
     translate(x, y);
     rectMode(CENTER);
@@ -328,7 +423,7 @@ const WeatherSystem = {
     // --- 1. Outer Square Frame (Pixel-Themed Bronze) ---
     noStroke();
     fill(0, 120);
-    rect(2, 2, size + 10, size + 10, 4);  // Drop shadow
+    rect(2, 2, size + 10, size + 10, 4); // Drop shadow
 
     stroke(50, 40, 30);
     strokeWeight(3);
@@ -345,9 +440,9 @@ const WeatherSystem = {
     noStroke();
     const off = size / 2 + 1;
     rect(-off, -off, 4, 4);
-    rect( off, -off, 4, 4);
-    rect( off,  off, 4, 4);
-    rect(-off,  off, 4, 4);
+    rect(off, -off, 4, 4);
+    rect(off, off, 4, 4);
+    rect(-off, off, 4, 4);
 
     // --- 2. Quilted Background ---
     push();
@@ -370,7 +465,7 @@ const WeatherSystem = {
     noStroke();
     fill(40, 100, 220, 100); // Day half
     arc(0, 0, size * 1.5, size * 1.5, PI, TWO_PI);
-    fill(10, 10, 40, 140);   // Night half
+    fill(10, 10, 40, 140); // Night half
     arc(0, 0, size * 1.5, size * 1.5, 0, PI);
     pop();
 
@@ -378,7 +473,7 @@ const WeatherSystem = {
 
     // --- 4. Celestial Icons ---
     const iconDist = radius - 6;
-    const sunAngle  = map(this.cycle, 0, 1, 0, TWO_PI) + HALF_PI;
+    const sunAngle = map(this.cycle, 0, 1, 0, TWO_PI) + HALF_PI;
     const moonAngle = sunAngle + PI;
 
     // Sun
@@ -407,7 +502,7 @@ const WeatherSystem = {
     fill(220, 230, 255);
     rect(0, 0, 10, 10, 1); // Moon body
     fill(30, 25, 20);
-    rect(4, -3, 8, 8, 1);  // Crescent mask
+    rect(4, -3, 8, 8, 1); // Crescent mask
     pop();
 
     // --- 5. Glass Reflection ---
@@ -425,11 +520,11 @@ const WeatherSystem = {
 
   /** Renders slow drifting ambient dust motes (Day) or glowing fireflies (Night) */
   drawAmbientParticles: function (camX, camY, isNight) {
-    if (!showParticles || typeof width === 'undefined') return;
+    if (!showParticles || typeof width === "undefined") return;
 
-    const vW = typeof virtualW !== 'undefined' ? virtualW : width / gameScale;
-    const vH = typeof virtualH !== 'undefined' ? virtualH : height / gameScale;
-    
+    const vW = typeof virtualW !== "undefined" ? virtualW : width / gameScale;
+    const vH = typeof virtualH !== "undefined" ? virtualH : height / gameScale;
+
     // Initialize pool
     if (this.particles.length === 0) {
       for (let i = 0; i < 40; i++) {
@@ -440,14 +535,14 @@ const WeatherSystem = {
           vy: (Math.random() - 0.5) * 0.4,
           size: Math.random() * 2.5 + 1,
           phase: Math.random() * TWO_PI,
-          speed: Math.random() * 0.02 + 0.01
+          speed: Math.random() * 0.02 + 0.01,
         });
       }
     }
 
     push();
     noStroke();
-    
+
     // Particles move independently of time but drift with wind and slow camera parallax
     const offsetX = (camX || 0) * 0.8;
     const offsetY = (camY || 0) * 0.8;
@@ -466,9 +561,14 @@ const WeatherSystem = {
       const screenX = (((p.x - offsetX) % wrapScale) + wrapScale) % wrapScale;
       const screenY = (((p.y - offsetY) % wrapScale) + wrapScale) % wrapScale;
 
-      if (screenX > -10 && screenX < vW + 10 && screenY > -10 && screenY < vH + 10) {
+      if (
+        screenX > -10 &&
+        screenX < vW + 10 &&
+        screenY > -10 &&
+        screenY < vH + 10
+      ) {
         const pulse = (Math.sin(p.phase) + 1) / 2;
-        
+
         if (isNight) {
           const alpha = 50 + pulse * 150;
           fill(150, 255, 50, alpha);
@@ -483,5 +583,5 @@ const WeatherSystem = {
       }
     }
     pop();
-  }
+  },
 };
