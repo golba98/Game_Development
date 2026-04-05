@@ -188,7 +188,46 @@ const server = http.createServer((req, res) => {
   fs.stat(filePath, (err, stats) => {
     if (err) {
       // if directory, try index.html
-      const alt = path.join(WORKSPACE_ROOT, pathname, 'Game_Index.html');
+      let alt = path.join(WORKSPACE_ROOT, pathname, 'Game_Index.html');
+      alt = path.resolve(alt);
+      // Ensure alt stays within the workspace root and does not hit forbidden paths
+      if (!alt.startsWith(WORKSPACE_ROOT)) {
+        console.warn(`[security] blocked path traversal attempt (alt): ${pathname}`);
+        // fallback to root Game_Index.html
+        const rootIndex = path.join(WORKSPACE_ROOT, 'Game_Index.html');
+        fs.stat(rootIndex, (e3, s3) => {
+          if (!e3 && s3 && s3.isFile()) {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            fs.createReadStream(rootIndex).pipe(res);
+          } else {
+            send404(res);
+          }
+        });
+        return;
+      }
+      const relativePathAlt = path.relative(WORKSPACE_ROOT, alt);
+      const pathPartsAlt = relativePathAlt.split(path.sep);
+      const isForbiddenAlt = pathPartsAlt.some(part =>
+        part === '.git' ||
+        part === '.vscode' ||
+        part === 'scripts' ||
+        part.startsWith('.') ||
+        ['Dockerfile.txt', 'README.md', 'git_log.txt', 'package.json', 'package-lock.json'].includes(part)
+      );
+      if (isForbiddenAlt) {
+        console.warn(`[security] blocked access to forbidden alt path: ${pathname}`);
+        // fallback to root Game_Index.html
+        const rootIndex = path.join(WORKSPACE_ROOT, 'Game_Index.html');
+        fs.stat(rootIndex, (e3, s3) => {
+          if (!e3 && s3 && s3.isFile()) {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            fs.createReadStream(rootIndex).pipe(res);
+          } else {
+            send404(res);
+          }
+        });
+        return;
+      }
       fs.stat(alt, (e2, s2) => {
         if (!e2 && s2 && s2.isFile()) {
           const ct = contentTypeFor(alt);
