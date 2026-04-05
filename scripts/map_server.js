@@ -188,7 +188,23 @@ const server = http.createServer((req, res) => {
   fs.stat(filePath, (err, stats) => {
     if (err) {
       // if directory, try index.html
-      const alt = path.join(WORKSPACE_ROOT, pathname, 'Game_Index.html');
+      let alt = path.join(WORKSPACE_ROOT, pathname, 'Game_Index.html');
+      // Normalize and ensure the alternate path stays within the workspace root
+      alt = path.resolve(alt);
+      if (!alt.startsWith(WORKSPACE_ROOT)) {
+        console.warn(`[security] blocked path traversal attempt (alt): ${pathname}`);
+        // fallback to root Game_Index.html
+        const rootIndex = path.join(WORKSPACE_ROOT, 'Game_Index.html');
+        fs.stat(rootIndex, (e3, s3) => {
+          if (!e3 && s3 && s3.isFile()) {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            fs.createReadStream(rootIndex).pipe(res);
+          } else {
+            send404(res);
+          }
+        });
+        return;
+      }
       fs.stat(alt, (e2, s2) => {
         if (!e2 && s2 && s2.isFile()) {
           const ct = contentTypeFor(alt);
