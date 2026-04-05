@@ -165,14 +165,10 @@ function createTerminalUI() {
 // Parses and executes a terminal command string; appends output to terminal history.
 function processTerminalCommand(cmd) {
   const history = document.getElementById("terminal-history");
-  const log = (msg, type = "", isHTML = false) => {
+  const log = (msg, type = "") => {
     const div = document.createElement("div");
     div.className = "terminal-log " + type;
-    if (isHTML) {
-      div.innerHTML = msg;
-    } else {
-      div.textContent = msg;
-    }
+    div.textContent = msg;
     history.appendChild(div);
     history.scrollTop = history.scrollHeight;
   };
