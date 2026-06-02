@@ -75,16 +75,6 @@ function toggleTerminal(state) {
     }
 }
 
-function terminalLogText(msg, className = 'terminal-log') {
-    const history = document.getElementById('terminal-history');
-    if (!history) return;
-    const cmdLine = document.createElement('div');
-    cmdLine.className = className;
-    cmdLine.textContent = msg;
-    history.appendChild(cmdLine);
-    history.scrollTop = history.scrollHeight;
-}
-
 function terminalLog(msg, className = 'terminal-log') {
     const history = document.getElementById('terminal-history');
     if (!history) return;
@@ -96,7 +86,7 @@ function terminalLog(msg, className = 'terminal-log') {
 }
 
 function processTerminalCommand(cmd) {
-    terminalLogText(`> ${cmd}`, 'terminal-input-echo');
+    terminalLog(`> ${cmd}`, 'terminal-input-echo');
     const parts = cmd.toLowerCase().split(' ');
     const base = parts[0];
 

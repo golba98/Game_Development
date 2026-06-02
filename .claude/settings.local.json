@@ -14,7 +14,10 @@
       "Bash(cd \"/c/Development/1-JavaScript/6-Game Development\" && python scripts/refactor_game.py)",
       "Bash(python3:*)",
       "Bash(python:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(ffmpeg -version)",
+      "Bash(ffprobe *)",
+      "Bash(ffmpeg -i '/home/k9-vortex/Development/1-JavaScript_TypeScript/6-Game Development/assets/1-Background/1-Menu/Menu_Vid.mp4' -c:v libx264 -crf 28 -preset medium -movflags +faststart -c:a aac -b:a 128k -y /tmp/Menu_Vid_test.mp4)"
     ]
   }
 }
