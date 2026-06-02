@@ -187,16 +187,16 @@ const server = http.createServer((req, res) => {
 
   fs.stat(filePath, (err, stats) => {
     if (err) {
-      // if directory, try index.html
-      const alt = path.join(WORKSPACE_ROOT, pathname, 'Game_Index.html');
+      // if directory, try the game entry point
+      const alt = path.join(WORKSPACE_ROOT, pathname, 'game.html');
       fs.stat(alt, (e2, s2) => {
         if (!e2 && s2 && s2.isFile()) {
           const ct = contentTypeFor(alt);
           res.writeHead(200, { 'Content-Type': ct });
           fs.createReadStream(alt).pipe(res);
         } else {
-          // fallback to root Game_Index.html
-          const rootIndex = path.join(WORKSPACE_ROOT, 'Game_Index.html');
+          // fallback to root game entry point
+          const rootIndex = path.join(WORKSPACE_ROOT, 'game.html');
           fs.stat(rootIndex, (e3, s3) => {
             if (!e3 && s3 && s3.isFile()) {
               res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -210,8 +210,8 @@ const server = http.createServer((req, res) => {
       return;
     }
     if (stats.isDirectory()) {
-      // serve Game_Index.html in that directory if present
-      const idx = path.join(filePath, 'Game_Index.html');
+      // serve game.html in that directory if present
+      const idx = path.join(filePath, 'game.html');
       fs.stat(idx, (e, s) => {
         if (!e && s && s.isFile()) {
           res.writeHead(200, { 'Content-Type': 'text/html' });
