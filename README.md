@@ -76,25 +76,32 @@ _Ensures a consistent environment isolated from your local machine settings._
    - Once you're done playing run the following command to stop the server:
      docker stop $(docker ps -q)
 
-## METHOD 4: CLOUDFLARE PAGES (Static Hosting)
+## METHOD 4: CLOUDFLARE WORKERS STATIC ASSETS
 
-This project deploys as a static site to Cloudflare Pages with no build step.
+This project deploys as a static site with Wrangler. The build step copies only
+public game files into `dist/`, so repository metadata such as `.git/` is never
+uploaded as a static asset.
 
-### Cloudflare Pages Settings
+### Local Commands
 
-| Setting                | Value  |
-|------------------------|--------|
-| Framework preset       | None   |
-| Build command          | exit 0 |
-| Build output directory | .      |
+1. Install dependencies:
+   npm install
 
-### Steps
+2. Build the static output:
+   npm run build
 
-1. Push this repository to GitHub (or GitLab).
-2. In the Cloudflare dashboard → Pages → Create a project → Connect to Git.
-3. Select the repository and branch.
-4. Enter the settings from the table above.
-5. Click Save and Deploy.
+3. Deploy:
+   npm run deploy
+
+### Cloudflare Settings
+
+| Setting                 | Value                |
+|-------------------------|----------------------|
+| Deploy command          | npx wrangler deploy  |
+| Static assets directory | dist                 |
+
+Wrangler also reads `wrangler.jsonc`, which sets `assets.directory` to `./dist`
+and runs `npm run build` before deployment.
 
 The site root (`index.html`) redirects automatically to `1-Menu_Index.html`.
 Map save/load requires a local Node.js server (see Method 1) — it is disabled

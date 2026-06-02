@@ -63,7 +63,7 @@ function setup() {
 
   applyFPS();
 
-  pixelDensity(window.devicePixelRatio || 1);
+  pixelDensity(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_DENSITY));
 
   gameScale = H / FIXED_VIRTUAL_HEIGHT;
   virtualW = W / gameScale;
@@ -83,6 +83,24 @@ function setup() {
       cnv.elt.style.imageRendering = "pixelated";
     }
     noSmooth();
+  } catch (e) {}
+
+  // Dev-only render instrumentation: count drawImage calls per frame.
+  // Enable with ?renderstats=1. p5's image() ultimately calls
+  // drawingContext.drawImage, so this captures every source (map, sprites,
+  // clouds, weather overlay, HUD) with near-zero cost when disabled.
+  try {
+    if (new URLSearchParams(window.location.search).get("renderstats") === "1") {
+      RenderStats.enabled = true;
+    }
+    if (drawingContext && !drawingContext.__drawImagePatched) {
+      const _origDrawImage = drawingContext.drawImage.bind(drawingContext);
+      drawingContext.drawImage = function (...args) {
+        if (RenderStats.enabled) RenderStats.drawImageCount++;
+        return _origDrawImage(...args);
+      };
+      drawingContext.__drawImagePatched = true;
+    }
   } catch (e) {}
 
   try {
@@ -261,7 +279,7 @@ function _confirmResize() {
   W = windowWidth;
   H = windowHeight;
 
-  pixelDensity(window.devicePixelRatio || 1);
+  pixelDensity(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_DENSITY));
 
   const mapW = (logicalW || 0) * cellSize;
   const mapH = (logicalH || 0) * cellSize;
@@ -317,6 +335,10 @@ function draw() {
   try {
     enforceCanvasSharpness(drawingContext);
   } catch (e) {}
+
+  // Capture last frame's total draw calls, then reset for this frame.
+  RenderStats.lastCount = RenderStats.drawImageCount;
+  RenderStats.drawImageCount = 0;
 
   // Clamp deltaTime to prevent huge jumps after lag/tab switch
   gameDelta =
@@ -427,6 +449,17 @@ function draw() {
   const drawCamX = Math.floor(smoothCamX);
   const drawCamY = Math.floor(smoothCamY);
 
+  // World-space visible rect (+ padding) for viewport culling this frame.
+  // virtualW/H are already in world units (W / gameScale), matching the
+  // scale(gameScale) + translate(-drawCamX,-drawCamY) transform below.
+  {
+    const cullPad = cellSize * 2;
+    viewLeft = drawCamX - cullPad;
+    viewTop = drawCamY - cullPad;
+    viewRight = drawCamX + virtualW + cullPad;
+    viewBottom = drawCamY + virtualH + cullPad;
+  }
+
   background(34, 139, 34);
 
   // START WORLD TRANSFORM
@@ -509,6 +542,9 @@ function draw() {
     if (Array.isArray(mapOverlays)) {
       for (const o of mapOverlays) {
         if (!o) continue;
+        // Cull overlays whose canopy bbox is outside the viewport
+        if (!isInView(o.px, o.py - o.destH, o.destW, o.destH + cellSize))
+          continue;
         if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
         const d = drawablePool[drawablePoolIdx++];
         d.type = "overlay";
@@ -525,6 +561,15 @@ function draw() {
         if (!img) continue;
         const destW = img.width || cellSize;
         const destH = img.height || cellSize;
+        if (
+          !isInView(
+            deco.tileX * cellSize,
+            deco.tileY * cellSize - destH,
+            destW,
+            destH + cellSize,
+          )
+        )
+          continue;
         if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
         const d = drawablePool[drawablePoolIdx++];
         d.type = "decor";
@@ -540,6 +585,8 @@ function draw() {
 
     if (typeof activeCoins !== "undefined" && activeCoins) {
       for (const coin of activeCoins) {
+        if (!isInView(coin.x * cellSize, coin.y * cellSize, cellSize, cellSize))
+          continue;
         if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
         const d = drawablePool[drawablePoolIdx++];
         d.type = "coin";
@@ -561,6 +608,16 @@ function draw() {
     }
     if (enemies && enemies.length) {
       for (const e of enemies) {
+        // Generous box (enemy sprites can be several cells tall/wide)
+        if (
+          !isInView(
+            e.renderX * cellSize - cellSize * 2,
+            e.renderY * cellSize - cellSize * 2,
+            cellSize * 4,
+            cellSize * 4,
+          )
+        )
+          continue;
         if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
         const d = drawablePool[drawablePoolIdx++];
         d.type = "enemy";
@@ -571,6 +628,15 @@ function draw() {
     }
     if (projectiles && projectiles.length) {
       for (const p of projectiles) {
+        if (
+          !isInView(
+            p.x * cellSize - cellSize,
+            p.y * cellSize - cellSize,
+            cellSize * 2,
+            cellSize * 2,
+          )
+        )
+          continue;
         if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
         const d = drawablePool[drawablePoolIdx++];
         d.type = "projectile";
@@ -581,6 +647,15 @@ function draw() {
     }
     if (vfx && vfx.length) {
       for (const effect of vfx) {
+        if (
+          !isInView(
+            effect.x * cellSize - cellSize * 2,
+            effect.y * cellSize - cellSize * 2,
+            cellSize * 4,
+            cellSize * 4,
+          )
+        )
+          continue;
         if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
         const d = drawablePool[drawablePoolIdx++];
         d.type = "vfx";
@@ -589,7 +664,15 @@ function draw() {
         currentDrawables.push(d);
       }
     }
-    if (portalPos) {
+    if (
+      portalPos &&
+      isInView(
+        portalPos.x * cellSize - cellSize,
+        portalPos.y * cellSize - cellSize * 2,
+        cellSize * 3,
+        cellSize * 3,
+      )
+    ) {
       if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
       const d = drawablePool[drawablePoolIdx++];
       d.type = "portal";
@@ -633,7 +716,13 @@ function draw() {
           }
           if (alpha < 255) tint(255, alpha);
           if (o.imgType === "image" && o.img)
-            image(o.img, d.drawX, d.drawY, o.destW, o.destH);
+            image(
+              getPrescaledImage(o.img, o.destW, o.destH),
+              d.drawX,
+              d.drawY,
+              o.destW,
+              o.destH,
+            );
           else if (o.imgType === "sheet" && o.s)
             image(
               spritesheet,
@@ -651,7 +740,14 @@ function draw() {
         }
         case "decor":
           try {
-            if (d.img) image(d.img, d.drawX, d.drawY, d.destW, d.destH);
+            if (d.img)
+              image(
+                getPrescaledImage(d.img, d.destW, d.destH),
+                d.drawX,
+                d.drawY,
+                d.destW,
+                d.destH,
+              );
           } catch (e) {}
           break;
         case "coin": {
@@ -747,9 +843,19 @@ function draw() {
       if (hasGhosts) {
         drawingContext.globalCompositeOperation = "screen";
         for (let gi = 0; gi < enemies.length; gi++) {
-          if (enemies[gi].type === "ghost") {
+          const g = enemies[gi];
+          if (g.type === "ghost") {
+            if (
+              !isInView(
+                g.renderX * cellSize - cellSize * 2,
+                g.renderY * cellSize - cellSize * 2,
+                cellSize * 4,
+                cellSize * 4,
+              )
+            )
+              continue;
             try {
-              enemies[gi].draw();
+              g.draw();
             } catch (e) {}
           }
         }
@@ -930,6 +1036,20 @@ function draw() {
 
       pop();
     }
+  }
+
+  // Dev-only: show drawImage calls per frame (?renderstats=1)
+  if (RenderStats.enabled) {
+    const vW = virtualW || width / gameScale;
+    push();
+    noStroke();
+    fill(0, 150);
+    rect(vW - 130, 132, 120, 22, 2);
+    fill(120, 230, 120);
+    textAlign(LEFT, CENTER);
+    gTextSize(12);
+    text(`drawImage/f: ${RenderStats.lastCount}`, vW - 122, 143);
+    pop();
   }
 
   try {
