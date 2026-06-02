@@ -24,10 +24,10 @@ function startPlayerAttack() {
   }
 
   // Determine attack direction: held keys → mouse position → lastDirection
-  const keyLeft = keyIsDown(playerKeybinds.moveLeft);
-  const keyRight = keyIsDown(playerKeybinds.moveRight);
-  const keyUp = keyIsDown(playerKeybinds.moveUp);
-  const keyDown = keyIsDown(playerKeybinds.moveDown);
+  const keyLeft = InputState.isDown(playerKeybinds.moveLeft);
+  const keyRight = InputState.isDown(playerKeybinds.moveRight);
+  const keyUp = InputState.isDown(playerKeybinds.moveUp);
+  const keyDown = InputState.isDown(playerKeybinds.moveDown);
 
   let attackDir = null;
   if (keyLeft || keyRight || keyUp || keyDown) {

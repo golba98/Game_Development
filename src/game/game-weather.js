@@ -310,6 +310,35 @@ const WeatherSystem = {
   },
 
   /**
+   * Returns a cached radial-falloff sprite (white→transparent alpha) used to
+   * carve light holes out of the darkness mask via destination-out. Built once;
+   * it is resolution-independent because drawOverlay scales it per light. The
+   * 0.1 inner-radius matches the previous per-light gradient's hard core.
+   */
+  _getLightStamp: function () {
+    if (this._lightStamp) return this._lightStamp;
+    const S = 128;
+    const c = document.createElement("canvas");
+    c.width = S;
+    c.height = S;
+    const g = c.getContext("2d");
+    const grd = g.createRadialGradient(
+      S / 2,
+      S / 2,
+      (S / 2) * 0.1,
+      S / 2,
+      S / 2,
+      S / 2,
+    );
+    grd.addColorStop(0, "rgba(0,0,0,1)"); // Fully erase at center
+    grd.addColorStop(1, "rgba(0,0,0,0)"); // Fade out at edges
+    g.fillStyle = grd;
+    g.fillRect(0, 0, S, S);
+    this._lightStamp = c;
+    return c;
+  },
+
+  /**
    * Draws the darkness overlay and light halos onto the main canvas.
    * @param {number} w - Canvas width
    * @param {number} h - Canvas height
@@ -345,26 +374,20 @@ const WeatherSystem = {
     ctx.fillStyle = `rgba(${this.currentColor[0]}, ${this.currentColor[1]}, ${this.currentColor[2]}, ${this.currentColor[3] / 255})`;
     ctx.fillRect(0, 0, cw, ch);
 
-    // 2. Erase holes for dynamic lights
+    // 2. Erase holes for dynamic lights.
+    // Every light shares the same soft radial falloff, so instead of building a
+    // fresh createRadialGradient per light per frame (expensive — it was the
+    // hottest part of the night overlay), we punch each hole by stamping a single
+    // pre-rendered gradient sprite, scaled to the light's radius via drawImage.
     if (lights && lights.length > 0) {
       ctx.globalCompositeOperation = "destination-out";
+      const stamp = this._getLightStamp();
       for (const l of lights) {
-        ctx.save();
-
         // Scale down light positions and radiuses to match the mini-buffer
         const lx = l.x / DOWNSCALE;
         const ly = l.y / DOWNSCALE;
         const rad = (l.radius || 100) / DOWNSCALE;
-
-        const grd = ctx.createRadialGradient(lx, ly, rad * 0.1, lx, ly, rad);
-        grd.addColorStop(0, "rgba(0,0,0,1)"); // Fully erase the darkness at center
-        grd.addColorStop(1, "rgba(0,0,0,0)"); // Fade out the deletion at edges
-
-        ctx.fillStyle = grd;
-        ctx.beginPath();
-        ctx.arc(lx, ly, rad, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+        ctx.drawImage(stamp, lx - rad, ly - rad, rad * 2, rad * 2);
       }
     }
 

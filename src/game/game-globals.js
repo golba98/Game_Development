@@ -110,7 +110,11 @@ let showStars = true;
 let screenShakeEnabled = true;
 let showParticles = true;
 let showFireflyLighting = true;
-let targetFps = 999; // 999 is Uncapped
+// Default to a capped 60fps for stable frame pacing and lower drawImage cost.
+// Users can raise this (incl. Uncapped = 999) via Graphics > Max FPS; the choice
+// persists in local settings. Uncapped rendering was the prior default and a
+// major source of profiler-heavy drawImage time.
+let targetFps = 60;
 let fpsHistory = [];
 
 let showLoadingOverlay = true;

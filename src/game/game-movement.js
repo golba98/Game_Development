@@ -43,11 +43,13 @@ function handleMovement() {
   }
 
   if (isJumping || (isMoving && (millis() - lastMoveTime < getActiveMoveCooldownMs()))) return;
-  const keyLeft  = keyIsDown(playerKeybinds.moveLeft);
-  const keyRight = keyIsDown(playerKeybinds.moveRight);
-  const keyUp    = keyIsDown(playerKeybinds.moveUp);
-  const keyDown  = keyIsDown(playerKeybinds.moveDown);
-  const shiftHeld = keyIsDown(playerKeybinds.sprint);
+  // Read held keys from the centralized InputState (event-driven, so taps that
+  // happen between frames at low FPS are still seen). Semantics match keyIsDown.
+  const keyLeft  = InputState.isDown(playerKeybinds.moveLeft);
+  const keyRight = InputState.isDown(playerKeybinds.moveRight);
+  const keyUp    = InputState.isDown(playerKeybinds.moveUp);
+  const keyDown  = InputState.isDown(playerKeybinds.moveDown);
+  const shiftHeld = InputState.isDown(playerKeybinds.sprint);
   const now = millis();
 
   // Dash trigger

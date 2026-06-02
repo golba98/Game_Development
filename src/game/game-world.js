@@ -408,6 +408,11 @@ function createMapImage() {
         
         minimapImage.background(0, 0, 0, 0); // Transparent
         minimapImage.image(mapImage, 0, 0, drawW, drawH);
+        // Bake the static tree markers into the cache so the per-frame minimap
+        // draw doesn't re-stroke the whole forest every frame.
+        if (typeof HudCache !== 'undefined') {
+          HudCache.bakeMinimapStatics(minimapImage, drawW, drawH);
+        }
     } catch(e) { console.warn('[game] failed to create minimap cache', e); }
   }
 }

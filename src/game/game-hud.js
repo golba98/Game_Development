@@ -302,7 +302,10 @@ function drawMinimap() {
   }
   noTint();
 
-  if (treeObjects && logicalW && logicalH) {
+  // Tree markers are baked into minimapImage by HudCache (see game-world.js),
+  // so they no longer need re-stroking every frame here. As a fallback, only
+  // draw them live if the bake didn't happen (no cached minimap image).
+  if (!minimapImage && treeObjects && logicalW && logicalH) {
     fill(15, 70, 15);
     stroke(0, 150);
     strokeWeight(1);
