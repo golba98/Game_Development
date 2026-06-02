@@ -76,6 +76,30 @@ _Ensures a consistent environment isolated from your local machine settings._
    - Once you're done playing run the following command to stop the server:
      docker stop $(docker ps -q)
 
+## METHOD 4: CLOUDFLARE PAGES (Static Hosting)
+
+This project deploys as a static site to Cloudflare Pages with no build step.
+
+### Cloudflare Pages Settings
+
+| Setting                | Value  |
+|------------------------|--------|
+| Framework preset       | None   |
+| Build command          | exit 0 |
+| Build output directory | .      |
+
+### Steps
+
+1. Push this repository to GitHub (or GitLab).
+2. In the Cloudflare dashboard → Pages → Create a project → Connect to Git.
+3. Select the repository and branch.
+4. Enter the settings from the table above.
+5. Click Save and Deploy.
+
+The site root (`index.html`) redirects automatically to `1-Menu_Index.html`.
+Map save/load requires a local Node.js server (see Method 1) — it is disabled
+on the deployed static site by design.
+
 ## CONTROLS
 
 Gameplay:
