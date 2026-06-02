@@ -33,6 +33,13 @@ This is a browser-based 2D top-down RPG built with **p5.js**. No build step — 
 | `src/shared/shared-constants.js` | `DEFAULT_SETTINGS`, `SETTINGS_CATEGORIES` — shared by menu + game |
 | `src/game/game-globals.js` | All game globals, constants, `GameGroups`, `AssetTracker`, `TILE_TYPES` |
 | `src/game/game-assets.js` | `preload()`, image/graphics creation, `trackLoadImage/Sound` |
+| `src/game/runtime/perf-overlay.js` | `PerfOverlay`: dev-only FPS/frame/update/render/drawImage/entity instrumentation (`?debug=1`) |
+| `src/game/runtime/game-loop.js` | `GameLoop`: delta clamp + fixed-step accumulator (spiral-of-death guard) |
+| `src/game/runtime/input-state.js` | `InputState`: centralized key state (down/pressed/released), event-driven |
+| `src/game/runtime/scene-manager.js` | `SceneManager`: read-only state façade (LOADING/MAPGEN/PLAYING/PAUSED/GAME_OVER) |
+| `src/game/runtime/renderer.js` | `Renderer`: world entity pass (`drawWorld`) + night/lighting pass (`drawNightOverlay`) |
+| `src/game/runtime/hud-cache.js` | `HudCache`: bakes static HUD content (minimap tree markers) into offscreen buffers |
+| `src/game/runtime/asset-cache.js` | `AssetCache`: per-size prescaled sprite cache + missing-asset guard |
 | `src/game/game-weather.js` | `WeatherSystem` singleton: day/night cycle + dynamic lighting overlay |
 | `src/menu/menu-globals.js` | Menu global variables |
 | `src/menu/menu-core.js` | `preload()`, `setup()`, `draw()` for menu |
@@ -47,7 +54,19 @@ This is a browser-based 2D top-down RPG built with **p5.js**. No build step — 
 | `maps/` | JSON world saves (`active_map.json` = currently loaded world) |
 | `assets/` | Sprites, audio, GUI textures |
 
-**Load order matters**: `src/shared/shared-constants.js` → `src/game/game-globals.js` → `src/game/game-assets.js` → ... → `src/game/game-weather.js` → `src/game/game-core.js`. No duplicate declarations across these files.
+**Load order matters**: `src/shared/shared-constants.js` → `src/game/game-globals.js` → `src/game/runtime/*.js` (the layers below) → `src/game/game-assets.js` → ... → `src/game/game-weather.js` → `src/game/game-core.js`. No duplicate declarations across these files.
+
+### Runtime Layers (`src/game/runtime/`)
+
+`game-core.js`'s `draw()` is an orchestrator that calls thin, single-responsibility layers instead of inlining everything. Each is a plain global singleton object (same pattern as `GameGroups`), loaded before `game-core.js`:
+
+- **Loop/pacing** — `GameLoop.clampDelta()` produces `gameDelta` (clamped to 50ms = the spiral-of-death guard); FPS is the `targetFps` setting (Graphics → Max FPS, default **60**), applied via `applyFPS()`.
+- **Input** — `InputState` latches key state from window key events (capture phase), so taps register even between frames at low FPS. `handleMovement()` reads `InputState.isDown()`.
+- **Scenes** — `SceneManager.isSimulating()/isOverlayOpen()/current()` derive the runtime state from the existing flags; gameplay/weather updates run only when `isSimulating()`.
+- **Render** — `Renderer.drawWorld()` builds the depth-sorted, viewport-culled drawable pool and draws entities; `Renderer.drawNightOverlay(camX,camY)` does ambient particles + the day/night lighting overlay. The static map is a single cached `mapImage` blit; HUD is `game-hud.js`.
+- **Assets** — `AssetCache.prescaled(img,w,h)` (aliased by `getPrescaledImage`) caches each sprite at its draw size; failed builds cache the source so they aren't retried per frame.
+- **HUD cache** — `HudCache.bakeMinimapStatics()` bakes static minimap markers into `minimapImage` at map-build time.
+- **Perf** — `PerfOverlay` (enable with `?debug=1` or `?renderstats=1`) shows FPS/frame/update/render times, drawImage count, and entities rendered/culled. **Off in production** unless explicitly enabled.
 
 ### Key Design Patterns
 

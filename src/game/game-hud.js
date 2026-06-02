@@ -302,7 +302,10 @@ function drawMinimap() {
   }
   noTint();
 
-  if (treeObjects && logicalW && logicalH) {
+  // Tree markers are baked into minimapImage by HudCache (see game-world.js),
+  // so they no longer need re-stroking every frame here. As a fallback, only
+  // draw them live if the bake didn't happen (no cached minimap image).
+  if (!minimapImage && treeObjects && logicalW && logicalH) {
     fill(15, 70, 15);
     stroke(0, 150);
     strokeWeight(1);
@@ -875,19 +878,21 @@ function drawClouds() {
       tintColor = WeatherSystem.getCloudTint();
   }
 
+  // Set shared state once instead of per cloud
+  imageMode(CORNER);
+
   for (const cloud of clouds) {
-    push();
-    // Combine cloud's own alpha with weather tint
-    tint(tintColor[0], tintColor[1], tintColor[2], Math.min(tintColor[3], cloud.opacity));
-    imageMode(CORNER);
-    
     const w = cloud.img.width * cloud.scale;
     const h = cloud.img.height * cloud.scale;
-    
+
+    // Cull clouds outside the viewport (clouds live in world space)
+    if (!isInView(cloud.x, cloud.y, w, h)) continue;
+
+    // Combine cloud's own alpha with weather tint (alpha varies per cloud)
+    tint(tintColor[0], tintColor[1], tintColor[2], Math.min(tintColor[3], cloud.opacity));
     image(cloud.img, cloud.x, cloud.y, w, h);
-    pop();
   }
-  
+
   noTint();
   pop();
 }

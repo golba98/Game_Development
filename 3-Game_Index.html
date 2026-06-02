@@ -87,6 +87,17 @@
 
     <script defer src="src/shared/shared-constants.js"></script>
     <script defer src="src/game/game-globals.js"></script>
+
+    <!-- Runtime layers (input / loop / scenes / render / assets / HUD / perf).
+         Loaded after globals, before game-core.js which orchestrates them. -->
+    <script defer src="src/game/runtime/perf-overlay.js"></script>
+    <script defer src="src/game/runtime/game-loop.js"></script>
+    <script defer src="src/game/runtime/input-state.js"></script>
+    <script defer src="src/game/runtime/scene-manager.js"></script>
+    <script defer src="src/game/runtime/renderer.js"></script>
+    <script defer src="src/game/runtime/hud-cache.js"></script>
+    <script defer src="src/game/runtime/asset-cache.js"></script>
+
     <script defer src="src/game/game-assets.js"></script>
     <script defer src="src/game/game-map.js"></script>
     <script defer src="src/game/game-enemies.js"></script>

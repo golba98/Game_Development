@@ -63,7 +63,7 @@ function setup() {
 
   applyFPS();
 
-  pixelDensity(window.devicePixelRatio || 1);
+  pixelDensity(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_DENSITY));
 
   gameScale = H / FIXED_VIRTUAL_HEIGHT;
   virtualW = W / gameScale;
@@ -83,6 +83,29 @@ function setup() {
       cnv.elt.style.imageRendering = "pixelated";
     }
     noSmooth();
+  } catch (e) {}
+
+  // Dev-only render instrumentation: count drawImage calls per frame.
+  // Enable with ?renderstats=1. p5's image() ultimately calls
+  // drawingContext.drawImage, so this captures every source (map, sprites,
+  // clouds, weather overlay, HUD) with near-zero cost when disabled.
+  try {
+    if (new URLSearchParams(window.location.search).get("renderstats") === "1") {
+      RenderStats.enabled = true;
+    }
+    if (drawingContext && !drawingContext.__drawImagePatched) {
+      const _origDrawImage = drawingContext.drawImage.bind(drawingContext);
+      drawingContext.drawImage = function (...args) {
+        if (RenderStats.enabled) RenderStats.drawImageCount++;
+        return _origDrawImage(...args);
+      };
+      drawingContext.__drawImagePatched = true;
+    }
+  } catch (e) {}
+
+  // Arm the dev perf overlay (?debug=1 / ?renderstats=1). No-op in production.
+  try {
+    if (typeof PerfOverlay !== "undefined") PerfOverlay.init();
   } catch (e) {}
 
   try {
@@ -261,7 +284,7 @@ function _confirmResize() {
   W = windowWidth;
   H = windowHeight;
 
-  pixelDensity(window.devicePixelRatio || 1);
+  pixelDensity(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_DENSITY));
 
   const mapW = (logicalW || 0) * cellSize;
   const mapH = (logicalH || 0) * cellSize;
@@ -318,16 +341,20 @@ function draw() {
     enforceCanvasSharpness(drawingContext);
   } catch (e) {}
 
-  // Clamp deltaTime to prevent huge jumps after lag/tab switch
-  gameDelta =
-    typeof deltaTime !== "undefined" ? Math.min(deltaTime, 50) : FRAME_TIME_MS;
+  // Capture last frame's total draw calls, then reset for this frame.
+  RenderStats.lastCount = RenderStats.drawImageCount;
+  RenderStats.drawImageCount = 0;
 
-  if (
-    typeof WeatherSystem !== "undefined" &&
-    !inGameMenuVisible &&
-    !settingsOverlayDiv &&
-    !isGameOver
-  ) {
+  if (typeof PerfOverlay !== "undefined") PerfOverlay.beginFrame();
+
+  // Clamp deltaTime to prevent huge jumps after lag/tab switch (see GameLoop).
+  const _rawDelta = typeof deltaTime !== "undefined" ? deltaTime : FRAME_TIME_MS;
+  gameDelta =
+    typeof GameLoop !== "undefined"
+      ? GameLoop.clampDelta(_rawDelta)
+      : Math.min(_rawDelta, 50);
+
+  if (typeof WeatherSystem !== "undefined" && SceneManager.isSimulating()) {
     const wasNight = isNightTime();
     WeatherSystem.update(gameDelta);
     const nowNight = isNightTime();
@@ -427,6 +454,17 @@ function draw() {
   const drawCamX = Math.floor(smoothCamX);
   const drawCamY = Math.floor(smoothCamY);
 
+  // World-space visible rect (+ padding) for viewport culling this frame.
+  // virtualW/H are already in world units (W / gameScale), matching the
+  // scale(gameScale) + translate(-drawCamX,-drawCamY) transform below.
+  {
+    const cullPad = cellSize * 2;
+    viewLeft = drawCamX - cullPad;
+    viewTop = drawCamY - cullPad;
+    viewRight = drawCamX + virtualW + cullPad;
+    viewBottom = drawCamY + virtualH + cullPad;
+  }
+
   background(34, 139, 34);
 
   // START WORLD TRANSFORM
@@ -459,7 +497,8 @@ function draw() {
       triggerGameOver();
     }
 
-    if (!settingsOverlayDiv && !inGameMenuVisible && !isGameOver) {
+    if (SceneManager.isSimulating()) {
+      if (typeof PerfOverlay !== "undefined") PerfOverlay.markUpdateStart();
       handleMovement();
       updateMovementInterpolation();
 
@@ -499,264 +538,13 @@ function draw() {
           } catch (e) {}
         }
       }
+      if (typeof PerfOverlay !== "undefined") PerfOverlay.markUpdateEnd();
     }
   }
 
-  try {
-    drawablePoolIdx = 0;
-    currentDrawables.length = 0;
+  if (typeof PerfOverlay !== "undefined") PerfOverlay.markRenderStart();
 
-    if (Array.isArray(mapOverlays)) {
-      for (const o of mapOverlays) {
-        if (!o) continue;
-        if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
-        const d = drawablePool[drawablePoolIdx++];
-        d.type = "overlay";
-        d.o = o;
-        d.drawX = o.px + Math.floor((cellSize - o.destW) / 2);
-        d.drawY = o.py + (cellSize - o.destH);
-        d.baseY = o.py + cellSize;
-        currentDrawables.push(d);
-      }
-    }
-    if (Array.isArray(decorativeObjectsList) && decorativeObjectsList.length) {
-      for (const deco of decorativeObjectsList) {
-        const img = DECOR_ASSET_IMAGES[deco.id];
-        if (!img) continue;
-        const destW = img.width || cellSize;
-        const destH = img.height || cellSize;
-        if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
-        const d = drawablePool[drawablePoolIdx++];
-        d.type = "decor";
-        d.img = img;
-        d.drawX = deco.tileX * cellSize + Math.floor((cellSize - destW) / 2);
-        d.drawY = deco.tileY * cellSize + (cellSize - destH);
-        d.destW = destW;
-        d.destH = destH;
-        d.baseY = deco.tileY * cellSize + cellSize;
-        currentDrawables.push(d);
-      }
-    }
-
-    if (typeof activeCoins !== "undefined" && activeCoins) {
-      for (const coin of activeCoins) {
-        if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
-        const d = drawablePool[drawablePoolIdx++];
-        d.type = "coin";
-        d.tileX = coin.x;
-        d.tileY = coin.y;
-        d.baseY = coin.y * cellSize + cellSize;
-        currentDrawables.push(d);
-      }
-    }
-
-    if (playerPosition) {
-      const drawTileX = isMoving ? renderX : playerPosition.x;
-      const drawTileY = isMoving ? renderY : playerPosition.y;
-      if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
-      const d = drawablePool[drawablePoolIdx++];
-      d.type = "player";
-      d.baseY = drawTileY * cellSize + cellSize;
-      currentDrawables.push(d);
-    }
-    if (enemies && enemies.length) {
-      for (const e of enemies) {
-        if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
-        const d = drawablePool[drawablePoolIdx++];
-        d.type = "enemy";
-        d.entity = e;
-        d.baseY = e.renderY * cellSize + cellSize;
-        currentDrawables.push(d);
-      }
-    }
-    if (projectiles && projectiles.length) {
-      for (const p of projectiles) {
-        if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
-        const d = drawablePool[drawablePoolIdx++];
-        d.type = "projectile";
-        d.entity = p;
-        d.baseY = p.y * cellSize + cellSize;
-        currentDrawables.push(d);
-      }
-    }
-    if (vfx && vfx.length) {
-      for (const effect of vfx) {
-        if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
-        const d = drawablePool[drawablePoolIdx++];
-        d.type = "vfx";
-        d.entity = effect;
-        d.baseY = effect.y * cellSize + cellSize;
-        currentDrawables.push(d);
-      }
-    }
-    if (portalPos) {
-      if (drawablePoolIdx >= drawablePool.length) drawablePool.push({});
-      const d = drawablePool[drawablePoolIdx++];
-      d.type = "portal";
-      d.x = portalPos.x;
-      d.y = portalPos.y;
-      d.baseY = portalPos.y * cellSize + cellSize;
-      currentDrawables.push(d);
-    }
-    currentDrawables.sort((a, b) => a.baseY - b.baseY);
-
-    // Calculate player bounding box for fading
-    let pRect = null;
-    if (playerPosition) {
-      const pX = isMoving ? renderX : playerPosition.x;
-      const pY = isMoving ? renderY : playerPosition.y;
-      const pW = cellSize;
-      const pH = cellSize * PLAYER_BBOX_HEIGHT_SCALE;
-      pRect = {
-        x: pX * cellSize + cellSize / 2 - pW / 2,
-        y: pY * cellSize + cellSize - pH,
-        w: pW,
-        h: pH,
-      };
-    }
-
-    for (const d of currentDrawables) {
-      switch (d.type) {
-        case "overlay": {
-          const o = d.o;
-          let alpha = 255;
-          // Fade tree if player is visually behind it
-          if (pRect && d.baseY > pRect.y + pRect.h * 0.5) {
-            if (
-              pRect.x < d.drawX + o.destW &&
-              pRect.x + pRect.w > d.drawX &&
-              pRect.y < d.drawY + o.destH &&
-              pRect.y + pRect.h > d.drawY
-            ) {
-              alpha = 140;
-            }
-          }
-          if (alpha < 255) tint(255, alpha);
-          if (o.imgType === "image" && o.img)
-            image(o.img, d.drawX, d.drawY, o.destW, o.destH);
-          else if (o.imgType === "sheet" && o.s)
-            image(
-              spritesheet,
-              d.drawX,
-              d.drawY,
-              o.destW,
-              o.destH,
-              o.s.x,
-              o.s.y,
-              o.s.w,
-              o.s.h,
-            );
-          if (alpha < 255) noTint();
-          break;
-        }
-        case "decor":
-          try {
-            if (d.img) image(d.img, d.drawX, d.drawY, d.destW, d.destH);
-          } catch (e) {}
-          break;
-        case "coin": {
-          if (coinAnimSprite && coinAnimSprite.width > 0) {
-            const frameCount = 4;
-            const frame = Math.floor(millis() / 150) % frameCount;
-            const fw = coinAnimSprite.width / frameCount;
-            const fh = coinAnimSprite.height;
-            const drawSize = cellSize * 0.8;
-            image(
-              coinAnimSprite,
-              d.tileX * cellSize + (cellSize - drawSize) / 2,
-              d.tileY * cellSize + (cellSize - drawSize) / 2,
-              drawSize,
-              drawSize,
-              frame * fw,
-              0,
-              fw,
-              fh,
-            );
-          }
-          break;
-        }
-        case "player":
-          try {
-            drawPlayer();
-          } catch (e) {}
-          break;
-        case "enemy":
-          // Ghosts are batched after the main loop under one blend-mode switch
-          if (d.entity && d.entity.type === "ghost") break;
-          try {
-            d.entity.draw();
-          } catch (e) {}
-          break;
-        case "projectile":
-        case "vfx":
-          try {
-            d.entity.draw();
-          } catch (e) {}
-          break;
-        case "portal": {
-          const sheet = isPortalActive
-            ? portalActiveSheet
-            : portalInactiveSheet;
-          if (sheet && sheet.width > 0) {
-            const frameCount = 6;
-            const frame = Math.floor(millis() / 150) % frameCount;
-            const fw = sheet.width / frameCount;
-            const fh = sheet.height;
-            const drawSize = cellSize * 2.0;
-            image(
-              sheet,
-              d.x * cellSize + (cellSize - drawSize) / 2,
-              d.y * cellSize + (cellSize - drawSize),
-              drawSize,
-              drawSize,
-              frame * fw,
-              0,
-              fw,
-              fh,
-            );
-          } else {
-            // Visual Fallback
-            fill(isPortalActive ? [255, 215, 0] : [100, 100, 100], 180);
-            stroke(255);
-            strokeWeight(2);
-            rect(d.x * cellSize, d.y * cellSize, cellSize, cellSize, 4);
-            noStroke();
-            fill(255);
-            textAlign(CENTER);
-            gTextSize(10);
-            text(
-              "PORTAL",
-              d.x * cellSize + cellSize / 2,
-              d.y * cellSize + cellSize / 2 + 4,
-            );
-          }
-          break;
-        }
-      }
-    }
-
-    // Batch-draw all ghosts under a single blend-mode switch (no allocation).
-    if (enemies && enemies.length) {
-      let hasGhosts = false;
-      for (let gi = 0; gi < enemies.length; gi++) {
-        if (enemies[gi].type === "ghost") {
-          hasGhosts = true;
-          break;
-        }
-      }
-      if (hasGhosts) {
-        drawingContext.globalCompositeOperation = "screen";
-        for (let gi = 0; gi < enemies.length; gi++) {
-          if (enemies[gi].type === "ghost") {
-            try {
-              enemies[gi].draw();
-            } catch (e) {}
-          }
-        }
-        drawingContext.globalCompositeOperation = "source-over";
-      }
-    }
-  } catch (e) {}
+  if (typeof Renderer !== "undefined") Renderer.drawWorld();
 
   drawClouds();
 
@@ -771,82 +559,8 @@ function draw() {
     }
   }
 
-  // Night  // Weather Overlay Pass
-  if (typeof WeatherSystem !== "undefined") {
-    const isNight = WeatherSystem.cycle > 0.8 || WeatherSystem.cycle < 0.2;
-    WeatherSystem.drawAmbientParticles(smoothCamX, smoothCamY, isNight);
-  }
-  // Night Ambience: Fireflies
-  if (
-    typeof WeatherSystem !== "undefined" &&
-    (WeatherSystem.cycle < 0.3 || WeatherSystem.cycle > 0.7)
-  ) {
-    if (showParticles && random(1) < 0.03) {
-      spawnFirefly();
-    }
-  }
-
-  // --- Night overlay — drawn INSIDE the world transform so scale(gameScale) applies ---
-  if (typeof WeatherSystem !== "undefined") {
-    const lights = [];
-    if (playerPosition) {
-      const pX = isMoving ? renderX : playerPosition.x;
-      const pY = isMoving ? renderY : playerPosition.y;
-      const screenX = pX * cellSize + cellSize / 2 - drawCamX;
-      const screenY = pY * cellSize + cellSize / 2 - drawCamY;
-
-      const baseRadius =
-        typeof WeatherSystem !== "undefined" &&
-        typeof WeatherSystem.getLightRadius === "function"
-          ? WeatherSystem.getLightRadius()
-          : 450;
-      lights.push({
-        x: screenX,
-        y: screenY,
-        radius: baseRadius + Math.sin(millis() / 200) * 10,
-      });
-    }
-    // Add lights from VFX (like fireflies)
-    if (vfx && vfx.length) {
-      for (const effect of vfx) {
-        if (!showFireflyLighting && effect.type === "firefly") continue;
-        if (typeof effect.getLight === "function") {
-          const l = effect.getLight();
-          if (l) {
-            lights.push({
-              x: l.worldX - drawCamX,
-              y: l.worldY - drawCamY,
-              radius: l.radius || 40,
-            });
-          }
-        }
-      }
-    }
-    // Add lights from enemies (ghost glow)
-    if (enemies && enemies.length) {
-      for (const e of enemies) {
-        if (typeof e.getLight === "function") {
-          const l = e.getLight();
-          if (l) {
-            lights.push({
-              x: l.worldX - drawCamX,
-              y: l.worldY - drawCamY,
-              radius: l.radius || 40,
-            });
-          }
-        }
-      }
-    }
-
-    // Virtual screen size + overscan; ensure it covers the largest logical map bounding coordinates to avoid side-stripes
-    const vW = Math.ceil(
-      Math.max(virtualW || width / gameScale, logicalW * cellSize),
-    );
-    const vH = Math.ceil(
-      Math.max(virtualH || height / gameScale, logicalH * cellSize),
-    );
-    WeatherSystem.drawOverlay(vW, vH, lights, drawCamX, drawCamY);
-  }
+  if (typeof Renderer !== "undefined")
+    Renderer.drawNightOverlay(drawCamX, drawCamY);
 
   pop(); // END WORLD TRANSFORM
 
@@ -932,11 +646,21 @@ function draw() {
     }
   }
 
+  // Dev-only perf overlay (?debug=1 / ?renderstats=1). Off in production.
+  if (typeof PerfOverlay !== "undefined") {
+    PerfOverlay.draw(
+      virtualW || width / gameScale,
+      virtualH || height / gameScale,
+    );
+  }
+
   try {
     if (typeof drawInGameMenu === "function") drawInGameMenu();
   } catch (e) {}
 
-  if (!inGameMenuVisible && !settingsOverlayDiv) updateClouds();
+  // Clouds keep drifting even on game-over (no isGameOver gate), only paused
+  // by an open overlay.
+  if (!SceneManager.isOverlayOpen()) updateClouds();
 
   if (showTutorialsSetting) {
     handleTutorialLogic();
@@ -946,4 +670,8 @@ function draw() {
   pop(); // End Top level Push
 
   drawVignette();
+
+  // Roll input edge-latches at frame end so wasPressed/wasReleased report
+  // presses/releases that happened during this frame.
+  if (typeof InputState !== "undefined") InputState.endFrame();
 }

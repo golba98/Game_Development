@@ -110,7 +110,11 @@ let showStars = true;
 let screenShakeEnabled = true;
 let showParticles = true;
 let showFireflyLighting = true;
-let targetFps = 999; // 999 is Uncapped
+// Default to a capped 60fps for stable frame pacing and lower drawImage cost.
+// Users can raise this (incl. Uncapped = 999) via Graphics > Max FPS; the choice
+// persists in local settings. Uncapped rendering was the prior default and a
+// major source of profiler-heavy drawImage time.
+let targetFps = 60;
 let fpsHistory = [];
 
 let showLoadingOverlay = true;
@@ -555,6 +559,33 @@ const FIXED_VIRTUAL_HEIGHT = 900;
 const FIXED_MAP_WIDTH_TILES = 150;
 const FIXED_MAP_HEIGHT_TILES = 150;
 let gameScale = 1;
+
+// --- Render performance ---
+// Cap devicePixelRatio so HiDPI/retina displays don't render ~4x the pixels.
+// Pixel-art look is preserved because image smoothing is disabled.
+const MAX_PIXEL_DENSITY = 2;
+
+// Dev-only render instrumentation. Enable with ?renderstats=1 in the URL.
+// `lastCount` is the previous frame's total drawImage calls (captured at the
+// top of draw()), so it reflects a full frame including HUD + vignette.
+const RenderStats = { enabled: false, drawImageCount: 0, lastCount: 0 };
+
+// World-space visible rectangle (with padding), recomputed each frame in draw()
+// and reused for viewport culling of world objects and clouds.
+let viewLeft = -Infinity;
+let viewTop = -Infinity;
+let viewRight = Infinity;
+let viewBottom = Infinity;
+
+// Returns true when a world-space bounding box intersects the padded viewport.
+function isInView(x, y, w, h) {
+  return (
+    x + w >= viewLeft &&
+    x <= viewRight &&
+    y + h >= viewTop &&
+    y <= viewBottom
+  );
+}
 
 // --- Sprint System ---
 let sprintEnergy = 100;

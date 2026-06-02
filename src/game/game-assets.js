@@ -467,6 +467,12 @@ function preload() {
   } catch (e) {}
 }
 
+// Pre-scaled sprite cache now lives in AssetCache (runtime/asset-cache.js).
+// This alias keeps existing callers (the renderer) unchanged.
+function getPrescaledImage(img, w, h) {
+  return typeof AssetCache !== "undefined" ? AssetCache.prescaled(img, w, h) : img;
+}
+
 function createChestGraphics() {
   let pg = createGraphics(32, 32);
   pg.clear();
