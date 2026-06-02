@@ -42,7 +42,7 @@ function createMainMenu() {
           sfxVol,
           difficulty: difficultySetting
         });
-        iframe.src = `3-Game_Index.html?${params.toString()}`;
+        iframe.src = `game.html?${params.toString()}`;
         Object.assign(iframe.style, {
           width: '100%', height: '100%', border: 'none', background: '#000'
         });

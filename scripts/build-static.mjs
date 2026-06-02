@@ -7,8 +7,8 @@ const maxAssetBytes = 25 * 1024 * 1024;
 
 const staticEntries = [
   "index.html",
-  "1-Menu_Index.html",
-  "3-Game_Index.html",
+  "menu.html",
+  "game.html",
   "favicon.ico",
   "assets",
   "src",

@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 docker build -t forest-rpg .
 docker run -p 3000:3000 forest-rpg
-# Open http://localhost:3000/1-Menu_Index.html
+# Open http://localhost:3000/menu.html
 docker stop $(docker ps -q)  # to stop
 ```
 
@@ -18,7 +18,7 @@ node scripts/map_server.js
 # Open http://localhost:3000
 ```
 
-**Quick play (no save/load):** Open `3-Game_Index.html` via VS Code Live Server extension.
+**Quick play (no save/load):** Open `game.html` via VS Code Live Server extension.
 
 ## Architecture
 
@@ -28,8 +28,8 @@ This is a browser-based 2D top-down RPG built with **p5.js**. No build step — 
 
 | File | Role |
 |---|---|
-| `1-Menu_Index.html` | Menu entry point — loads `src/menu/*.js` |
-| `3-Game_Index.html` | Game entry point — loads `src/game/*.js` |
+| `menu.html` | Menu entry point — loads `src/menu/*.js` |
+| `game.html` | Game entry point — loads `src/game/*.js` |
 | `src/shared/shared-constants.js` | `DEFAULT_SETTINGS`, `SETTINGS_CATEGORIES` — shared by menu + game |
 | `src/game/game-globals.js` | All game globals, constants, `GameGroups`, `AssetTracker`, `TILE_TYPES` |
 | `src/game/game-assets.js` | `preload()`, image/graphics creation, `trackLoadImage/Sound` |

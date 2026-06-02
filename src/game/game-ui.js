@@ -223,7 +223,7 @@ function restartGame() {
 // Navigates back to the main menu (or closes the game overlay if embedded).
 function exitToMenu() {
   try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'close-game-overlay' }, '*'); } catch (e) {}
-  window.location.href = '1-Menu_Index.html';
+  window.location.href = 'menu.html';
 }
 
 // No-op stub: in-game menu is now rendered via DOM overlay (drawInGameMenu_OLD removed).
