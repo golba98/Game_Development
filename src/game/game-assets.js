@@ -467,6 +467,44 @@ function preload() {
   } catch (e) {}
 }
 
+// Cache of images pre-rendered to the exact size they are drawn at, so the GPU
+// doesn't rescale them on every frame. Keyed by source image identity, then by
+// "<w>x<h>". Sizes are cellSize-based and stable, so the cache stays tiny.
+const _prescaledCache = new Map();
+
+// Returns `img` pre-scaled to (w, h). The returned buffer is the same size it is
+// drawn at, making the per-frame drawImage a ~1:1 blit instead of a rescale.
+// Falls back to the source image if anything goes wrong (so callers still pass
+// the original w/h to image() and visual output is unchanged).
+function getPrescaledImage(img, w, h) {
+  if (!img || !img.width || !img.height) return img;
+  const rw = Math.max(1, Math.round(w));
+  const rh = Math.max(1, Math.round(h));
+  // Already native size — nothing to gain from caching.
+  if (img.width === rw && img.height === rh) return img;
+
+  let byImg = _prescaledCache.get(img);
+  if (!byImg) {
+    byImg = new Map();
+    _prescaledCache.set(img, byImg);
+  }
+  const key = rw + "x" + rh;
+  let buf = byImg.get(key);
+  if (!buf) {
+    try {
+      buf = createGraphics(rw, rh);
+      buf.pixelDensity(1);
+      enforceCanvasSharpness(buf.drawingContext);
+      buf.clear();
+      buf.image(img, 0, 0, rw, rh);
+      byImg.set(key, buf);
+    } catch (e) {
+      return img;
+    }
+  }
+  return buf;
+}
+
 function createChestGraphics() {
   let pg = createGraphics(32, 32);
   pg.clear();
