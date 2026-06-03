@@ -1,13 +1,121 @@
 // game-world.js — Decorative objects, map image, game state, difficulty, environment
 // Extracted from 4-Game.js
 
+const TerrainChunkCache = {
+  CHUNK_TILES: 16,
+  _chunks: new Map(),
+  _mapW: 0,
+  _mapH: 0,
+  _chunkPx: 0,
+  _cols: 0,
+  _rows: 0,
+
+  _key: function (cx, cy) {
+    return cx + "," + cy;
+  },
+
+  clear: function () {
+    for (const chunk of this._chunks.values()) {
+      if (chunk && chunk.g && typeof chunk.g.remove === "function") {
+        try {
+          chunk.g.remove();
+        } catch (e) {}
+      }
+    }
+    this._chunks.clear();
+    this._mapW = 0;
+    this._mapH = 0;
+    this._chunkPx = 0;
+    this._cols = 0;
+    this._rows = 0;
+  },
+
+  sync: function () {
+    if (!mapImage || !logicalW || !logicalH || !cellSize) return false;
+    const mapW = logicalW * cellSize;
+    const mapH = logicalH * cellSize;
+    const chunkPx = this.CHUNK_TILES * cellSize;
+    if (this._mapW !== mapW || this._mapH !== mapH || this._chunkPx !== chunkPx) {
+      this.clear();
+      this._mapW = mapW;
+      this._mapH = mapH;
+      this._chunkPx = chunkPx;
+      this._cols = Math.ceil(mapW / chunkPx);
+      this._rows = Math.ceil(mapH / chunkPx);
+    }
+    return true;
+  },
+
+  markAllDirty: function () {
+    if (!this.sync()) return;
+    for (const chunk of this._chunks.values()) {
+      if (chunk) chunk.dirty = true;
+    }
+    if (typeof HudCache !== "undefined" && HudCache.markMinimapDirty) {
+      HudCache.markMinimapDirty();
+    }
+  },
+
+  markTileDirty: function (lx, ly) {
+    if (!this.sync()) return;
+    const cx = Math.floor((lx * cellSize) / this._chunkPx);
+    const cy = Math.floor((ly * cellSize) / this._chunkPx);
+    const chunk = this._chunks.get(this._key(cx, cy));
+    if (chunk) chunk.dirty = true;
+    if (typeof HudCache !== "undefined" && HudCache.markMinimapDirty) {
+      HudCache.markMinimapDirty();
+    }
+  },
+
+  _getChunk: function (cx, cy) {
+    const key = this._key(cx, cy);
+    let chunk = this._chunks.get(key);
+    const sx = cx * this._chunkPx;
+    const sy = cy * this._chunkPx;
+    const w = Math.min(this._chunkPx, this._mapW - sx);
+    const h = Math.min(this._chunkPx, this._mapH - sy);
+    if (!chunk) {
+      chunk = { g: createGraphics(w, h), dirty: true, sx, sy, w, h };
+      try {
+        chunk.g.pixelDensity(1);
+        chunk.g.noSmooth();
+        enforceCanvasSharpness(chunk.g.drawingContext);
+      } catch (e) {}
+      this._chunks.set(key, chunk);
+    }
+    if (chunk.dirty) {
+      chunk.g.clear();
+      chunk.g.image(mapImage, 0, 0, chunk.w, chunk.h, chunk.sx, chunk.sy, chunk.w, chunk.h);
+      chunk.dirty = false;
+    }
+    return chunk;
+  },
+
+  drawVisible: function () {
+    if (!this.sync()) {
+      if (mapImage) image(mapImage, 0, 0);
+      return;
+    }
+    const left = Math.max(0, Math.floor((viewLeft || 0) / this._chunkPx));
+    const top = Math.max(0, Math.floor((viewTop || 0) / this._chunkPx));
+    const right = Math.min(this._cols - 1, Math.floor(((viewRight || this._mapW) - 1) / this._chunkPx));
+    const bottom = Math.min(this._rows - 1, Math.floor(((viewBottom || this._mapH) - 1) / this._chunkPx));
+    for (let cy = top; cy <= bottom; cy++) {
+      for (let cx = left; cx <= right; cx++) {
+        const chunk = this._getChunk(cx, cy);
+        image(chunk.g, chunk.sx, chunk.sy);
+      }
+    }
+  },
+};
+
 function drawTileToMap(lx, ly) {
   if (!mapImage || !logicalW || !logicalH) return;
-  
+
   const tileState = getTileState(lx, ly);
   const px = lx * cellSize;
   const py = ly * cellSize;
-  
+
   // Clear the tile area in the map buffer
   mapImage.push();
   mapImage.noStroke();
@@ -49,6 +157,11 @@ function drawTileToMap(lx, ly) {
     mapImage.image(img, drawX, drawY, imgDestW, imgDestH);
   }
   mapImage.pop();
+  if (typeof TerrainChunkCache !== "undefined") TerrainChunkCache.markTileDirty(lx, ly);
+  if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi' &&
+      typeof PixiWorldRenderer !== 'undefined') {
+    PixiWorldRenderer.invalidate();
+  }
 }
 
 function createMapImage() {
@@ -58,20 +171,21 @@ function createMapImage() {
   }
   const w = logicalW * cellSize;
   const h = logicalH * cellSize;
-  
+
   if (mapImage && typeof mapImage.remove === 'function') {
     try { mapImage.remove(); } catch (e) {}
   }
+  if (typeof TerrainChunkCache !== "undefined") TerrainChunkCache.clear();
   mapImage = createGraphics(w, h);
-  
- 
-  mapImage.pixelDensity(1); 
-  
+
+
+  mapImage.pixelDensity(1);
+
 
   try {
- 
+
     enforceCanvasSharpness(mapImage.drawingContext);
-    mapImage.noSmooth(); 
+    mapImage.noSmooth();
   } catch(e) {}
 
     if (decorObjectsDirty) {
@@ -80,8 +194,8 @@ function createMapImage() {
     }
 
   const useSprites = showTextures && spritesheet && spritesheet.width > 1;
- 
-  
+
+
 
   const overlays = [];
   const TREE_PIXEL_SIZE = 64;
@@ -94,7 +208,7 @@ function createMapImage() {
       let img = null;
       let imgDestW = cellSize;
       let imgDestH = cellSize;
-      
+
       if (tileState === TILE_TYPES.COIN) {
           // Skip drawing coins into the static map image
           // We draw them animated in the main loop instead
@@ -141,7 +255,7 @@ function createMapImage() {
         imgDestH = img.height;
       }
       else if (tileState >= TILE_TYPES.HILL_NORTH && tileState <= TILE_TYPES.HILL_NORTHWEST) {
-        
+
         const grassColor = getColorForState(TILE_TYPES.GRASS);
         const baseTileImg = (TILE_IMAGES && TILE_IMAGES['tile_1']) ? TILE_IMAGES['tile_1'] : null;
         if (baseTileImg) {
@@ -159,11 +273,11 @@ function createMapImage() {
           imgDestH = cellSize;
         }
       }
-      
+
       if (img) {
         const drawX = px + Math.floor((cellSize - imgDestW) / 2);
         const drawY = py + (cellSize - imgDestH);
-        
+
         // --- BRIDGE SHADOW ---
         if (tileState === TILE_TYPES.RAMP || tileState === TILE_TYPES.LOG) {
             mapImage.push();
@@ -342,7 +456,7 @@ function createMapImage() {
               shouldMark = true;
             }
             if (!shouldMark) continue;
-        
+
           } catch (e) {}
         }
       }
@@ -391,13 +505,13 @@ function createMapImage() {
   } catch (e) {
     console.warn('[game] failed to paint edgeLayer into raw map image', e);
   }
-  
+
   // --- MINIMAP CACHE ---
   if (mapImage) {
     try {
         if (minimapImage) minimapImage.remove();
         minimapImage = createGraphics(200, 200);
-        
+
         const mapAspect = mapImage.width / mapImage.height;
         let drawW = 200;
         let drawH = 200 / mapAspect;
@@ -405,7 +519,7 @@ function createMapImage() {
            drawH = 200;
            drawW = 200 * mapAspect;
         }
-        
+
         minimapImage.background(0, 0, 0, 0); // Transparent
         minimapImage.image(mapImage, 0, 0, drawW, drawH);
         // Bake the static tree markers into the cache so the per-frame minimap
@@ -415,15 +529,39 @@ function createMapImage() {
         }
     } catch(e) { console.warn('[game] failed to create minimap cache', e); }
   }
+  if (typeof TerrainChunkCache !== "undefined") TerrainChunkCache.markAllDirty();
+
+  // Notify Pixi renderer to rebuild the terrain texture (one GPU upload replaces
+  // all the per-chunk Canvas2D drawImage calls that TerrainChunkCache used to do)
+  if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi') {
+    if (typeof PixiWorldRenderer !== 'undefined') PixiWorldRenderer.rebuildTerrainTexture();
+    if (typeof PixiMinimapRenderer !== 'undefined') PixiMinimapRenderer._mapDirty = true;
+    if (typeof PixiEntityRenderer !== 'undefined') {
+      // Invalidate cached frame textures so portal/coin frames refresh on new map
+      PixiEntityRenderer._coinFrames = null;
+      PixiEntityRenderer._portalActiveFrames = null;
+      PixiEntityRenderer._portalInactiveFrames = null;
+    }
+  }
 }
 
 function clearPreviousGameState() {
+  if (typeof TerrainChunkCache !== "undefined") TerrainChunkCache.clear();
   try {
     if (mapImage && typeof mapImage.remove === 'function') {
       mapImage.remove();
     }
   } catch (e) {}
+  try {
+    if (minimapImage && typeof minimapImage.remove === 'function') {
+      minimapImage.remove();
+    }
+  } catch (e) {}
+  if (typeof HudCache !== "undefined" && HudCache.markMinimapDirty) {
+    HudCache.markMinimapDirty();
+  }
   mapImage = null;
+  minimapImage = null;
   mapOverlays = [];
   decorativeObjectsList = [];
   decorativeObstaclePositions = new Set();
@@ -482,7 +620,7 @@ function spawnDecorativeObjects() {
     decorativeObjectsList.push({ id: name, type, tileX: tile.x, tileY: tile.y });
     const idx = tile.y * logicalW + tile.x;
     occupied.add(idx);
-    
+
     if (type === 'obstacle') {
         decorativeObstaclePositions.add(idx);
     }

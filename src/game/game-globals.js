@@ -1,5 +1,16 @@
 let virtualW, virtualH;
 let pendingGameActivated = false;
+
+// Render backend: 'pixi' uses WebGL via PixiJS (terrain GPU-batched, entities on
+// transparent p5 canvas overlay). 'p5' falls back to full Canvas2D rendering.
+// Toggle in Settings > Graphics > Render, or via localStorage('renderBackend').
+const RENDER_BACKEND = (function () {
+  try {
+    return localStorage.getItem('renderBackend') || 'pixi';
+  } catch (e) {
+    return 'pixi';
+  }
+}());
 let enemies = [];
 let initialEnemies = [];
 let projectiles = [];
@@ -114,6 +125,42 @@ let showFireflyLighting = true;
 // The settings UI now exposes 60 / 120 / Unlimited; Unlimited is stored as 0
 // and applied internally as natural requestAnimationFrame pacing.
 let targetFps = DEFAULT_SETTINGS.targetFps;
+
+let _lastLoggedFpsMode = null;
+let _lastLoggedFpsTarget = null;
+let _lastLoggedFpsCanvas = null;
+
+function applyGameFpsMode(rawModeOrTarget, reason) {
+  const fpsMode = normalizeFpsMode(rawModeOrTarget, normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode));
+  const requestedTargetFps = getFpsTargetForMode(fpsMode);
+  targetFps = requestedTargetFps;
+  let appliedP5Target = requestedTargetFps;
+
+  if (typeof applyFpsModeToP5 === "function" && typeof frameRate === "function") {
+    appliedP5Target = applyFpsModeToP5(fpsMode);
+    targetFps = appliedP5Target;
+  }
+
+  const currentW = typeof width !== 'undefined' ? width : (typeof W !== 'undefined' ? W : 0);
+  const currentH = typeof height !== 'undefined' ? height : (typeof H !== 'undefined' ? H : 0);
+  const canvasSizeStr = currentW + 'x' + currentH;
+
+  if (fpsMode !== _lastLoggedFpsMode || targetFps !== _lastLoggedFpsTarget || canvasSizeStr !== _lastLoggedFpsCanvas) {
+    console.info("[game] FPS mode applied", {
+      reason: reason || "unknown",
+      fpsMode,
+      requestedTargetFps,
+      appliedP5Target,
+      measuredP5FrameRate: typeof frameRate === "function" ? frameRate() : null,
+      canvas: { width: currentW, height: currentH }
+    });
+    _lastLoggedFpsMode = fpsMode;
+    _lastLoggedFpsTarget = targetFps;
+    _lastLoggedFpsCanvas = canvasSizeStr;
+  }
+  return targetFps;
+}
+
 let performanceTracker = createPerformanceTracker();
 
 let showLoadingOverlay = true;

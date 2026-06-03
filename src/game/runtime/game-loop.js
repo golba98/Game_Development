@@ -78,3 +78,93 @@ const GameLoop = {
     this._accumulator = 0;
   },
 };
+
+const FramePerf = {
+  LOG_INTERVAL_MS: 2000,
+  enabled: true,
+  _frameStart: 0,
+  _stageStart: 0,
+  _currentStage: null,
+  _lastLog: 0,
+  _frames: 0,
+  _sums: {
+    totalMs: 0,
+    updateMs: 0,
+    worldMs: 0,
+    entityMs: 0,
+    weatherMs: 0,
+    hudMs: 0,
+    minimapMs: 0,
+    perfPanelMs: 0,
+    pixiFlushMs: 0,
+  },
+
+  _now: function () {
+    return typeof performance !== "undefined" && performance.now
+      ? performance.now()
+      : Date.now();
+  },
+
+  beginFrame: function () {
+    if (!this.enabled) return;
+    const now = this._now();
+    this._frameStart = now;
+    this._stageStart = now;
+    this._currentStage = null;
+  },
+
+  start: function (stage) {
+    if (!this.enabled) return;
+    this.end();
+    this._currentStage = stage;
+    this._stageStart = this._now();
+  },
+
+  end: function () {
+    if (!this.enabled || !this._currentStage) return;
+    const now = this._now();
+    const key = this._currentStage + "Ms";
+    if (Object.prototype.hasOwnProperty.call(this._sums, key)) {
+      this._sums[key] += now - this._stageStart;
+    }
+    this._currentStage = null;
+    this._stageStart = now;
+  },
+
+  endFrame: function () {
+    if (!this.enabled || !this._frameStart) return;
+    this.end();
+    const now = this._now();
+    this._sums.totalMs += now - this._frameStart;
+    this._frames++;
+    if (!this._lastLog) this._lastLog = now;
+    if (now - this._lastLog < this.LOG_INTERVAL_MS) return;
+
+    const frames = Math.max(1, this._frames);
+    const avg = (key) => Number((this._sums[key] / frames).toFixed(2));
+    const fps =
+      typeof frameRate === "function"
+        ? Math.round(frameRate())
+        : Math.round(1000 / Math.max(1, avg("totalMs")));
+    const perfObj = {
+      fps,
+      backend: typeof RENDER_BACKEND !== 'undefined' ? RENDER_BACKEND : 'p5',
+      totalMs: avg("totalMs"),
+      updateMs: avg("updateMs"),
+      worldMs: avg("worldMs"),
+      entityMs: avg("entityMs"),
+      weatherMs: avg("weatherMs"),
+      hudMs: avg("hudMs"),
+      minimapMs: avg("minimapMs"),
+      perfPanelMs: avg("perfPanelMs"),
+    };
+    if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi') {
+      perfObj.pixiFlushMs = avg("pixiFlushMs");
+    }
+    console.info("[perf] frame", perfObj);
+
+    this._frames = 0;
+    this._lastLog = now;
+    for (const key in this._sums) this._sums[key] = 0;
+  },
+};
