@@ -395,7 +395,7 @@ function pruneUnreachable(startX, startY) {
 // Generates hill clusters via Perlin noise + cellular automata, then renders them into map.
 function generateHills(map, w, h) {
   // --- SETTINGS ---
-  const scale = 0.035;
+  const noiseScale = 0.035;
   const threshold = 0.48;
   const seed = Math.random() * 99999;
   let hillGrid = new Uint8Array(w * h);
@@ -404,7 +404,7 @@ function generateHills(map, w, h) {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       if (x < 4 || x > w - 5 || y < 4 || y > h - 5) continue;
-      const n = noise((x * scale) + seed, (y * scale) + seed);
+      const n = noise((x * noiseScale) + seed, (y * noiseScale) + seed);
       if (n > threshold) hillGrid[y * w + x] = 1;
     }
   }

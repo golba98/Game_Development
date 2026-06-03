@@ -499,6 +499,7 @@ window.addEventListener('message', (ev) => {
       case 'game-activated': {
         try {
           loadLocalSettings();
+          applySettingsMessage(ev.data);
           pendingGameActivated = true;
           if (typeof _confirmResize === 'function') {
             try { _confirmResize(); pendingGameActivated = false; } catch (e) { console.warn('[game] _confirmResize failed', e); }
@@ -529,10 +530,7 @@ window.addEventListener('message', (ev) => {
       }
       case 'update-audio-settings': {
         try {
-          if (typeof ev.data.masterVol === 'number') masterVol = ev.data.masterVol;
-          if (typeof ev.data.musicVol  === 'number') musicVol  = ev.data.musicVol;
-          if (typeof ev.data.sfxVol    === 'number') sfxVol    = ev.data.sfxVol;
-          if (typeof ev.data.difficulty === 'string') setDifficulty(ev.data.difficulty, { reason: 'message:update-audio-settings' });
+          applySettingsMessage(ev.data);
           if (gameMusic && typeof gameMusic.setVolume === 'function') {
             gameMusic.setVolume(musicVol * masterVol);
             verboseLog('[game] applied updated audio settings to gameMusic');
@@ -556,3 +554,32 @@ window.addEventListener('message', (ev) => {
     console.warn('[game] message handler error', err);
   }
 }, false);
+
+function applySettingsMessage(data) {
+  if (!data || typeof data !== 'object') return;
+  if (typeof data.masterVol === 'number') masterVol = data.masterVol;
+  if (typeof data.musicVol === 'number') musicVol = data.musicVol;
+  if (typeof data.sfxVol === 'number') sfxVol = data.sfxVol;
+  if (typeof data.difficulty === 'string') {
+    setDifficulty(data.difficulty, { reason: 'message:update-settings' });
+  }
+  if (typeof data.fpsMode !== 'undefined' || typeof data.targetFps === 'number') {
+    targetFps = getFpsTargetForMode(normalizeFpsMode(data.fpsMode ?? data.targetFps, normalizeFpsMode(targetFps)));
+    if (typeof applyFPS === 'function') applyFPS();
+  }
+  if (typeof data.hudEnabled === 'boolean') hudEnabled = data.hudEnabled;
+  else if (typeof data.showHUD === 'boolean') hudEnabled = data.showHUD;
+  performanceOverlayEnabled = normalizePerformanceOverlaySetting(data, performanceOverlayEnabled);
+  textSizeSetting = normalizeUiScaleSetting(data.uiScale ?? data.textSizeSetting, textSizeSetting);
+  if (typeof data.showStars === 'boolean') showStars = data.showStars;
+  if (typeof data.screenShakeEnabled === 'boolean') screenShakeEnabled = data.screenShakeEnabled;
+  if (typeof data.showParticles === 'boolean') showParticles = data.showParticles;
+  if (typeof data.showFireflyLighting === 'boolean') showFireflyLighting = data.showFireflyLighting;
+  if (typeof data.colorModeSetting === 'string') colorModeSetting = data.colorModeSetting;
+  if (typeof data.invertYAxis === 'boolean') invertYAxis = data.invertYAxis;
+  if (typeof data.sensitivitySetting === 'number') sensitivitySetting = data.sensitivitySetting;
+  if (typeof data.languageSetting === 'string') languageSetting = data.languageSetting;
+  if (typeof applyVolumes === 'function') applyVolumes();
+  if (typeof applyCurrentTextSize === 'function') applyCurrentTextSize();
+  if (typeof applyColorMode === 'function') applyColorMode(colorModeSetting);
+}

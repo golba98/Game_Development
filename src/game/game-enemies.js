@@ -1302,7 +1302,7 @@ function spawnSplat(x, y, type = 'acid') {
         alpha: 255,
         life: SPLAT_LIFE_MS,
         maxLife: SPLAT_LIFE_MS,
-        scale: random(0.6, 1.0),
+        spriteScale: random(0.6, 1.0),
         update: function(dt) {
             this.life -= dt;
             this.alpha = (this.life / this.maxLife) * 255;
@@ -1310,7 +1310,7 @@ function spawnSplat(x, y, type = 'acid') {
         },
         draw: function() {
             push();
-            const drawSize = cellSize * this.scale;
+            const drawSize = cellSize * this.spriteScale;
             const px = this.x * cellSize + (cellSize - drawSize) / 2;
             const py = this.y * cellSize + (cellSize - drawSize) / 2;
             tint(255, this.alpha);

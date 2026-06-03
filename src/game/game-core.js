@@ -20,8 +20,9 @@ function setup() {
   powerupPotionSprite = createSpeedPotionGraphics(); // Speed Potion
   chestSprite = createChestGraphics();
 
-  W = windowWidth;
-  H = windowHeight;
+  const viewportSize = getViewportSize();
+  W = viewportSize.width;
+  H = viewportSize.height;
 
   let canvasStyle = document.createElement("style");
   canvasStyle.innerHTML = `
@@ -247,16 +248,8 @@ function setup() {
 function applyFPS() {
   if (typeof frameRate === "function") {
     const fpsMode = normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode);
-    targetFps = getFpsTargetForMode(fpsMode);
-    // Unlimited removes the finite game-side p5 frame pacing cap. Browser
-    // requestAnimationFrame/VSync can still naturally land near refresh rate.
-    if (fpsMode === "unlimited") {
-      frameRate(INTERNAL_UNCAPPED_FRAME_RATE);
-      verboseLog("[game] framerate target set to unlimited");
-    } else {
-      frameRate(targetFps);
-      verboseLog("[game] framerate target set to " + targetFps);
-    }
+    targetFps = applyFpsModeToP5(fpsMode);
+    verboseLog("[game] framerate target set to " + getFpsModeLabel(fpsMode));
   }
 }
 
@@ -264,11 +257,13 @@ function windowResized() {
   try {
     clearTimeout(_resizeConfirmTimer);
   } catch (e) {}
-  _lastRequestedSize = { w: windowWidth, h: windowHeight };
+  const viewportSize = getViewportSize();
+  _lastRequestedSize = { w: viewportSize.width, h: viewportSize.height };
   _resizeConfirmTimer = setTimeout(() => {
+    const latestViewportSize = getViewportSize();
     if (
-      _lastRequestedSize.w === windowWidth &&
-      _lastRequestedSize.h === windowHeight
+      _lastRequestedSize.w === latestViewportSize.width &&
+      _lastRequestedSize.h === latestViewportSize.height
     ) {
       _confirmResize();
     } else {
@@ -280,22 +275,24 @@ function windowResized() {
 function _confirmResize() {
   _resizeConfirmTimer = null;
 
-  W = windowWidth;
-  H = windowHeight;
+  const viewportSize = getViewportSize();
+  W = viewportSize.width;
+  H = viewportSize.height;
 
   pixelDensity(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_DENSITY));
+
+  // Use fixed virtual height for consistent zoom and exact viewport fill.
+  gameScale = Math.max(0.001, H / FIXED_VIRTUAL_HEIGHT);
+  virtualW = W / gameScale;
+  virtualH = H / gameScale;
 
   const mapW = (logicalW || 0) * cellSize;
   const mapH = (logicalH || 0) * cellSize;
   if (mapW <= 0 || mapH <= 0) {
     resizeCanvas(W, H);
+    try { noSmooth(); } catch (e) {}
     return;
   }
-
-  // Use fixed virtual height for consistent zoom
-  gameScale = Math.max(0.001, H / FIXED_VIRTUAL_HEIGHT);
-  virtualW = W / gameScale;
-  virtualH = H / gameScale;
 
   resizeCanvas(W, H);
 
@@ -329,8 +326,9 @@ function _confirmResize() {
 }
 
 function createFullWindowCanvas() {
-  W = windowWidth;
-  H = windowHeight;
+  const viewportSize = getViewportSize();
+  W = viewportSize.width;
+  H = viewportSize.height;
   createCanvas(W, H);
   pixelDensity(1);
 }
@@ -579,10 +577,7 @@ function draw() {
     drawScore();
     drawCompass();
     if (showMinimap) drawMinimap();
-    if (typeof WeatherSystem !== "undefined") {
-      const vW = virtualW || width / gameScale;
-      WeatherSystem.drawClock(vW - 60, 40, 25);
-    }
+    if (typeof drawHudWeatherClock === "function") drawHudWeatherClock();
   }
 
   if (performanceOverlayEnabled) {

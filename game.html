@@ -28,7 +28,7 @@
         width: 100% !important;
         height: 100% !important;
         display: block;
-        object-fit: contain;
+        image-rendering: pixelated;
         background: #000;
       }
 
@@ -129,7 +129,8 @@
 
           canvas.style.width = "100%";
           canvas.style.height = "100%";
-          canvas.style.objectFit = "contain";
+          canvas.style.objectFit = "fill";
+          canvas.style.imageRendering = "pixelated";
           canvas.style.display = "block";
           canvas.setAttribute("tabindex", "0");
           root.setAttribute("aria-busy", "false");

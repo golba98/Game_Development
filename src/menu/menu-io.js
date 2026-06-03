@@ -5,11 +5,12 @@ function saveSettings() {
   try {
     const iframe = document.getElementById('game-iframe');
     if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({
-        type: 'update-audio-settings',
-        masterVol, musicVol, sfxVol,
-        difficulty: difficultySetting
-      }, '*');
+      iframe.contentWindow.postMessage(
+        typeof getGameSettingsMessage === 'function'
+          ? getGameSettingsMessage()
+          : { type: 'update-audio-settings', masterVol, musicVol, sfxVol, difficulty: difficultySetting },
+        '*',
+      );
       console.log('[saveSettings] forwarded audio settings to game iframe');
     }
   } catch (e) { console.warn('[saveSettings] failed to post audio settings to iframe', e); }

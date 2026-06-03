@@ -308,8 +308,8 @@ function gTextSize(px) {
     if (typeof textSize === 'function') textSize(px);
   } catch (e) {
     try {
-      const scale = getTextScale();
-      const finalPx = Math.max(8, Math.round((Number(px) || 14) * scale));
+      const textScale = getTextScale();
+      const finalPx = Math.max(8, Math.round((Number(px) || 14) * textScale));
       if (typeof _rawTextSizeFn === 'function') _rawTextSizeFn(finalPx);
     } catch (err) {}
   }
@@ -337,12 +337,12 @@ function applyCurrentTextSize() {
   ensureTextSizeOverride();
   try { if (typeof textSize === 'function') textSize(_textSizeBaseValue || TEXT_SIZE_BASE_PX); } catch(e) {}
   try {
-    const scale = getTextScale();
+    const textScale = getTextScale();
 
     // Base values aligned with the inline styles used by createSettingsContext
-    const base    = Math.max(14, Math.round(18 * scale));
-    const label   = Math.max(16, Math.round(20 * scale));
-    const btnSize = Math.max(14, Math.round(18 * scale));
+    const base    = Math.max(14, Math.round(18 * textScale));
+    const label   = Math.max(16, Math.round(20 * textScale));
+    const btnSize = Math.max(14, Math.round(18 * textScale));
 
     try { if (typeof textSize === 'function') textSize(base); } catch(e) {}
 
@@ -372,7 +372,7 @@ function applyCurrentTextSize() {
       inputs.forEach(el => { try { el.style.fontSize = base + 'px'; } catch(e){} });
 
       const headings = root.querySelectorAll('h1, h2, h3');
-      headings.forEach(el => { try { el.style.fontSize = Math.round(32 * scale) + 'px'; } catch(e){} });
+      headings.forEach(el => { try { el.style.fontSize = Math.round(32 * textScale) + 'px'; } catch(e){} });
     } catch(e) {}
 
     
