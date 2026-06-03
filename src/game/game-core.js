@@ -56,7 +56,7 @@ function setup() {
   `;
   document.head.appendChild(canvasStyle);
 
-  applyFPS();
+  applyGameFpsMode(targetFps, "setup");
 
   pixelDensity(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_DENSITY));
 
@@ -65,6 +65,20 @@ function setup() {
   virtualH = H / gameScale;
 
   let cnv = createCanvas(W, H);
+  console.log('[game] setup: canvas created', W, 'x', H);
+
+  // PixiJS WebGL layer — creates its own canvas behind the p5 canvas.
+  // Must run after createCanvas so gameScale / W / H are known.
+  if (RENDER_BACKEND === 'pixi' && typeof PixiApp !== 'undefined') {
+    PixiApp.init({ width: W, height: H });
+    // Make the p5 canvas a transparent overlay so the Pixi terrain shows through.
+    if (cnv && cnv.elt) {
+      cnv.elt.style.background = 'transparent';
+      cnv.elt.style.position = 'absolute';
+      cnv.elt.style.inset = '0';
+    }
+  }
+
   ensureTextSizeOverride();
 
   try {
@@ -234,7 +248,7 @@ function setup() {
     }
   });
 
-  applyFPS();
+  applyGameFpsMode(targetFps, "setup");
 
   if (gameMusic) gameMusic.setVolume(musicVol * masterVol);
   if (pendingGameActivated) {
@@ -243,14 +257,32 @@ function setup() {
       pendingGameActivated = false;
     } catch (e) {}
   }
-}
 
-function applyFPS() {
-  if (typeof frameRate === "function") {
-    const fpsMode = normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode);
-    targetFps = applyFpsModeToP5(fpsMode);
-    verboseLog("[game] framerate target set to " + getFpsModeLabel(fpsMode));
-  }
+  // Tell the parent menu that the game is fully initialised and ready for game-activated.
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'game-ready' }, '*');
+      console.log('[game] posted game-ready to parent');
+    }
+  } catch (e) {}
+
+  // Dev-only browser rAF sampler
+  try {
+    let rafSamples = [];
+    let lastRafTime = performance.now();
+    const sampleRaf = (now) => {
+      rafSamples.push(now - lastRafTime);
+      lastRafTime = now;
+      if (rafSamples.length < 45) {
+        requestAnimationFrame(sampleRaf);
+      } else {
+        rafSamples = rafSamples.slice(10); // discard first few unstable frames
+        const avg = rafSamples.reduce((a, b) => a + b, 0) / rafSamples.length;
+        console.info("[game] browser rAF sample", { fps: Math.round(1000 / avg), deltaMs: Number(avg.toFixed(2)) });
+      }
+    };
+    requestAnimationFrame((now) => { lastRafTime = now; requestAnimationFrame(sampleRaf); });
+  } catch (e) {}
 }
 
 function windowResized() {
@@ -296,6 +328,10 @@ function _confirmResize() {
 
   resizeCanvas(W, H);
 
+  if (RENDER_BACKEND === 'pixi' && typeof PixiApp !== 'undefined') {
+    PixiApp.resize(W, H);
+  }
+
   try {
     enforceCanvasSharpness(drawingContext);
     const cnv = select("canvas");
@@ -334,6 +370,8 @@ function createFullWindowCanvas() {
 }
 
 function draw() {
+  if (typeof FramePerf !== "undefined") FramePerf.beginFrame();
+
   try {
     enforceCanvasSharpness(drawingContext);
   } catch (e) {}
@@ -350,6 +388,8 @@ function draw() {
     typeof GameLoop !== "undefined"
       ? GameLoop.clampDelta(_rawDelta)
       : Math.min(_rawDelta, 50);
+
+  if (typeof FramePerf !== "undefined") FramePerf.start("update");
 
   if (typeof WeatherSystem !== "undefined" && SceneManager.isSimulating()) {
     const wasNight = isNightTime();
@@ -369,21 +409,29 @@ function draw() {
       background(0);
       genTimer = millis() + 100;
       genPhase = GENPHASE_PART1;
+      if (typeof FramePerf !== "undefined") FramePerf.endFrame();
       return;
     }
     if (genPhase === GENPHASE_PART1) {
       background(0);
-      if (millis() < genTimer) return;
+      if (millis() < genTimer) {
+        if (typeof FramePerf !== "undefined") FramePerf.endFrame();
+        return;
+      }
       generateMap_Part1();
       overlayMessage = "Roughening & Eroding...";
       updateLoadingOverlayDom();
       genTimer = millis() + 800;
       genPhase = GENPHASE_PART2;
+      if (typeof FramePerf !== "undefined") FramePerf.endFrame();
       return;
     }
     if (genPhase === GENPHASE_PART2) {
       background(0);
-      if (millis() < genTimer) return;
+      if (millis() < genTimer) {
+        if (typeof FramePerf !== "undefined") FramePerf.endFrame();
+        return;
+      }
       generateMap_Part2();
       genPhase = 0;
       showLoadingOverlay = false;
@@ -397,10 +445,12 @@ function draw() {
     window.__gameDebugShown = true;
   }
 
-  try {
-    ensureLoadingOverlayDom();
-    updateLoadingOverlayDom();
-  } catch (e) {}
+  if (showLoadingOverlay || genPhase) {
+    try {
+      ensureLoadingOverlayDom();
+      updateLoadingOverlayDom();
+    } catch (e) {}
+  }
 
   push();
 
@@ -462,27 +512,47 @@ function draw() {
     viewBottom = drawCamY + virtualH + cullPad;
   }
 
-  background(34, 139, 34);
+  // In Pixi mode, clear to transparent so the WebGL terrain canvas shows through.
+  if (RENDER_BACKEND === 'pixi' && typeof PixiApp !== 'undefined' && PixiApp.app) {
+    clear();
+  } else {
+    background(34, 139, 34);
+  }
 
   // START WORLD TRANSFORM
   push();
-  // Apply Screen Shake inside camera transform
+  // Extract shake offset so it can be applied to both the p5 canvas and the Pixi
+  // world container in sync (avoiding terrain/entity misalignment during shake).
+  let _frameShakeX = 0, _frameShakeY = 0;
   if (screenShakeTimer > 0 && screenShakeEnabled) {
-    translate(
-      random(-screenShakeAmount, screenShakeAmount),
-      random(-screenShakeAmount, screenShakeAmount),
-    );
+    _frameShakeX = random(-screenShakeAmount, screenShakeAmount);
+    _frameShakeY = random(-screenShakeAmount, screenShakeAmount);
+    translate(_frameShakeX, _frameShakeY);
     screenShakeTimer -= gameDelta;
   } else if (screenShakeTimer > 0) {
     // Still decrement the timer even if visually disabled so logic completes
     screenShakeTimer -= gameDelta;
   }
 
+  // Update Pixi world camera (same shake offsets for terrain/entity alignment)
+  if (RENDER_BACKEND === 'pixi' && typeof PixiWorldRenderer !== 'undefined') {
+    PixiWorldRenderer.update(drawCamX, drawCamY, _frameShakeX, _frameShakeY);
+  }
+
   translate(-drawCamX, -drawCamY);
 
-  if (mapImage) image(mapImage, 0, 0);
+  if (typeof FramePerf !== "undefined") FramePerf.start("world");
+  // Pixi mode: terrain is rendered on the WebGL canvas by PixiWorldRenderer.
+  if (RENDER_BACKEND !== 'pixi') {
+    if (typeof TerrainChunkCache !== "undefined") {
+      TerrainChunkCache.drawVisible();
+    } else if (mapImage) {
+      image(mapImage, 0, 0);
+    }
+  }
 
   if (showLoadingOverlay) {
+    if (typeof FramePerf !== "undefined") FramePerf.endFrame();
     pop();
     background(0);
     pop();
@@ -495,6 +565,7 @@ function draw() {
     }
 
     if (SceneManager.isSimulating()) {
+      if (typeof FramePerf !== "undefined") FramePerf.start("update");
       if (typeof PerfOverlay !== "undefined") PerfOverlay.markUpdateStart();
       handleMovement();
       updateMovementInterpolation();
@@ -541,8 +612,10 @@ function draw() {
 
   if (typeof PerfOverlay !== "undefined") PerfOverlay.markRenderStart();
 
+  if (typeof FramePerf !== "undefined") FramePerf.start("entity");
   if (typeof Renderer !== "undefined") Renderer.drawWorld();
 
+  if (typeof FramePerf !== "undefined") FramePerf.start("weather");
   drawClouds();
 
   if (EDGE_LAYER_DEBUG && edgeLayer && logicalW && logicalH) {
@@ -560,27 +633,30 @@ function draw() {
     Renderer.drawNightOverlay(drawCamX, drawCamY);
 
   pop(); // END WORLD TRANSFORM
+  if (typeof FramePerf !== "undefined") FramePerf.end();
 
   if (_rawDelta > 0) {
     recordPerformanceSample(performanceTracker, 1000 / _rawDelta);
   }
 
-  // --- MINIMAP --- (Handled in game-hud.js via drawMinimap)
+  // --- HUD --- (safe-area layout handled in game-hud.js)
   if (hudEnabled) {
-    drawDifficultyBadge();
-    drawXPBar();
-    drawHealthBar();
-    drawManaBar();
-    drawBossHealthBar();
-    drawSprintMeter();
-    drawInventory();
-    drawScore();
+    if (typeof FramePerf !== "undefined") FramePerf.start("hud");
+    drawBottomHud();
+    drawLeftHud();
+    drawBossHud();
     drawCompass();
-    if (showMinimap) drawMinimap();
+    drawDifficultyBadge();
     if (typeof drawHudWeatherClock === "function") drawHudWeatherClock();
+
+    if (showMinimap) {
+      if (typeof FramePerf !== "undefined") FramePerf.start("minimap");
+      drawMinimap();
+    }
   }
 
   if (performanceOverlayEnabled) {
+    if (typeof FramePerf !== "undefined") FramePerf.start("perfPanel");
     drawHudPerformanceOverlay();
   }
 
@@ -591,6 +667,7 @@ function draw() {
       virtualH || height / gameScale,
     );
   }
+  if (typeof FramePerf !== "undefined") FramePerf.end();
 
   try {
     if (typeof drawInGameMenu === "function") drawInGameMenu();
@@ -609,7 +686,20 @@ function draw() {
 
   drawVignette();
 
+  // Pixi entity sprites (overlay/decor/coin/portal) — update after Renderer.drawWorld()
+  // has built currentDrawables, and before PixiApp.render() flushes the GPU frame.
+  if (RENDER_BACKEND === 'pixi' && typeof PixiEntityRenderer !== 'undefined') {
+    PixiEntityRenderer.update();
+  }
+
+  // Flush the Pixi WebGL frame (terrain + entity sprites).
+  if (RENDER_BACKEND === 'pixi' && typeof PixiApp !== 'undefined' && PixiApp.app) {
+    if (typeof FramePerf !== 'undefined') FramePerf.start('pixiFlush');
+    PixiApp.render();
+  }
+
   // Roll input edge-latches at frame end so wasPressed/wasReleased report
   // presses/releases that happened during this frame.
   if (typeof InputState !== "undefined") InputState.endFrame();
+  if (typeof FramePerf !== "undefined") FramePerf.endFrame();
 }

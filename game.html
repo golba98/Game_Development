@@ -39,9 +39,9 @@
         -ms-overflow-style: none;
         scrollbar-width: none;
       }
-      @font-face { 
-        font-family: 'PixelGameFont'; 
-        src: url('assets/3-GUI/font.ttf'); 
+      @font-face {
+        font-family: 'PixelGameFont';
+        src: url('assets/3-GUI/font.ttf');
         font-display: swap;
       }
       #gd-loading-overlay {
@@ -82,6 +82,8 @@
     </div>
     <div id="game-root" aria-live="polite" aria-busy="true"></div>
 
+    <!-- PixiJS v7 (IIFE global PIXI) — loaded before p5 so PIXI is available in setup() -->
+    <script defer src="https://cdn.jsdelivr.net/npm/pixi.js@7/dist/pixi.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/addons/p5.sound.min.js"></script>
 
@@ -98,6 +100,14 @@
     <script defer src="src/game/runtime/renderer.js"></script>
     <script defer src="src/game/runtime/hud-cache.js"></script>
     <script defer src="src/game/runtime/asset-cache.js"></script>
+
+    <!-- Pixi render layer — loaded after globals, before game-core.js -->
+    <script defer src="src/game/runtime/pixi-app.js"></script>
+    <script defer src="src/game/runtime/pixi-world-renderer.js"></script>
+    <script defer src="src/game/runtime/pixi-entity-renderer.js"></script>
+    <script defer src="src/game/runtime/pixi-hud-renderer.js"></script>
+    <script defer src="src/game/runtime/pixi-minimap-renderer.js"></script>
+    <script defer src="src/game/runtime/pixi-weather-renderer.js"></script>
 
     <script defer src="src/game/game-assets.js"></script>
     <script defer src="src/game/game-map.js"></script>
@@ -121,8 +131,18 @@
         const root = document.getElementById("game-root");
 
         function adoptCanvas() {
-          const canvas = document.querySelector("canvas");
+          // In Pixi mode the WebGL canvas (#pixi-canvas) is already in root.
+          // Find the p5 canvas — any canvas that is NOT #pixi-canvas.
+          const allCanvases = document.querySelectorAll("canvas");
+          let canvas = null;
+          for (let i = 0; i < allCanvases.length; i++) {
+            if (allCanvases[i].id !== "pixi-canvas") {
+              canvas = allCanvases[i];
+              break;
+            }
+          }
           if (!canvas) return false;
+
           if (canvas.parentElement !== root) {
             root.appendChild(canvas);
           }
@@ -132,6 +152,16 @@
           canvas.style.objectFit = "fill";
           canvas.style.imageRendering = "pixelated";
           canvas.style.display = "block";
+          canvas.style.position = "absolute";
+          canvas.style.inset = "0";
+          // In Pixi mode, p5 canvas is a transparent overlay on top of the Pixi canvas.
+          // The background must be transparent so the WebGL terrain shows through.
+          const isPixiMode = typeof window !== "undefined" &&
+            (typeof localStorage !== "undefined") &&
+            (localStorage.getItem("renderBackend") || "pixi") === "pixi";
+          if (isPixiMode && document.getElementById("pixi-canvas")) {
+            canvas.style.background = "transparent";
+          }
           canvas.setAttribute("tabindex", "0");
           root.setAttribute("aria-busy", "false");
           try {

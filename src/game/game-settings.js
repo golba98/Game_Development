@@ -39,7 +39,7 @@ function measureZoomViaInch() {
     }
     const rect = __zoomProbeEl.getBoundingClientRect();
     if (!rect || !rect.width) return null;
-  
+
     return rect.width / ZOOM_PROBE_DPI;
   } catch (e) { return null; }
 }
@@ -102,11 +102,11 @@ function createZoomStablePanel(w, h, id) {
   container.style('display', 'flex');
   container.style('align-items', 'center');
   container.style('justify-content', 'center');
-  container.style('background-color', 'rgba(0, 0, 0, 0.5)'); 
+  container.style('background-color', 'rgba(0, 0, 0, 0.5)');
   container.style('transform-origin', 'top left');
   container.style('will-change', 'transform');
   container.style('pointer-events', 'auto');
-  
+
   let panel = createDiv('');
   panel.parent(container);
   panel.style('width', `${w}px`);
@@ -122,7 +122,7 @@ function createZoomStablePanel(w, h, id) {
   panel.style('color', 'white');
   panel.style('box-shadow', `0 0 18px rgba(0,0,0,0.85), inset 0 0 0 2px ${MENU_GOLD_BORDER}`);
   panel.style('transform', 'none');
-  
+
   let zoomLoopId = null;
   const stopPanelZoom = makeElementZoomInvariant(panel.elt, 'center center');
   const updateZoom = () => {
@@ -133,14 +133,14 @@ function createZoomStablePanel(w, h, id) {
     const oy = vv ? (vv.offsetTop || 0) : 0;
 
     container.style('transform', `translate(${ox}px, ${oy}px)`);
-    
+
     zoomLoopId = requestAnimationFrame(updateZoom);
   };
   updateZoom();
 
-  return { 
-    container, 
-    panel, 
+  return {
+    container,
+    panel,
     close: () => {
       if (zoomLoopId) cancelAnimationFrame(zoomLoopId);
       stopPanelZoom();
@@ -242,12 +242,11 @@ function resetGameSettingsToDefaults() {
   screenShakeEnabled = true;
   showParticles = true;
   showFireflyLighting = true;
-  targetFps = getFpsTargetForMode(DEFAULT_SETTINGS.fpsMode);
+  applyGameFpsMode(DEFAULT_SETTINGS.fpsMode, "reset-settings");
   playerKeybinds = { ...DEFAULT_KEYBINDS };
 
   try { setDifficulty(difficultySetting, { regenerate: false, reason: "reset-settings" }); } catch (e) {}
   try { applyVolumes(); } catch (e) {}
-  try { applyFPS(); } catch (e) {}
   try { applyColorMode(colorModeSetting); } catch (e) {}
   try { applyCurrentTextSize(); } catch (e) {}
   try { persistSavedSettings(true); } catch (e) {}
@@ -375,7 +374,7 @@ function applyCurrentTextSize() {
       headings.forEach(el => { try { el.style.fontSize = Math.round(32 * textScale) + 'px'; } catch(e){} });
     } catch(e) {}
 
-    
+
     try {
       if (Array.isArray(activeSettingElements)) {
         activeSettingElements.forEach(item => {
@@ -405,17 +404,17 @@ function updateLoadingOverlayDom() {
   try {
     const el = document.getElementById('gd-loading-overlay');
     if (!el) return;
-    
+
     if (showLoadingOverlay) {
       if (!overlayProgressActive && overlayProgress < 100) startLoadingProgress();
       if (overlayProgressActive) updateLoadingProgressTick();
       el.style.display = 'flex';
       el.style.opacity = '1';
-      
-     
+
+
       const content = document.getElementById('gd-loading-content');
       if (content) {
-         
+
           let s = 1;
           if (typeof window !== 'undefined') s = window.innerHeight / LOADING_SCALE_HEIGHT_REF;
           s = Math.max(LOADING_SCALE_MIN, Math.min(LOADING_SCALE_MAX, s));
@@ -428,7 +427,7 @@ function updateLoadingOverlayDom() {
       completeLoadingProgress();
       el.style.display = 'none';
       el.style.opacity = '0';
-      return; 
+      return;
     }
 
     const msg = el.querySelector('.gd-loading-message');
@@ -444,7 +443,7 @@ function updateLoadingOverlayDom() {
 
     const fill = el.querySelector('.gd-progress-fill');
     const pct = el.querySelector('.gd-progress-text');
-    
+
     if (fill) fill.style.width = p + '%';
     if (pct) pct.innerText = p + '%';
 
@@ -455,14 +454,14 @@ function updateLoadingOverlayDom() {
 function injectCustomStyles() {
   try {
     if (typeof document === 'undefined' || !document.head) return;
-    
+
     const existing = document.getElementById('gd-custom-styles');
     if (existing) existing.remove();
 
     const style = document.createElement('style');
     style.id = 'gd-custom-styles';
     const fontPath = (typeof UI_FONT_PATH !== 'undefined' ? UI_FONT_PATH : 'assets/3-GUI/font.ttf').replace(/\\/g, '/');
-    
+
     style.type = 'text/css';
     style.appendChild(document.createTextNode(`
       @font-face {
@@ -473,7 +472,7 @@ function injectCustomStyles() {
         font-family: 'MyFont', sans-serif !important;
         box-sizing: border-box;
       }
-      
+
       button:hover {
         transform: scale(1.05);
         color: #ffff80 !important;
@@ -485,7 +484,7 @@ function injectCustomStyles() {
       }
 
       input[type="range"] {
-        -webkit-appearance: none; 
+        -webkit-appearance: none;
         width: 100%;
         background: transparent;
         margin: 10px 0;
@@ -504,10 +503,10 @@ function injectCustomStyles() {
         -webkit-appearance: none;
         height: 38px !important;
         width: 38px !important;
-        background: #ffcc00;        
-        border-radius: 10px;        
+        background: #ffcc00;
+        border-radius: 10px;
         cursor: pointer;
-        margin-top: -10px;          
+        margin-top: -10px;
         box-shadow: 0 0 15px rgba(0,0,0,0.8);
         z-index: 20002;
         position: relative;
@@ -947,24 +946,24 @@ function styleButton(btn) {
 
 /** Applies the pixel-art button texture, hover/out animations, and font styling. */
 function stylePixelButton(btn) {
-  
+
   btn.style('background-color', 'transparent');
   btn.style('border', 'none');
   btn.style('color', 'white');
   btn.style('cursor', 'pointer');
   btn.style('border-radius', '2px');
-  
-  
+
+
   btn.style('background-image', `url('${MENU_BUTTON_TEXTURE_PATH}')`);
   btn.style('background-size', '100% 100%');
   btn.style('background-repeat', 'no-repeat');
-  btn.style('image-rendering', 'pixelated'); 
-  
-  
-  btn.style('font-family', '"MyFont", sans-serif'); 
+  btn.style('image-rendering', 'pixelated');
+
+
+  btn.style('font-family', '"MyFont", sans-serif');
   btn.style('text-shadow', '0 0 10px #ffffff60');
-  
-  
+
+
   btn.mouseOver(() => {
     btn.style('transform', 'scale(1.05)');
     btn.style('color', '#ffff80');
@@ -973,29 +972,29 @@ function stylePixelButton(btn) {
     btn.style('transform', 'scale(1.0)');
     btn.style('color', 'white');
   });
-  
-  
+
+
   btn.style('z-index', '20005');
 }
 
 /** Populates `ctx` with Master Volume, Music Volume, and SFX Volume sliders. */
 function buildAudioSettings(ctx) {
   ctx
-    .addSliderRow("Master Volume", 0, 100, masterVol * 100, v => { 
-        masterVol = v / 100; 
-        if(typeof applyVolumes === 'function') applyVolumes(); 
-        if(gameMusic) gameMusic.setVolume(musicVol * masterVol); 
-        saveLocalSettingsDebounced(); 
-    }, { isAudio: true })
-    .addSliderRow("Music Volume", 0, 100, musicVol * 100, v => { 
-        musicVol = v / 100; 
-        if(typeof applyVolumes === 'function') applyVolumes(); 
+    .addSliderRow("Master Volume", 0, 100, masterVol * 100, v => {
+        masterVol = v / 100;
+        if(typeof applyVolumes === 'function') applyVolumes();
         if(gameMusic) gameMusic.setVolume(musicVol * masterVol);
-        saveLocalSettingsDebounced(); 
+        saveLocalSettingsDebounced();
     }, { isAudio: true })
-    .addSliderRow("SFX Volume", 0, 100, sfxVol * 100, v => { 
-        sfxVol = v / 100; 
-        saveLocalSettingsDebounced(); 
+    .addSliderRow("Music Volume", 0, 100, musicVol * 100, v => {
+        musicVol = v / 100;
+        if(typeof applyVolumes === 'function') applyVolumes();
+        if(gameMusic) gameMusic.setVolume(musicVol * masterVol);
+        saveLocalSettingsDebounced();
+    }, { isAudio: true })
+    .addSliderRow("SFX Volume", 0, 100, sfxVol * 100, v => {
+        sfxVol = v / 100;
+        saveLocalSettingsDebounced();
     }, { isAudio: true });
 }
 
@@ -1008,10 +1007,10 @@ function buildGameplaySettings(ctx) {
       value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
       onChange: (val) => {
         difficultySetting = val.toLowerCase();
-        
+
         if(typeof setDifficulty === 'function') setDifficulty(difficultySetting, { regenerate: false });
-        
-        saveLocalSettings(); 
+
+        saveLocalSettings();
       }
     });
 }
@@ -1022,12 +1021,27 @@ function buildGraphicsSettings(ctx) {
   const currentFpsLabel = getFpsModeLabel(normalizeFpsMode(targetFps));
 
   ctx
+    .addSelectRow("Render", ["PixiJS (WebGL)", "p5 (Canvas 2D)"], {
+      value: (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi')
+        ? "PixiJS (WebGL)" : "p5 (Canvas 2D)",
+      onChange: v => {
+        try {
+          localStorage.setItem('renderBackend', v.includes('Pixi') ? 'pixi' : 'p5');
+        } catch (e) {}
+        // Reload required for the backend switch to take effect
+        try {
+          showToast(
+            typeof t === 'function' ? t('restart_required', 'Restart required') : 'Restart required',
+            'info', 3000
+          );
+        } catch (e) {}
+      }
+    })
     .addSelectRow("FPS Mode", fpsLabels, {
       value: fpsLabels.includes(currentFpsLabel) ? currentFpsLabel : "Unlimited",
       onChange: v => {
-        targetFps = getFpsTargetForMode(v);
+        applyGameFpsMode(v, "graphics-settings-change");
         persistSavedSettings();
-        if (typeof applyFPS === 'function') applyFPS();
       }
     })
     .addCheckboxRow("Performance Overlay", performanceOverlayEnabled, {
@@ -1035,14 +1049,14 @@ function buildGraphicsSettings(ctx) {
     })
     .addCheckboxRow("Show Stars", showStars, { onChange: v => { showStars = v; persistSavedSettings(); } })
     .addCheckboxRow("Screen Shake", screenShakeEnabled, { onChange: v => { screenShakeEnabled = v; persistSavedSettings(); } })
-    .addCheckboxRow("Ambient Particles", showParticles, { onChange: v => { 
-        showParticles = v; 
+    .addCheckboxRow("Ambient Particles", showParticles, { onChange: v => {
+        showParticles = v;
         if (!v && typeof vfx !== 'undefined') {
           for (let i = vfx.length - 1; i >= 0; i--) {
             if (vfx[i].type === 'firefly') vfx.splice(i, 1);
           }
         }
-        persistSavedSettings(); 
+        persistSavedSettings();
     } })
     .addCheckboxRow("Firefly Lighting", showFireflyLighting, { onChange: v => { showFireflyLighting = v; persistSavedSettings(); } });
 }
@@ -1146,8 +1160,8 @@ function buildAccessibilitySettings(ctx) {
     value: colorModeSetting,
     onChange: v => { colorModeSetting = v; applyColorMode(v); persistSavedSettings(); }
   });
-  
-  
+
+
   const row = createDiv('');
   row.parent(ctx.container);
   row.style('display', 'flex');
@@ -1162,7 +1176,7 @@ function buildAccessibilitySettings(ctx) {
   lbl.class('setting-label');
   lbl.style('color', 'white');
   lbl.style('font-size', '20px');
-  lbl.style('text-align', 'right'); 
+  lbl.style('text-align', 'right');
   lbl.style('text-shadow', '1px 1px 0 #000');
   lbl.style('margin-right', '10px');
   lbl.style('flex', '1');
@@ -1235,12 +1249,12 @@ function buildLanguageSettings(ctx) {
  * Methods: addSliderRow, addCheckboxRow, addSelectRow, pushElement
  */
 function createSettingsContext({ container }) {
-  
+
   const styleLabel = (el) => {
       el.class('setting-label');
       el.style('color', 'white');
       el.style('font-size', '20px');
-      el.style('text-align', 'right'); 
+      el.style('text-align', 'right');
       el.style('text-shadow', '1px 1px 0 #000');
       el.style('margin-right', '10px');
       el.style('flex', '1');
@@ -1289,17 +1303,17 @@ function createSettingsContext({ container }) {
       lbl.parent(row);
       styleLabel(lbl);
       recordElement(lbl);
-      
+
       const slider = createSlider(min, max, val);
       slider.parent(row);
-      slider.style('width', '100%'); 
+      slider.style('width', '100%');
       styleInput(slider);
       if (opts && opts.isAudio) {
         const key = audioSettingKey(name);
         if (key) slider.attribute('data-setting', key);
       }
       recordElement(slider);
-      
+
       slider.input(() => {
         try { callback(slider.value()); } catch(e) {}
         try {
@@ -1311,7 +1325,7 @@ function createSettingsContext({ container }) {
           }
         } catch(e) {}
       });
-      
+
       return ctx;
     },
 
@@ -1383,13 +1397,13 @@ function createSettingsContext({ container }) {
       sel.style('font-size', '16px');
       sel.style('background', '#222');
       sel.style('color', 'white');
-      sel.style('border', '1px solid #555'); 
+      sel.style('border', '1px solid #555');
       sel.style('border-radius', '4px');
       sel.style('padding', '5px');
       styleInput(sel);
-      
+
       opts.forEach(opt => sel.option(opt));
-      
+
       if (options.value) sel.value(options.value);
       sel.changed(() => {
         try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e) {}
@@ -1416,14 +1430,14 @@ function createSettingsContext({ container }) {
 function ensureLoadingOverlayDom() {
   try {
     if (typeof document === 'undefined') return null;
-    
+
     if (!document.body) {
       setTimeout(ensureLoadingOverlayDom, 50);
       return null;
     }
 
     let el = document.getElementById('gd-loading-overlay');
-    
+
     if (el && !document.getElementById('gd-loading-content')) {
         el.remove();
         el = null;
@@ -1433,7 +1447,7 @@ function ensureLoadingOverlayDom() {
 
     el = document.createElement('div');
     el.id = 'gd-loading-overlay';
-    
+
     const content = document.createElement('div');
     content.id = 'gd-loading-content';
 
@@ -1443,20 +1457,20 @@ function ensureLoadingOverlayDom() {
 
     const barCont = document.createElement('div');
     barCont.className = 'gd-progress-container';
-    
+
     const barFill = document.createElement('div');
     barFill.className = 'gd-progress-fill';
-    
+
     const pct = document.createElement('div');
     pct.className = 'gd-progress-text';
     pct.innerText = '0%';
 
     barCont.appendChild(barFill);
-    
+
     content.appendChild(msg);
     content.appendChild(barCont);
     content.appendChild(pct);
-    
+
     el.appendChild(content);
     document.body.appendChild(el);
 

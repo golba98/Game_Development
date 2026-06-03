@@ -8,5 +8,10 @@
   },
   "devDependencies": {
     "wrangler": "4.97.0"
+  },
+  "dependencies": {
+    "@pixi/tilemap": "^3.2.2",
+    "pixi-viewport": "^5.1.0",
+    "pixi.js": "^7.4.3"
   }
 }

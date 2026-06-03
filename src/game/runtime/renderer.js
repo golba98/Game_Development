@@ -21,12 +21,17 @@
 // global, exactly as before — this is an organizational extraction, not a
 // behavior change.
 
+// Persistent scratch objects — allocated once, reused every frame to avoid GC pressure.
+const _pRect = { x: 0, y: 0, w: 0, h: 0 };
+const _lightsPool = [];
+
 const Renderer = {
   /** Dynamic-entity render pass. Call inside the world transform each frame. */
   drawWorld: function () {
   try {
     drawablePoolIdx = 0;
     currentDrawables.length = 0;
+    const _frameMillis = typeof millis === "function" ? millis() : Date.now();
 
     if (Array.isArray(mapOverlays)) {
       for (const o of mapOverlays) {
@@ -189,24 +194,25 @@ const Renderer = {
       );
     }
 
-    // Calculate player bounding box for fading
+    // Calculate player bounding box for fading (reuses module-level _pRect, no allocation)
     let pRect = null;
     if (playerPosition) {
       const pX = isMoving ? renderX : playerPosition.x;
       const pY = isMoving ? renderY : playerPosition.y;
       const pW = cellSize;
       const pH = cellSize * PLAYER_BBOX_HEIGHT_SCALE;
-      pRect = {
-        x: pX * cellSize + cellSize / 2 - pW / 2,
-        y: pY * cellSize + cellSize - pH,
-        w: pW,
-        h: pH,
-      };
+      _pRect.x = pX * cellSize + cellSize / 2 - pW / 2;
+      _pRect.y = pY * cellSize + cellSize - pH;
+      _pRect.w = pW;
+      _pRect.h = pH;
+      pRect = _pRect;
     }
 
     for (const d of currentDrawables) {
       switch (d.type) {
         case "overlay": {
+          // In Pixi mode, PixiEntityRenderer draws these as WebGL sprites
+          if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi') break;
           const o = d.o;
           let alpha = 255;
           // Fade tree if player is visually behind it
@@ -245,6 +251,8 @@ const Renderer = {
           break;
         }
         case "decor":
+          // In Pixi mode, PixiEntityRenderer draws these as WebGL sprites
+          if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi') break;
           try {
             if (d.img)
               image(
@@ -257,9 +265,11 @@ const Renderer = {
           } catch (e) {}
           break;
         case "coin": {
+          // In Pixi mode, PixiEntityRenderer draws these as animated WebGL sprites
+          if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi') break;
           if (coinAnimSprite && coinAnimSprite.width > 0) {
             const frameCount = 4;
-            const frame = Math.floor(millis() / 150) % frameCount;
+            const frame = Math.floor(_frameMillis / 150) % frameCount;
             const fw = coinAnimSprite.width / frameCount;
             const fh = coinAnimSprite.height;
             const drawSize = cellSize * 0.8;
@@ -296,12 +306,14 @@ const Renderer = {
           } catch (e) {}
           break;
         case "portal": {
+          // In Pixi mode, PixiEntityRenderer draws these as animated WebGL sprites
+          if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi') break;
           const sheet = isPortalActive
             ? portalActiveSheet
             : portalInactiveSheet;
           if (sheet && sheet.width > 0) {
             const frameCount = 6;
-            const frame = Math.floor(millis() / 150) % frameCount;
+            const frame = Math.floor(_frameMillis / 150) % frameCount;
             const fw = sheet.width / frameCount;
             const fh = sheet.height;
             const drawSize = cellSize * 2.0;
@@ -390,7 +402,16 @@ const Renderer = {
 
   // --- Night overlay — drawn INSIDE the world transform so scale(gameScale) applies ---
   if (typeof WeatherSystem !== "undefined") {
-    const lights = [];
+    _lightsPool.length = 0;
+    const viewportW = Math.ceil(virtualW || width / gameScale);
+    const viewportH = Math.ceil(virtualH || height / gameScale);
+    const pushVisibleLight = (x, y, radius) => {
+      const r = radius || 40;
+      if (x + r < -cellSize || x - r > viewportW + cellSize) return;
+      if (y + r < -cellSize || y - r > viewportH + cellSize) return;
+      _lightsPool.push({ x, y, radius: r });
+    };
+
     if (playerPosition) {
       const pX = isMoving ? renderX : playerPosition.x;
       const pY = isMoving ? renderY : playerPosition.y;
@@ -402,11 +423,7 @@ const Renderer = {
         typeof WeatherSystem.getLightRadius === "function"
           ? WeatherSystem.getLightRadius()
           : 450;
-      lights.push({
-        x: screenX,
-        y: screenY,
-        radius: baseRadius + Math.sin(millis() / 200) * 10,
-      });
+      pushVisibleLight(screenX, screenY, baseRadius + Math.sin(millis() / 200) * 10);
     }
     // Add lights from VFX (like fireflies)
     if (vfx && vfx.length) {
@@ -415,11 +432,7 @@ const Renderer = {
         if (typeof effect.getLight === "function") {
           const l = effect.getLight();
           if (l) {
-            lights.push({
-              x: l.worldX - camX,
-              y: l.worldY - camY,
-              radius: l.radius || 40,
-            });
+            pushVisibleLight(l.worldX - camX, l.worldY - camY, l.radius || 40);
           }
         }
       }
@@ -430,24 +443,13 @@ const Renderer = {
         if (typeof e.getLight === "function") {
           const l = e.getLight();
           if (l) {
-            lights.push({
-              x: l.worldX - camX,
-              y: l.worldY - camY,
-              radius: l.radius || 40,
-            });
+            pushVisibleLight(l.worldX - camX, l.worldY - camY, l.radius || 40);
           }
         }
       }
     }
 
-    // Virtual screen size + overscan; ensure it covers the largest logical map bounding coordinates to avoid side-stripes
-    const vW = Math.ceil(
-      Math.max(virtualW || width / gameScale, logicalW * cellSize),
-    );
-    const vH = Math.ceil(
-      Math.max(virtualH || height / gameScale, logicalH * cellSize),
-    );
-    WeatherSystem.drawOverlay(vW, vH, lights, camX, camY);
+    WeatherSystem.drawOverlay(viewportW, viewportH, _lightsPool, camX, camY);
   }
   },
 };
