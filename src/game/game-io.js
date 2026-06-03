@@ -4,7 +4,7 @@
 // --- IO Tuning Constants ---
 const SETTINGS_SAVE_DEBOUNCE_MS = 500; // delay before writing settings to localStorage
 const AUTOSAVE_KEY              = 'autosave_map';
-const SETTINGS_KEY              = 'menuSettings';
+const SETTINGS_KEY              = SETTINGS_STORAGE_KEY;
 const KEYBINDS_KEY              = 'playerKeybinds';
 const SERVER_MAP_URL_ABSOLUTE   = 'http://localhost:3000/maps/active_map.json';
 const SERVER_MAP_URL_RELATIVE   = '/maps/active_map.json';
@@ -349,18 +349,39 @@ function showFilePickerToLoadActiveMap() {
 function persistSavedSettings(immediate = false) {
   const commit = () => {
     try {
+      const fpsMode = normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode);
       const settings = {
-        masterVol, musicVol, sfxVol, textSizeSetting,
-        difficulty: difficultySetting, sensitivitySetting,
-        invertYAxis, hudEnabled, showTutorialsSetting,
-        colorModeSetting, languageSetting, showFps,
-        showStars, screenShakeEnabled, showParticles, showFireflyLighting, targetFps
+        masterVol,
+        musicVol,
+        sfxVol,
+        textSizeSetting,
+        uiScale: textSizeSetting,
+        difficulty: difficultySetting,
+        sensitivitySetting,
+        invertYAxis,
+        hudEnabled,
+        showHUD: hudEnabled,
+        showTutorialsSetting,
+        showTutorials: showTutorialsSetting,
+        colorModeSetting,
+        languageSetting,
+        fpsMode,
+        performanceOverlay: performanceOverlayEnabled,
+        showStars,
+        screenShakeEnabled,
+        showParticles,
+        showFireflyLighting,
       };
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       localStorage.setItem(KEYBINDS_KEY, JSON.stringify(playerKeybinds));
       verboseLog('[game] persisted settings', settings);
       if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'sync-settings', ...settings }, '*');
+        window.parent.postMessage({
+          type: 'sync-settings',
+          ...settings,
+          targetFps: getFpsTargetForMode(fpsMode),
+          performanceOverlayEnabled: performanceOverlayEnabled,
+        }, '*');
       }
     } catch (err) {
       console.warn('[game] persistSavedSettings failed', err);
@@ -383,13 +404,16 @@ function saveLocalSettingsDebounced() { persistSavedSettings(false); }
 // Reads saved settings and keybinds from localStorage and applies them to live globals.
 function loadLocalSettings() {
   try {
-    const stored = localStorage.getItem(SETTINGS_KEY);
+    const stored = localStorage.getItem(SETTINGS_KEY) || localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY);
     if (!stored) return;
     const parsed = JSON.parse(stored);
     if (typeof parsed.masterVol        === 'number')  masterVol           = parsed.masterVol;
     if (typeof parsed.musicVol         === 'number')  musicVol            = parsed.musicVol;
     if (typeof parsed.sfxVol           === 'number')  sfxVol              = parsed.sfxVol;
-    if (typeof parsed.textSizeSetting  === 'number')  textSizeSetting     = parsed.textSizeSetting;
+    textSizeSetting = normalizeUiScaleSetting(
+      parsed.uiScale ?? parsed.textSizeSetting,
+      textSizeSetting,
+    );
     if (typeof parsed.difficulty       === 'string') {
       const normalized = normalizeDifficultyValue(parsed.difficulty);
       if (normalized) { difficultySetting = normalized; setDifficulty(normalized, { regenerate: false, reason: 'load-local-settings' }); }
@@ -397,9 +421,11 @@ function loadLocalSettings() {
     if (typeof parsed.sensitivitySetting === 'number')  sensitivitySetting  = parsed.sensitivitySetting;
     if (typeof parsed.invertYAxis        === 'boolean') invertYAxis         = parsed.invertYAxis;
     if (typeof parsed.hudEnabled         === 'boolean') hudEnabled          = parsed.hudEnabled;
+    else if (typeof parsed.showHUD       === 'boolean') hudEnabled          = parsed.showHUD;
     if (typeof parsed.showTutorialsSetting === 'boolean') showTutorialsSetting = parsed.showTutorialsSetting;
-    if (typeof parsed.showFps            === 'boolean') showFps             = parsed.showFps;
-    if (typeof parsed.targetFps          === 'number')  targetFps           = parsed.targetFps;
+    else if (typeof parsed.showTutorials === 'boolean') showTutorialsSetting = parsed.showTutorials;
+    performanceOverlayEnabled = normalizePerformanceOverlaySetting(parsed, performanceOverlayEnabled);
+    targetFps = getFpsTargetForMode(normalizeFpsMode(parsed.fpsMode ?? parsed.targetFps, normalizeFpsMode(targetFps)));
     if (typeof parsed.showStars          === 'boolean') showStars           = parsed.showStars;
     if (typeof parsed.screenShakeEnabled === 'boolean') screenShakeEnabled  = parsed.screenShakeEnabled;
     if (typeof parsed.showParticles      === 'boolean') {
@@ -415,6 +441,7 @@ function loadLocalSettings() {
     if (typeof parsed.colorModeSetting   === 'string') { colorModeSetting = parsed.colorModeSetting; applyColorMode(colorModeSetting); }
     if (typeof parsed.languageSetting    === 'string')  languageSetting     = parsed.languageSetting;
     if (typeof applyVolumes === 'function') applyVolumes();
+    if (typeof applyFPS === 'function') applyFPS();
     verboseLog('[game] loaded saved settings', parsed);
     try {
       const storedKeys = localStorage.getItem(KEYBINDS_KEY);

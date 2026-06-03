@@ -222,6 +222,37 @@ function closeInGameSettings() {
   try { persistSavedSettings(true); } catch(e) {}
 }
 
+function resetGameSettingsToDefaults() {
+  try {
+    localStorage.removeItem(LEGACY_SETTINGS_STORAGE_KEY);
+  } catch (e) {}
+  masterVol = DEFAULT_SETTINGS.masterVol;
+  musicVol = DEFAULT_SETTINGS.musicVol;
+  sfxVol = DEFAULT_SETTINGS.sfxVol;
+  textSizeSetting = DEFAULT_SETTINGS.uiScale;
+  difficultySetting = DEFAULT_SETTINGS.difficulty;
+  sensitivitySetting = 5;
+  invertYAxis = false;
+  hudEnabled = true;
+  showTutorialsSetting = true;
+  colorModeSetting = "None";
+  languageSetting = "English";
+  performanceOverlayEnabled = DEFAULT_SETTINGS.performanceOverlayEnabled;
+  showStars = true;
+  screenShakeEnabled = true;
+  showParticles = true;
+  showFireflyLighting = true;
+  targetFps = getFpsTargetForMode(DEFAULT_SETTINGS.fpsMode);
+  playerKeybinds = { ...DEFAULT_KEYBINDS };
+
+  try { setDifficulty(difficultySetting, { regenerate: false, reason: "reset-settings" }); } catch (e) {}
+  try { applyVolumes(); } catch (e) {}
+  try { applyFPS(); } catch (e) {}
+  try { applyColorMode(colorModeSetting); } catch (e) {}
+  try { applyCurrentTextSize(); } catch (e) {}
+  try { persistSavedSettings(true); } catch (e) {}
+}
+
 /** Replaces the current settings panel contents with the builder for `label`. */
 function showSubSettings(label) {
   clearSubSettings();
@@ -737,10 +768,32 @@ function openInGameSettings(currentVals) {
   });
 
 
+  const footerRow = createDiv('');
+  footerRow.parent(panel);
+  footerRow.style('display', 'flex');
+  footerRow.style('gap', '14px');
+  footerRow.style('justify-content', 'center');
+  footerRow.style('align-items', 'center');
+  footerRow.style('margin-top', '12px');
+
+  const resetBtn = createButton('RESET SETTINGS');
+  resetBtn.parent(footerRow);
+  applyMenuButtonUI(resetBtn, 260, 52);
+  resetBtn.style('border-color', MENU_GOLD_COLOR);
+  resetBtn.style('box-shadow', '0 8px 20px rgba(0,0,0,0.7)');
+  resetBtn.mousePressed(() => {
+    playClickSFX();
+    resetGameSettingsToDefaults();
+    if (container.closeZoomPanel) container.closeZoomPanel();
+    else container.remove();
+    settingsOverlayDiv = null;
+    settingsOverlayPanel = null;
+    clearSubSettings();
+    openInGameSettings({ masterVol, musicVol, sfxVol, difficulty: difficultySetting });
+  });
+
   let closeBtn = createButton('CLOSE');
-  closeBtn.parent(panel);
-  closeBtn.style('margin-top', '16px');
-  closeBtn.style('align-self', 'center');
+  closeBtn.parent(footerRow);
   applyMenuButtonUI(closeBtn, 260, 52);
   closeBtn.style('border-color', MENU_GOLD_COLOR);
   closeBtn.style('box-shadow', '0 8px 20px rgba(0,0,0,0.7)');
@@ -755,6 +808,11 @@ function openInGameSettings(currentVals) {
 
     openInGameMenu();
   });
+
+  if (categoryButtons.length) {
+    const defaultCategory = categoryButtons.find(btn => btn.html && btn.html() === "Graphics") || categoryButtons[0];
+    selectCategory(defaultCategory.html(), defaultCategory);
+  }
 }
 
 /** Hides all settings category tab buttons and their backgrounds. */
@@ -945,8 +1003,7 @@ function buildAudioSettings(ctx) {
 function buildGameplaySettings(ctx) {
   ctx
     .addCheckboxRow("Show Tutorials", showTutorialsSetting, { onChange: v => { showTutorialsSetting = v; persistSavedSettings(); } })
-    .addCheckboxRow("Enable HUD", hudEnabled, { onChange: v => { hudEnabled = v; persistSavedSettings(); } })
-    .addCheckboxRow("Show FPS", showFps, { onChange: v => { showFps = v; persistSavedSettings(); } })
+    .addCheckboxRow("Show HUD", hudEnabled, { onChange: v => { hudEnabled = v; persistSavedSettings(); } })
     .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
       value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
       onChange: (val) => {
@@ -961,17 +1018,20 @@ function buildGameplaySettings(ctx) {
 
 /** Populates `ctx` with Graphics toggles. */
 function buildGraphicsSettings(ctx) {
-  const fpsLabels = ["30", "60", "90", "120", "144", "165", "200", "350", "Uncapped"];
-  const currentFpsLabel = targetFps === 999 ? "Uncapped" : String(targetFps);
+  const fpsLabels = ["60", "120", "Unlimited"];
+  const currentFpsLabel = getFpsModeLabel(normalizeFpsMode(targetFps));
 
   ctx
-    .addSelectRow("Max FPS", fpsLabels, {
-      value: fpsLabels.includes(currentFpsLabel) ? currentFpsLabel : "Uncapped",
+    .addSelectRow("FPS Mode", fpsLabels, {
+      value: fpsLabels.includes(currentFpsLabel) ? currentFpsLabel : "Unlimited",
       onChange: v => {
-        targetFps = (v === "Uncapped") ? 999 : Number(v);
+        targetFps = getFpsTargetForMode(v);
         persistSavedSettings();
         if (typeof applyFPS === 'function') applyFPS();
       }
+    })
+    .addCheckboxRow("Performance Overlay", performanceOverlayEnabled, {
+      onChange: v => { performanceOverlayEnabled = v; persistSavedSettings(); }
     })
     .addCheckboxRow("Show Stars", showStars, { onChange: v => { showStars = v; persistSavedSettings(); } })
     .addCheckboxRow("Screen Shake", screenShakeEnabled, { onChange: v => { screenShakeEnabled = v; persistSavedSettings(); } })
@@ -1080,7 +1140,7 @@ function applyColorMode(mode) {
   if (canvas) canvas.style.filter = filterMap[mode] || '';
 }
 
-/** Populates `ctx` with Color Mode selector and Text Size preset buttons. */
+/** Populates `ctx` with Color Mode selector and UI scale preset buttons. */
 function buildAccessibilitySettings(ctx) {
   ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia", "Grayscale", "Sepia", "Invert", "High Contrast"], {
     value: colorModeSetting,
@@ -1097,7 +1157,7 @@ function buildAccessibilitySettings(ctx) {
   row.style('margin-bottom', '10px');
   activeSettingElements.push(row);
 
-  const lbl = createDiv("Text Size");
+  const lbl = createDiv("UI Scale");
   lbl.parent(row);
   lbl.class('setting-label');
   lbl.style('color', 'white');
@@ -1114,11 +1174,11 @@ function buildAccessibilitySettings(ctx) {
   btnGroup.style('flex', '1');
 
   const presetSource = (typeof window !== 'undefined' && Array.isArray(window.MENU_TEXT_SIZE_PRESETS)) ? window.MENU_TEXT_SIZE_PRESETS : null;
-  const presets = presetSource || [ { label: 'Small', value: 60 }, { label: 'Default', value: 75 }, { label: 'Big', value: 90 } ];
+  const presets = presetSource || [ { label: 'Compact', value: 60 }, { label: 'Default', value: 75 }, { label: 'Large', value: 90 } ];
 
   presets.forEach(p => {
       const label = p && p.label ? String(p.label) : String(p);
-      const val = p && typeof p.value === 'number' ? Number(p.value) : (label === 'Default' ? 75 : (label === 'Small' ? 60 : 90));
+      const val = p && typeof p.value === 'number' ? Number(p.value) : (label === 'Default' ? 75 : (label === 'Compact' ? 60 : 90));
       const btn = createButton(label);
       btn.parent(btnGroup);
       btn.attribute('data-text-size-val', String(val));
@@ -1137,7 +1197,16 @@ function buildAccessibilitySettings(ctx) {
           } else if (typeof saveLocalSettings === 'function') {
             saveLocalSettings();
           } else {
-            try { localStorage.setItem('menuSettings', JSON.stringify({ masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting })); } catch(e){}
+            try {
+              localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+                masterVol, musicVol, sfxVol,
+                textSizeSetting,
+                uiScale: textSizeSetting,
+                difficulty: difficultySetting,
+                fpsMode: normalizeFpsMode(targetFps),
+                performanceOverlay: performanceOverlayEnabled,
+              }));
+            } catch(e){}
           }
         } catch(e) {}
       });

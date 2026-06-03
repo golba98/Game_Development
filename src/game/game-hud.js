@@ -14,14 +14,93 @@ const DIRECTION_TO_ANGLE_MAP = {
   'NW': -Math.PI / 2 - Math.PI / 4,
 };
 
-function drawXPBar() {
+const HUD_EDGE_MARGIN = 24;
+const HUD_PANEL_GAP = 10;
+
+function getHudUiScale() {
   const vW = virtualW || (width / gameScale);
   const vH = virtualH || (height / gameScale);
-  
-  const barW = Math.min(vW * 0.5, 400); // 50% of width, max 400px
-  const barH = 12;
+  const viewportScale = Math.max(0.9, Math.min(1.1, Math.min(vW / 1280, vH / 720) || 1));
+  return Math.max(0.85, Math.min(1.3, getUiScaleMultiplier(textSizeSetting) * viewportScale));
+}
+
+function getHudLayout() {
+  const vW = virtualW || (width / gameScale);
+  const vH = virtualH || (height / gameScale);
+  const scale = getHudUiScale();
+  const margin = Math.round(HUD_EDGE_MARGIN * scale);
+  const gap = Math.round(HUD_PANEL_GAP * scale);
+  const statBarW = Math.round(170 * scale);
+  const minimapSize = Math.round(Math.min(188 * scale, vW * 0.24, vH * 0.28));
+  const perfSize = getPerformanceOverlaySize(scale);
+
+  const minimapY = vH - margin - minimapSize - Math.round(46 * scale);
+  const perfY = minimapY - gap - perfSize.height;
+
+  return {
+    vW,
+    vH,
+    scale,
+    margin,
+    gap,
+    statBarW,
+    statX: margin,
+    healthY: margin,
+    manaY: margin + Math.round(44 * scale),
+    scoreY: margin + Math.round(90 * scale),
+    inventoryY: margin + Math.round(126 * scale),
+    sprintY: vH - margin - Math.round(34 * scale),
+    bossY: margin,
+    xpY: vH - margin - Math.round(18 * scale),
+    minimapSize,
+    minimapX: vW - margin - minimapSize,
+    minimapY,
+    perfX: vW - margin - perfSize.width,
+    perfY,
+    perfSize,
+    difficultyX: vW - margin - perfSize.width - Math.round(44 * scale),
+    difficultyY: margin + Math.round(4 * scale),
+  };
+}
+
+function drawHudPanelShell(x, y, w, h, opts = {}) {
+  const padX = opts.padX ?? 10;
+  const padY = opts.padY ?? 8;
+
+  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
+    image(BUTTON_BG, x - padX, y - padY, w + padX * 2, h + padY * 2);
+  } else {
+    stroke(0);
+    strokeWeight(4);
+    fill(20, 20, 20, opts.alpha ?? 190);
+    rect(x - padX, y - padY, w + padX * 2, h + padY * 2, 4);
+  }
+
+  stroke(MENU_GOLD_BORDER);
+  strokeWeight(2);
+  noFill();
+  rect(x - Math.max(4, padX - 3), y - Math.max(3, padY - 2), w + Math.max(8, (padX - 3) * 2), h + Math.max(6, (padY - 2) * 2), 2);
+}
+
+function drawHudPerformanceOverlay() {
+  const layout = getHudLayout();
+  drawPerformanceOverlayPanel({
+    x: layout.perfX,
+    y: layout.perfY,
+    tracker: performanceTracker,
+    targetFps,
+    fpsMode: normalizeFpsMode(targetFps),
+    scale: layout.scale,
+  });
+}
+
+function drawXPBar() {
+  const layout = getHudLayout();
+  const vW = layout.vW;
+  const barW = Math.min(vW * 0.42, Math.round(440 * layout.scale));
+  const barH = Math.max(12, Math.round(12 * layout.scale));
   const startX = (vW - barW) / 2;
-  const startY = vH - 60; // moved up gently to prevent bottom cutoff
+  const startY = layout.xpY;
   
   push();
   
@@ -37,20 +116,7 @@ function drawXPBar() {
   translate(-(startX + barW/2), -(startY + barH/2));
 
   // Themed Background Container
-  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
-      image(BUTTON_BG, startX - 20, startY - 14, barW + 40, barH + 28);
-  } else {
-      stroke(0);
-      strokeWeight(4);
-      fill(20, 20, 20, 200);
-      rect(startX - 20, startY - 14, barW + 40, barH + 28, 4);
-  }
-  
-  // Gold Inner Border
-  stroke(MENU_GOLD_BORDER);
-  strokeWeight(2);
-  noFill();
-  rect(startX - 17, startY - 11, barW + 34, barH + 22, 2);
+  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(18 * layout.scale), padY: Math.round(12 * layout.scale), alpha: 200 });
 
   // Bar Background (empty part)
   noStroke();
@@ -75,22 +141,23 @@ function drawXPBar() {
   textAlign(CENTER, CENTER);
   let sz = typeof gTextSize === 'function' ? 14 : 14;
   if (typeof gTextSize === 'function') gTextSize(sz); else textSize(sz);
-  text(`Lv ${playerLevel} (${playerXP}/${xpToNextLevel})`, startX + barW/2, startY - 20);
+  text(`Lv ${playerLevel} (${playerXP}/${xpToNextLevel})`, startX + barW/2, startY - Math.round(18 * layout.scale));
   
   // Stat points indicator
   if (statPoints > 0) {
       fill(255, 215, 0); // Gold for available stat points
-      text(`+${statPoints} Stat Points (Press I)`, startX + barW/2, startY - 40);
+      text(`+${statPoints} Stat Points (Press I)`, startX + barW/2, startY - Math.round(36 * layout.scale));
   }
 
   pop();
 }
 
 function drawHealthBar() {
-  const startX = 50; 
-  const startY = 30;
-  const barW = 160;
-  const barH = 18;
+  const layout = getHudLayout();
+  const startX = layout.statX;
+  const startY = layout.healthY;
+  const barW = layout.statBarW;
+  const barH = Math.max(16, Math.round(18 * layout.scale));
 
   push();
   
@@ -106,20 +173,7 @@ function drawHealthBar() {
   translate(-(startX + barW/2), -(startY + barH/2));
 
   // Themed Background
-  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
-      image(BUTTON_BG, startX - 30, startY - 12, barW + 42, barH + 24);
-  } else {
-      stroke(0);
-      strokeWeight(4);
-      fill(20, 20, 20, 180);
-      rect(startX - 30, startY - 12, barW + 42, barH + 24, 4);
-  }
-  
-  // Gold Inner Border
-  stroke(MENU_GOLD_BORDER);
-  strokeWeight(2);
-  noFill();
-  rect(startX - 27, startY - 10, barW + 36, barH + 20, 2);
+  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(28 * layout.scale), padY: Math.round(10 * layout.scale), alpha: 180 });
 
   // Background for the bar
   noStroke();
@@ -140,13 +194,13 @@ function drawHealthBar() {
   // Draw Heart Icon (If available)
   if (typeof heartImage !== 'undefined' && heartImage) {
       tint(255, 255);
-      image(heartImage, startX - 25, startY - 2, 22, 22);
+      image(heartImage, startX - Math.round(24 * layout.scale), startY - Math.round(2 * layout.scale), Math.round(22 * layout.scale), Math.round(22 * layout.scale));
       noTint();
   } else {
       // Fallback heart icon
       fill(255, 50, 50);
       noStroke();
-      circle(startX - 14, startY + barH/2, 14);
+      circle(startX - Math.round(14 * layout.scale), startY + barH/2, Math.round(14 * layout.scale));
   }
 
   // Text
@@ -162,28 +216,16 @@ function drawHealthBar() {
 }
 
 function drawManaBar() {
-  const startX = 50;
-  const startY = 65; // shifted closer to health bar
-  const barW = 160;
-  const barH = 14;
+  const layout = getHudLayout();
+  const startX = layout.statX;
+  const startY = layout.manaY;
+  const barW = layout.statBarW;
+  const barH = Math.max(12, Math.round(14 * layout.scale));
 
   push();
   
   // Background Container
-  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
-      image(BUTTON_BG, startX - 30, startY - 10, barW + 42, barH + 20);
-  } else {
-      fill(20, 20, 20, 200);
-      stroke(0);
-      strokeWeight(4); // consistent border weight
-      rect(startX - 30, startY - 10, barW + 42, barH + 20, 4);
-  }
-
-  // Border
-  stroke(MENU_GOLD_BORDER);
-  strokeWeight(2);
-  noFill();
-  rect(startX - 27, startY - 8, barW + 36, barH + 16, 2);
+  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(28 * layout.scale), padY: Math.round(8 * layout.scale), alpha: 200 });
 
   // Background
   noStroke();
@@ -205,9 +247,9 @@ function drawManaBar() {
   // Draw Mana Icon (Simple Blue Bubble)
   fill(50, 150, 255);
   noStroke();
-  circle(startX - 14, startY + barH/2, 12);
+  circle(startX - Math.round(14 * layout.scale), startY + barH/2, Math.round(12 * layout.scale));
   fill(255, 255, 255, 100);
-  circle(startX - 15, startY + barH/2 - 2, 4);
+  circle(startX - Math.round(15 * layout.scale), startY + barH/2 - Math.round(2 * layout.scale), Math.round(4 * layout.scale));
   
   // Text
   if (typeof uiFont !== 'undefined' && uiFont) textFont(uiFont);
@@ -225,18 +267,18 @@ function drawBossHealthBar() {
   const boss = (enemies || []).find(e => e.type === 'beetle');
   if (!boss) return;
 
-  const vW = virtualW || (width / gameScale);
-  const barW = 400;
-  const barH = 20;
-  const x = (vW - barW) / 2;
-  const y = 40;
+  const layout = getHudLayout();
+  const barW = Math.min(layout.vW * 0.42, Math.round(420 * layout.scale));
+  const barH = Math.max(18, Math.round(20 * layout.scale));
+  const x = (layout.vW - barW) / 2;
+  const y = layout.bossY;
 
   push();
   // Main Container
   fill(0, 180);
   stroke(0);
   strokeWeight(4);
-  rect(x - 5, y - 5, barW + 10, barH + 30, 4);
+  rect(x - 5, y - 5, barW + 10, barH + Math.round(30 * layout.scale), 4);
 
   // Name
   if (uiFont) textFont(uiFont);
@@ -244,7 +286,7 @@ function drawBossHealthBar() {
   noStroke();
   textAlign(CENTER, BOTTOM);
   gTextSize(18);
-  text(t('boss_name'), x + barW/2, y - 8);
+  text(t('boss_name'), x + barW/2, y - Math.round(8 * layout.scale));
 
   // Red Glow behind the bar
   noStroke();
@@ -272,16 +314,14 @@ function drawBossHealthBar() {
 
 function drawMinimap() {
   if (!showMinimap || !mapImage) return;
-  const mmW = 200;
-  const mmH = 200;
-  const mmX = 20;
-  const mmY = (virtualH || height) - mmH - 140; // Shifted up to avoid overlap with sprint meter
+  const layout = getHudLayout();
+  const mmW = layout.minimapSize;
+  const mmH = layout.minimapSize;
+  const mmX = layout.minimapX;
+  const mmY = layout.minimapY;
 
   push();
-  fill(0, 0, 0, 180);
-  stroke(MENU_GOLD_BORDER);
-  strokeWeight(3);
-  rect(mmX, mmY, mmW, mmH, 4);
+  drawHudPanelShell(mmX, mmY, mmW, mmH, { padX: Math.round(8 * layout.scale), padY: Math.round(8 * layout.scale), alpha: 180 });
   noStroke();
 
   const mapAspect = mapImage.width / mapImage.height;
@@ -370,8 +410,9 @@ function drawMinimap() {
 }
 
 function drawScore() {
-  const x = 30;
-  const y = 105; // Shifted up due to compact health/mana bars
+  const layout = getHudLayout();
+  const x = layout.statX;
+  const y = layout.scoreY;
   
   push();
   
@@ -382,9 +423,9 @@ function drawScore() {
       pulseScale = map(now - lastScoreChange, 0, 200, 1.2, 1.0);
   }
   
-  translate(x + 70, y - 5);
+  translate(x + Math.round(70 * layout.scale), y - Math.round(5 * layout.scale));
   scale(pulseScale);
-  translate(-(x + 70), -(y - 5));
+  translate(-(x + Math.round(70 * layout.scale)), -(y - Math.round(5 * layout.scale)));
 
   if (uiFont) textFont(uiFont);
   
@@ -392,20 +433,20 @@ function drawScore() {
   stroke(0, 100);
   strokeWeight(4);
   fill(0, 150);
-  rect(x - 5, y - 20, 140, 30, 5);
+  rect(x - 5, y - Math.round(20 * layout.scale), Math.round(150 * layout.scale), Math.round(32 * layout.scale), 5);
   
   // Inner Border
   stroke(255, 215, 0); // GOLD
   strokeWeight(2);
   noFill();
-  rect(x - 3, y - 18, 136, 26, 3);
+  rect(x - 3, y - Math.round(18 * layout.scale), Math.round(146 * layout.scale), Math.round(28 * layout.scale), 3);
   
   // Text
   noStroke();
   fill(255, 255, 255);
-  textSize(16);
+  textSize(Math.round(16 * layout.scale));
   textAlign(LEFT, CENTER);
-  text(t('gold_hud', playerScore), x + 5, y - 5);
+  text(t('gold_hud', playerScore), x + 5, y - Math.round(5 * layout.scale));
   pop();
 }
 
@@ -415,11 +456,12 @@ function drawInventory() {
   const speeds = playerInventory['speed'] || 0;
   if (potions === 0 && speeds === 0) return;
 
-  const startX = 30;
-  const startY = 130; // Shifted up alongside score
-  const slotW = 48;
-  const slotH = 48;
-  const slotSpacing = 8;
+  const layout = getHudLayout();
+  const startX = layout.statX;
+  const startY = layout.inventoryY;
+  const slotW = Math.round(48 * layout.scale);
+  const slotH = Math.round(48 * layout.scale);
+  const slotSpacing = Math.round(8 * layout.scale);
   const slots = [];
 
   if (potions > 0) slots.push({ label: 'P', count: potions, col: [0, 200, 80] });
@@ -429,18 +471,7 @@ function drawInventory() {
   const containerH = slotH + 20;
 
   push();
-  if (BUTTON_BG) {
-    image(BUTTON_BG, startX - 8, startY - 8, containerW, containerH);
-  } else {
-    stroke(0);
-    strokeWeight(4);
-    fill(20, 20, 20, 180);
-    rect(startX - 8, startY - 8, containerW, containerH, 4);
-  }
-  stroke(MENU_GOLD_BORDER);
-  strokeWeight(2);
-  noFill();
-  rect(startX - 5, startY - 5, containerW - 6, containerH - 6, 2);
+  drawHudPanelShell(startX, startY, containerW - 16, containerH - 16, { padX: 8, padY: 8, alpha: 180 });
 
   for (let i = 0; i < slots.length; i++) {
     const s = slots[i];
@@ -499,11 +530,10 @@ function drawVignette() {
 }
 
 function drawDifficultyBadge() {
-  const vW = virtualW || (width / gameScale);
-  const margin = 180; // Shifted left to accommodate the clock
-  const badgeSize = 32;
-  const x = vW - margin - badgeSize;
-  const y = 30; // Slightly lower for better visibility
+  const layout = getHudLayout();
+  const badgeSize = Math.round(32 * layout.scale);
+  const x = layout.difficultyX;
+  const y = layout.difficultyY;
   
   // Determine color based on difficulty
   let badgeColor;
@@ -569,8 +599,7 @@ function findGoalPosition() {
 }
 
 function drawSprintMeter() {
-  const vW = virtualW || (width / gameScale);
-  const vH = virtualH || (height / gameScale);
+  const layout = getHudLayout();
   const now = millis();
   
   const pct = (typeof smoothSprintPct === 'number') ? smoothSprintPct : 0;
@@ -586,33 +615,20 @@ function drawSprintMeter() {
   if (targetAlpha === 0) return;
 
   // Positioning: Bottom-Left
-  const startX = 30; 
-  const startY = vH - 100; 
-  const barW = 160;   
-  const barH = 10;    
+  const startX = layout.statX; 
+  const startY = layout.sprintY; 
+  const barW = layout.statBarW;   
+  const barH = Math.max(10, Math.round(10 * layout.scale));    
   
-  const containerW = 200; 
-  const containerH = 32;
+  const containerW = Math.round(200 * layout.scale); 
+  const containerH = Math.round(32 * layout.scale);
 
   push();
   
   // Themed Background Container
-  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) {
-      tint(255, targetAlpha);
-      image(BUTTON_BG, startX - 10, startY - 8, containerW + 20, containerH + 16);
-      noTint();
-  } else {
-      stroke(0);
-      strokeWeight(4);
-      fill(20, 20, 20, 200 * (targetAlpha / 255));
-      rect(startX - 10, startY - 8, containerW + 20, containerH + 16, 4);
-  }
-  
-  // Gold Inner Border
-  stroke(MENU_GOLD_BORDER);
-  strokeWeight(2);
-  noFill();
-  rect(startX - 7, startY - 5, containerW + 14, containerH + 10, 2);
+  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) tint(255, targetAlpha);
+  drawHudPanelShell(startX, startY, containerW, containerH, { padX: Math.round(10 * layout.scale), padY: Math.round(8 * layout.scale), alpha: 200 * (targetAlpha / 255) });
+  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) noTint();
 
   // Bar Background (empty part)
   noStroke();

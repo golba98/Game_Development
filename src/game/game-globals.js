@@ -105,17 +105,17 @@ const CLOUD_IMAGE_COUNT = 4;
 
 let showTutorialsSetting = true;
 let hudEnabled = true;
-let showFps = false;
+let performanceOverlayEnabled = DEFAULT_SETTINGS.performanceOverlayEnabled;
 let showStars = true;
 let screenShakeEnabled = true;
 let showParticles = true;
 let showFireflyLighting = true;
 // Default to a capped 60fps for stable frame pacing and lower drawImage cost.
-// Users can raise this (incl. Uncapped = 999) via Graphics > Max FPS; the choice
-// persists in local settings. Uncapped rendering was the prior default and a
-// major source of profiler-heavy drawImage time.
-let targetFps = 60;
-let fpsHistory = [];
+// The settings UI now exposes 60 / 120 / Unlimited; Unlimited is stored as 0
+// and applied internally with an uncapped p5 target so the browser/display can
+// run as fast as they naturally allow.
+let targetFps = DEFAULT_SETTINGS.targetFps;
+let performanceTracker = createPerformanceTracker();
 
 let showLoadingOverlay = true;
 let showMinimap = false;

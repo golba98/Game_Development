@@ -1,5 +1,6 @@
 // === Audio & Music ===
 function stopMenuMusicImmediate() {
+  isMenuMusicPlaying = false;
   try {
     if (!bgMusic) { menuMusicStopped = true; return; }
     try { if (typeof bgMusic.stop === 'function') bgMusic.stop(); } catch (e) {}
@@ -58,25 +59,34 @@ function unlockAudioAndStart(cb) {
 
 // === Music Control ===
 function startMenuMusicIfNeeded() {
+  // Never (re)start menu music while the game overlay is open — guards against an
+  // async unlock callback racing the Play -> stopMenuMusicImmediate() path.
+  if (typeof inGame !== 'undefined' && inGame) return;
   if (!bgMusic) {
     console.warn('[startMenuMusicIfNeeded] bgMusic not loaded yet');
+    return;
+  }
+  // Synchronous guard: isPlaying() does not flip to true immediately after loop(),
+  // so without this two near-simultaneous calls would both fire bgMusic.loop().
+  if (isMenuMusicPlaying) return;
+  if (typeof bgMusic.isPlaying === 'function' && bgMusic.isPlaying()) {
+    isMenuMusicPlaying = true;
     return;
   }
   try {
     if (typeof bgMusic.setVolume === 'function') bgMusic.setVolume(musicVol * masterVol);
 
-    if (typeof bgMusic.isPlaying === 'function') {
-      if (bgMusic.isPlaying()) return; // already running
+    if (typeof bgMusic.loop === 'function') {
+      isMenuMusicPlaying = true;
       bgMusic.loop();
       console.log('[startMenuMusicIfNeeded] bgMusic.loop() called');
-    } else if (typeof bgMusic.loop === 'function') {
-      bgMusic.loop();
-      console.log('[startMenuMusicIfNeeded] bgMusic.loop() fallback called');
     } else if (typeof bgMusic.play === 'function') {
+      isMenuMusicPlaying = true;
       bgMusic.play();
       console.log('[startMenuMusicIfNeeded] bgMusic.play() fallback called');
     }
   } catch (err) {
+    isMenuMusicPlaying = false;
     console.warn('[startMenuMusicIfNeeded] playback error', err);
   }
 }
