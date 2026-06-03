@@ -112,8 +112,7 @@ let showParticles = true;
 let showFireflyLighting = true;
 // Default to a capped 60fps for stable frame pacing and lower drawImage cost.
 // The settings UI now exposes 60 / 120 / Unlimited; Unlimited is stored as 0
-// and applied internally with an uncapped p5 target so the browser/display can
-// run as fast as they naturally allow.
+// and applied internally as natural requestAnimationFrame pacing.
 let targetFps = DEFAULT_SETTINGS.targetFps;
 let performanceTracker = createPerformanceTracker();
 

@@ -16,6 +16,10 @@ const DIRECTION_TO_ANGLE_MAP = {
 
 const HUD_EDGE_MARGIN = 24;
 const HUD_PANEL_GAP = 10;
+let cachedHudLayoutFrame = -1;
+let cachedHudLayout = null;
+let cachedCloudImagesSourceCount = -1;
+let cachedUsableCloudImages = [];
 
 function getHudUiScale() {
   const vW = virtualW || (width / gameScale);
@@ -25,42 +29,51 @@ function getHudUiScale() {
 }
 
 function getHudLayout() {
+  const currentFrame = typeof frameCount === 'number' ? frameCount : -1;
+  if (cachedHudLayout && cachedHudLayoutFrame === currentFrame) {
+    return cachedHudLayout;
+  }
+
   const vW = virtualW || (width / gameScale);
   const vH = virtualH || (height / gameScale);
-  const scale = getHudUiScale();
-  const margin = Math.round(HUD_EDGE_MARGIN * scale);
-  const gap = Math.round(HUD_PANEL_GAP * scale);
-  const statBarW = Math.round(170 * scale);
-  const minimapSize = Math.round(Math.min(188 * scale, vW * 0.24, vH * 0.28));
-  const perfSize = getPerformanceOverlaySize(scale);
+  const uiScaleFactor = getHudUiScale();
+  const margin = Math.round(HUD_EDGE_MARGIN * uiScaleFactor);
+  const gap = Math.round(HUD_PANEL_GAP * uiScaleFactor);
+  const statBarW = Math.round(184 * uiScaleFactor);
+  const minimapSize = Math.round(Math.min(168 * uiScaleFactor, vW * 0.22, vH * 0.26));
+  const perfSize = getPerformanceOverlaySize(uiScaleFactor);
 
-  const minimapY = vH - margin - minimapSize - Math.round(46 * scale);
-  const perfY = minimapY - gap - perfSize.height;
+  const perfX = vW - margin - perfSize.width;
+  const perfY = margin;
+  const minimapX = vW - margin - minimapSize;
+  const minimapY = perfY + perfSize.height + gap;
 
-  return {
+  cachedHudLayoutFrame = currentFrame;
+  cachedHudLayout = {
     vW,
     vH,
-    scale,
+    uiScaleFactor,
     margin,
     gap,
     statBarW,
     statX: margin,
-    healthY: margin,
-    manaY: margin + Math.round(44 * scale),
-    scoreY: margin + Math.round(90 * scale),
-    inventoryY: margin + Math.round(126 * scale),
-    sprintY: vH - margin - Math.round(34 * scale),
-    bossY: margin,
-    xpY: vH - margin - Math.round(18 * scale),
+    healthY: margin + Math.round(6 * uiScaleFactor),
+    manaY: margin + Math.round(42 * uiScaleFactor),
+    scoreY: margin + Math.round(82 * uiScaleFactor),
+    inventoryY: margin + Math.round(118 * uiScaleFactor),
+    sprintY: vH - margin - Math.round(40 * uiScaleFactor),
+    bossY: margin + Math.round(28 * uiScaleFactor),
+    xpY: vH - margin - Math.round(22 * uiScaleFactor),
     minimapSize,
-    minimapX: vW - margin - minimapSize,
+    minimapX,
     minimapY,
-    perfX: vW - margin - perfSize.width,
+    perfX,
     perfY,
     perfSize,
-    difficultyX: vW - margin - perfSize.width - Math.round(44 * scale),
-    difficultyY: margin + Math.round(4 * scale),
+    difficultyX: perfX - Math.round(44 * uiScaleFactor),
+    difficultyY: margin + Math.round(4 * uiScaleFactor),
   };
+  return cachedHudLayout;
 }
 
 function drawHudPanelShell(x, y, w, h, opts = {}) {
@@ -90,15 +103,15 @@ function drawHudPerformanceOverlay() {
     tracker: performanceTracker,
     targetFps,
     fpsMode: normalizeFpsMode(targetFps),
-    scale: layout.scale,
+    uiScaleFactor: layout.uiScaleFactor,
   });
 }
 
 function drawXPBar() {
   const layout = getHudLayout();
   const vW = layout.vW;
-  const barW = Math.min(vW * 0.42, Math.round(440 * layout.scale));
-  const barH = Math.max(12, Math.round(12 * layout.scale));
+  const barW = Math.min(vW * 0.42, Math.round(440 * layout.uiScaleFactor));
+  const barH = Math.max(12, Math.round(12 * layout.uiScaleFactor));
   const startX = (vW - barW) / 2;
   const startY = layout.xpY;
   
@@ -116,7 +129,7 @@ function drawXPBar() {
   translate(-(startX + barW/2), -(startY + barH/2));
 
   // Themed Background Container
-  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(18 * layout.scale), padY: Math.round(12 * layout.scale), alpha: 200 });
+  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(18 * layout.uiScaleFactor), padY: Math.round(12 * layout.uiScaleFactor), alpha: 200 });
 
   // Bar Background (empty part)
   noStroke();
@@ -141,12 +154,12 @@ function drawXPBar() {
   textAlign(CENTER, CENTER);
   let sz = typeof gTextSize === 'function' ? 14 : 14;
   if (typeof gTextSize === 'function') gTextSize(sz); else textSize(sz);
-  text(`Lv ${playerLevel} (${playerXP}/${xpToNextLevel})`, startX + barW/2, startY - Math.round(18 * layout.scale));
+  text(`Lv ${playerLevel} (${playerXP}/${xpToNextLevel})`, startX + barW/2, startY - Math.round(18 * layout.uiScaleFactor));
   
   // Stat points indicator
   if (statPoints > 0) {
       fill(255, 215, 0); // Gold for available stat points
-      text(`+${statPoints} Stat Points (Press I)`, startX + barW/2, startY - Math.round(36 * layout.scale));
+      text(`+${statPoints} Stat Points (Press I)`, startX + barW/2, startY - Math.round(36 * layout.uiScaleFactor));
   }
 
   pop();
@@ -157,7 +170,7 @@ function drawHealthBar() {
   const startX = layout.statX;
   const startY = layout.healthY;
   const barW = layout.statBarW;
-  const barH = Math.max(16, Math.round(18 * layout.scale));
+  const barH = Math.max(16, Math.round(18 * layout.uiScaleFactor));
 
   push();
   
@@ -173,7 +186,7 @@ function drawHealthBar() {
   translate(-(startX + barW/2), -(startY + barH/2));
 
   // Themed Background
-  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(28 * layout.scale), padY: Math.round(10 * layout.scale), alpha: 180 });
+  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(28 * layout.uiScaleFactor), padY: Math.round(10 * layout.uiScaleFactor), alpha: 180 });
 
   // Background for the bar
   noStroke();
@@ -194,13 +207,13 @@ function drawHealthBar() {
   // Draw Heart Icon (If available)
   if (typeof heartImage !== 'undefined' && heartImage) {
       tint(255, 255);
-      image(heartImage, startX - Math.round(24 * layout.scale), startY - Math.round(2 * layout.scale), Math.round(22 * layout.scale), Math.round(22 * layout.scale));
+      image(heartImage, startX - Math.round(24 * layout.uiScaleFactor), startY - Math.round(2 * layout.uiScaleFactor), Math.round(22 * layout.uiScaleFactor), Math.round(22 * layout.uiScaleFactor));
       noTint();
   } else {
       // Fallback heart icon
       fill(255, 50, 50);
       noStroke();
-      circle(startX - Math.round(14 * layout.scale), startY + barH/2, Math.round(14 * layout.scale));
+      circle(startX - Math.round(14 * layout.uiScaleFactor), startY + barH/2, Math.round(14 * layout.uiScaleFactor));
   }
 
   // Text
@@ -220,12 +233,12 @@ function drawManaBar() {
   const startX = layout.statX;
   const startY = layout.manaY;
   const barW = layout.statBarW;
-  const barH = Math.max(12, Math.round(14 * layout.scale));
+  const barH = Math.max(12, Math.round(14 * layout.uiScaleFactor));
 
   push();
   
   // Background Container
-  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(28 * layout.scale), padY: Math.round(8 * layout.scale), alpha: 200 });
+  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(28 * layout.uiScaleFactor), padY: Math.round(8 * layout.uiScaleFactor), alpha: 200 });
 
   // Background
   noStroke();
@@ -247,9 +260,9 @@ function drawManaBar() {
   // Draw Mana Icon (Simple Blue Bubble)
   fill(50, 150, 255);
   noStroke();
-  circle(startX - Math.round(14 * layout.scale), startY + barH/2, Math.round(12 * layout.scale));
+  circle(startX - Math.round(14 * layout.uiScaleFactor), startY + barH/2, Math.round(12 * layout.uiScaleFactor));
   fill(255, 255, 255, 100);
-  circle(startX - Math.round(15 * layout.scale), startY + barH/2 - Math.round(2 * layout.scale), Math.round(4 * layout.scale));
+  circle(startX - Math.round(15 * layout.uiScaleFactor), startY + barH/2 - Math.round(2 * layout.uiScaleFactor), Math.round(4 * layout.uiScaleFactor));
   
   // Text
   if (typeof uiFont !== 'undefined' && uiFont) textFont(uiFont);
@@ -268,46 +281,41 @@ function drawBossHealthBar() {
   if (!boss) return;
 
   const layout = getHudLayout();
-  const barW = Math.min(layout.vW * 0.42, Math.round(420 * layout.scale));
-  const barH = Math.max(18, Math.round(20 * layout.scale));
+  const barW = Math.min(layout.vW * 0.34, Math.round(360 * layout.uiScaleFactor));
+  const barH = Math.max(14, Math.round(16 * layout.uiScaleFactor));
   const x = (layout.vW - barW) / 2;
   const y = layout.bossY;
 
   push();
-  // Main Container
-  fill(0, 180);
-  stroke(0);
-  strokeWeight(4);
-  rect(x - 5, y - 5, barW + 10, barH + Math.round(30 * layout.scale), 4);
+  drawHudPanelShell(x, y, barW, barH, {
+    padX: Math.round(14 * layout.uiScaleFactor),
+    padY: Math.round(11 * layout.uiScaleFactor),
+    alpha: 190,
+  });
 
-  // Name
   if (uiFont) textFont(uiFont);
-  fill(255, 50, 50);
+  fill(255, 180, 145);
   noStroke();
   textAlign(CENTER, BOTTOM);
-  gTextSize(18);
-  text(t('boss_name'), x + barW/2, y - Math.round(8 * layout.scale));
+  gTextSize(Math.round(12 * layout.uiScaleFactor));
+  text(t('boss_name'), x + barW/2, y - Math.round(6 * layout.uiScaleFactor));
 
-  // Red Glow behind the bar
   noStroke();
-  fill(255, 0, 0, 40);
-  rect(x, y, barW, barH);
+  fill(36, 12, 14, 235);
+  rect(x, y, barW, barH, 2);
 
-  // Inner Border
   stroke(MENU_GOLD_BORDER);
   strokeWeight(2);
   noFill();
-  rect(x - 2, y - 2, barW + 4, barH + 4, 2);
+  rect(x - 1, y - 1, barW + 2, barH + 2, 2);
 
-  // Health Fill
-  const hpPct = boss.health / boss.maxHealth;
-  fill(200, 0, 0);
+  const hpPct = constrain(boss.health / boss.maxHealth, 0, 1);
+  fill(190, 34, 34);
   noStroke();
-  rect(x, y, barW * hpPct, barH);
+  rect(x + 2, y + 2, Math.max(0, (barW - 4) * hpPct), barH - 4, 1);
 
-  // Animated Highlight
-  fill(255, 255, 255, 40);
-  rect(x, y, barW * hpPct, barH / 2);
+  fill(255, 255, 255, 34);
+  rect(x + 2, y + 2, Math.max(0, (barW - 4) * hpPct), Math.max(2, (barH - 4) / 2), 1);
   
   pop();
 }
@@ -321,7 +329,7 @@ function drawMinimap() {
   const mmY = layout.minimapY;
 
   push();
-  drawHudPanelShell(mmX, mmY, mmW, mmH, { padX: Math.round(8 * layout.scale), padY: Math.round(8 * layout.scale), alpha: 180 });
+  drawHudPanelShell(mmX, mmY, mmW, mmH, { padX: Math.round(8 * layout.uiScaleFactor), padY: Math.round(8 * layout.uiScaleFactor), alpha: 180 });
   noStroke();
 
   const mapAspect = mapImage.width / mapImage.height;
@@ -423,9 +431,9 @@ function drawScore() {
       pulseScale = map(now - lastScoreChange, 0, 200, 1.2, 1.0);
   }
   
-  translate(x + Math.round(70 * layout.scale), y - Math.round(5 * layout.scale));
+  translate(x + Math.round(70 * layout.uiScaleFactor), y - Math.round(5 * layout.uiScaleFactor));
   scale(pulseScale);
-  translate(-(x + Math.round(70 * layout.scale)), -(y - Math.round(5 * layout.scale)));
+  translate(-(x + Math.round(70 * layout.uiScaleFactor)), -(y - Math.round(5 * layout.uiScaleFactor)));
 
   if (uiFont) textFont(uiFont);
   
@@ -433,20 +441,20 @@ function drawScore() {
   stroke(0, 100);
   strokeWeight(4);
   fill(0, 150);
-  rect(x - 5, y - Math.round(20 * layout.scale), Math.round(150 * layout.scale), Math.round(32 * layout.scale), 5);
+  rect(x - 5, y - Math.round(20 * layout.uiScaleFactor), Math.round(150 * layout.uiScaleFactor), Math.round(32 * layout.uiScaleFactor), 5);
   
   // Inner Border
   stroke(255, 215, 0); // GOLD
   strokeWeight(2);
   noFill();
-  rect(x - 3, y - Math.round(18 * layout.scale), Math.round(146 * layout.scale), Math.round(28 * layout.scale), 3);
+  rect(x - 3, y - Math.round(18 * layout.uiScaleFactor), Math.round(146 * layout.uiScaleFactor), Math.round(28 * layout.uiScaleFactor), 3);
   
   // Text
   noStroke();
   fill(255, 255, 255);
-  textSize(Math.round(16 * layout.scale));
+  textSize(Math.round(16 * layout.uiScaleFactor));
   textAlign(LEFT, CENTER);
-  text(t('gold_hud', playerScore), x + 5, y - Math.round(5 * layout.scale));
+  text(t('gold_hud', playerScore), x + 5, y - Math.round(5 * layout.uiScaleFactor));
   pop();
 }
 
@@ -459,9 +467,9 @@ function drawInventory() {
   const layout = getHudLayout();
   const startX = layout.statX;
   const startY = layout.inventoryY;
-  const slotW = Math.round(48 * layout.scale);
-  const slotH = Math.round(48 * layout.scale);
-  const slotSpacing = Math.round(8 * layout.scale);
+  const slotW = Math.round(48 * layout.uiScaleFactor);
+  const slotH = Math.round(48 * layout.uiScaleFactor);
+  const slotSpacing = Math.round(8 * layout.uiScaleFactor);
   const slots = [];
 
   if (potions > 0) slots.push({ label: 'P', count: potions, col: [0, 200, 80] });
@@ -509,29 +517,40 @@ function drawVignette() {
     const vW = width;
     const vH = height;
     
-    // Use a large radial gradient via native canvas context for performance
     const ctx = drawingContext;
-    const centerX = vW / 2;
-    const centerY = vH / 2;
-    const outerRadius = Math.max(vW, vH) * 0.8;
-    const innerRadius = Math.min(vW, vH) * 0.2;
+    const cache = drawVignette._cache || {};
+    if (cache.w !== vW || cache.h !== vH || !cache.gradient) {
+      const centerX = vW / 2;
+      const centerY = vH / 2;
+      const outerRadius = Math.max(vW, vH) * 0.8;
+      const innerRadius = Math.min(vW, vH) * 0.2;
+      cache.w = vW;
+      cache.h = vH;
+      cache.gradient = ctx.createRadialGradient(
+          centerX, centerY, innerRadius,
+          centerX, centerY, outerRadius
+      );
+      cache.gradient.addColorStop(0, 'rgba(0,0,0,0)');
+      cache.gradient.addColorStop(1, 'rgba(0,0,0,0.55)');
+      drawVignette._cache = cache;
+    }
 
-    const grad = ctx.createRadialGradient(
-        centerX, centerY, innerRadius,
-        centerX, centerY, outerRadius
-    );
-    
-    grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.55)'); // Subtle dark edges
-
-    ctx.fillStyle = grad;
+    ctx.fillStyle = cache.gradient;
     ctx.fillRect(0, 0, vW, vH);
     pop();
 }
 
+function getUsableCloudImages() {
+  if (cachedCloudImagesSourceCount !== cloudImages.length) {
+    cachedUsableCloudImages = cloudImages.filter(img => img);
+    cachedCloudImagesSourceCount = cloudImages.length;
+  }
+  return cachedUsableCloudImages;
+}
+
 function drawDifficultyBadge() {
   const layout = getHudLayout();
-  const badgeSize = Math.round(32 * layout.scale);
+  const badgeSize = Math.round(32 * layout.uiScaleFactor);
   const x = layout.difficultyX;
   const y = layout.difficultyY;
   
@@ -588,6 +607,15 @@ function drawDifficultyBadge() {
   pop();
 }
 
+function drawHudWeatherClock() {
+  if (typeof WeatherSystem === 'undefined') return;
+  const layout = getHudLayout();
+  const clockRadius = Math.round(22 * layout.uiScaleFactor);
+  const clockX = layout.minimapX + layout.minimapSize - clockRadius;
+  const clockY = layout.minimapY + layout.minimapSize + Math.round(34 * layout.uiScaleFactor);
+  WeatherSystem.drawClock(clockX, Math.min(layout.vH - layout.margin - clockRadius, clockY), clockRadius);
+}
+
 function findGoalPosition() {
     if (!decorativeObjectsList) return null;
     for (const obj of decorativeObjectsList) {
@@ -618,16 +646,16 @@ function drawSprintMeter() {
   const startX = layout.statX; 
   const startY = layout.sprintY; 
   const barW = layout.statBarW;   
-  const barH = Math.max(10, Math.round(10 * layout.scale));    
+  const barH = Math.max(10, Math.round(10 * layout.uiScaleFactor));
   
-  const containerW = Math.round(200 * layout.scale); 
-  const containerH = Math.round(32 * layout.scale);
+  const containerW = Math.round(200 * layout.uiScaleFactor);
+  const containerH = Math.round(32 * layout.uiScaleFactor);
 
   push();
   
   // Themed Background Container
   if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) tint(255, targetAlpha);
-  drawHudPanelShell(startX, startY, containerW, containerH, { padX: Math.round(10 * layout.scale), padY: Math.round(8 * layout.scale), alpha: 200 * (targetAlpha / 255) });
+  drawHudPanelShell(startX, startY, containerW, containerH, { padX: Math.round(10 * layout.uiScaleFactor), padY: Math.round(8 * layout.uiScaleFactor), alpha: 200 * (targetAlpha / 255) });
   if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) noTint();
 
   // Bar Background (empty part)
@@ -708,8 +736,9 @@ function findNearestCoin(px, py) {
 function drawCompass() {
     if (!playerPosition) return;
     
-    const vW = virtualW || (width / gameScale);
-    const vH = virtualH || (height / gameScale);
+    const layout = getHudLayout();
+    const vW = layout.vW;
+    const vH = layout.vH;
     const camX = Math.floor(smoothCamX || 0);
     const camY = Math.floor(smoothCamY || 0);
     const pX = isMoving ? renderX : playerPosition.x;
@@ -751,15 +780,16 @@ function drawCompass() {
         const distTiles = Math.hypot(dx, dy) / cellSize;
         const angle = atan2(dy, dx);
         
-        const margin = 35 + (i * 5); // Slight offset for multiple markers
+        const margin = Math.max(40, layout.margin + 12) + (i * 5);
+        const bottomLimit = vH - Math.max(margin, Math.round(72 * layout.uiScaleFactor));
         let tMin = Infinity;
         if (dx > 0) tMin = Math.min(tMin, (vW - margin - pScreenX) / dx);
         if (dx < 0) tMin = Math.min(tMin, (margin - pScreenX) / dx);
-        if (dy > 0) tMin = Math.min(tMin, (vH - margin - pScreenY) / dy);
+        if (dy > 0) tMin = Math.min(tMin, (bottomLimit - pScreenY) / dy);
         if (dy < 0) tMin = Math.min(tMin, (margin - pScreenY) / dy);
         
         const edgeX = constrain(pScreenX + dx * tMin, margin, vW - margin);
-        const edgeY = constrain(pScreenY + dy * tMin, margin, vH - margin);
+        const edgeY = constrain(pScreenY + dy * tMin, margin, bottomLimit);
 
         let markerColor;
         if (m.type === 'enemy') markerColor = color(255, 50, 50);
@@ -823,7 +853,7 @@ function locatePortal() {
 function spawnCloud(forceX) {
   if (clouds.length >= MAX_CLOUDS) return;
   
-  const validImages = cloudImages.filter(img => img);
+  const validImages = getUsableCloudImages();
   if (validImages.length === 0) return;
   
   const cloudImg = validImages[Math.floor(Math.random() * validImages.length)];
@@ -837,10 +867,10 @@ function spawnCloud(forceX) {
   const yPos = minY + Math.random() * (maxY - minY);
 
   const baseSpeed = 0.3 + Math.random() * 1;
-  const scale = 2.0 + Math.random() * 4.0;
+  const cloudRenderScale = 2.0 + Math.random() * 4.0;
   
   // Spawn left of map if no forceX provided
-  const startX = (typeof forceX === 'number') ? forceX : -cloudImg.width * scale - 200;
+  const startX = (typeof forceX === 'number') ? forceX : -cloudImg.width * cloudRenderScale - 200;
 
   clouds.push({
     img: cloudImg,
@@ -848,13 +878,13 @@ function spawnCloud(forceX) {
     y: yPos,
     baseY: yPos,
     speed: baseSpeed,
-    scale: scale,
+    renderScale: cloudRenderScale,
     opacity: 180 + Math.random() * 75,
     verticalDrift: (Math.random() - 0.5) * 0.15,
     driftPhase: Math.random() * Math.PI * 2
   });
-  // Keep clouds sorted by scale (painter's order) — cheapest to sort on insert
-  clouds.sort((a, b) => a.scale - b.scale);
+  // Keep clouds sorted by size (painter's order) on insert.
+  clouds.sort((a, b) => a.renderScale - b.renderScale);
 }
 
 function updateClouds() {
@@ -879,7 +909,7 @@ function updateClouds() {
     cloud.y = cloud.baseY + Math.sin(cloud.driftPhase) * 20 * (cloud.verticalDrift || 0.1);
     
    
-    const cloudWidth = cloud.img.width * cloud.scale;
+    const cloudWidth = cloud.img.width * cloud.renderScale;
     if (cloud.x > mapW + 500) {
       clouds.splice(i, 1);
     }
@@ -898,8 +928,8 @@ function drawClouds() {
   imageMode(CORNER);
 
   for (const cloud of clouds) {
-    const w = cloud.img.width * cloud.scale;
-    const h = cloud.img.height * cloud.scale;
+    const w = cloud.img.width * cloud.renderScale;
+    const h = cloud.img.height * cloud.renderScale;
 
     // Cull clouds outside the viewport (clouds live in world space)
     if (!isInView(cloud.x, cloud.y, w, h)) continue;

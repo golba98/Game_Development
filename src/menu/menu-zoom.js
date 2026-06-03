@@ -3,12 +3,12 @@ function installMenuZoomLogger() {
   const logZoom = () => {
     try {
       const vv = window.visualViewport;
-      const scale = vv && vv.scale ? vv.scale : (window.outerWidth / window.innerWidth) || 1;
+      const browserZoomScale = vv && vv.scale ? vv.scale : (window.outerWidth / window.innerWidth) || 1;
       const dpr = window.devicePixelRatio || 1;
       const ratio = (window.outerWidth && window.innerWidth) ? window.outerWidth / window.innerWidth : 1;
-      if (!_lastMenuZoomLog || Math.abs(scale - _lastMenuZoomLog) > 0.01) {
-        console.log('[menu-zoom] scale', scale, 'dpr', dpr, 'outer/inner ratio', ratio, 'headers zoom', document.documentElement.style.zoom, document.body.style.zoom, 'visualViewport', vv ? vv.scale : 'n/a');
-        _lastMenuZoomLog = scale;
+      if (!_lastMenuZoomLog || Math.abs(browserZoomScale - _lastMenuZoomLog) > 0.01) {
+        console.log('[menu-zoom] scale', browserZoomScale, 'dpr', dpr, 'outer/inner ratio', ratio, 'headers zoom', document.documentElement.style.zoom, document.body.style.zoom, 'visualViewport', vv ? vv.scale : 'n/a');
+        _lastMenuZoomLog = browserZoomScale;
       }
     } catch (e) {
       console.warn('[menu-zoom] logger failed', e);
@@ -60,8 +60,8 @@ function unregisterZoomAwareSlider(el) {
 }
 // === Zoom / Measurement ===
 function getCurrentMenuZoom() {
-  const scale = window.visualViewport?.scale;
-  if (scale && isFinite(scale) && scale > 0) return scale;
+  const browserZoomScale = window.visualViewport?.scale;
+  if (browserZoomScale && isFinite(browserZoomScale) && browserZoomScale > 0) return browserZoomScale;
   return estimateMenuBrowserZoom();
 }
 // === DOM Stability Routines ===

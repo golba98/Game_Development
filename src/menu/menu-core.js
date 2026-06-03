@@ -12,7 +12,8 @@ function setup() {
   const loadingOverlay = document.getElementById('gd-loading-overlay');
   if (loadingOverlay) loadingOverlay.remove();
 
-  canvas = createCanvas(windowWidth, windowHeight);
+  const viewportSize = getViewportSize();
+  canvas = createCanvas(viewportSize.width, viewportSize.height);
   canvas.style('z-index', '1');
 
   canvas.style('pointer-events', 'none');
@@ -70,9 +71,9 @@ function setup() {
           const iframe = document.getElementById('game-iframe');
           if (iframe && iframe.contentWindow) {
             iframe.contentWindow.postMessage({
-              type: 'update-audio-settings',
-              masterVol, musicVol, sfxVol,
-              difficulty: difficultySetting
+              ...(typeof getGameSettingsMessage === 'function'
+                ? getGameSettingsMessage()
+                : { type: 'update-audio-settings', masterVol, musicVol, sfxVol, difficulty: difficultySetting })
             }, '*');
           }
         } catch (e) {}
@@ -183,14 +184,7 @@ function setup() {
 function applyFPS() {
   if (typeof frameRate === 'function') {
     const fpsMode = normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode);
-    targetFps = getFpsTargetForMode(fpsMode);
-    // Unlimited removes the finite game-side p5 frame pacing cap. The browser
-    // may still present frames near the display refresh rate due to rAF/VSync.
-    if (fpsMode === "unlimited") {
-      frameRate(INTERNAL_UNCAPPED_FRAME_RATE);
-    } else {
-      frameRate(targetFps);
-    }
+    targetFps = applyFpsModeToP5(fpsMode);
   }
 }
 
@@ -236,15 +230,15 @@ function draw() {
   })();
 
   if (menuPerfDebug) {
-    const scale = getUiScaleMultiplier(textSizeSetting);
-    const size = getPerformanceOverlaySize(scale);
+    const uiScaleFactor = getUiScaleMultiplier(textSizeSetting);
+    const size = getPerformanceOverlaySize(uiScaleFactor);
     drawPerformanceOverlayPanel({
-      x: width - size.width - Math.round(20 * scale),
-      y: Math.round(20 * scale),
+      x: width - size.width - Math.round(20 * uiScaleFactor),
+      y: Math.round(20 * uiScaleFactor),
       tracker: performanceTracker,
       targetFps,
       fpsMode: normalizeFpsMode(targetFps),
-      scale,
+      uiScaleFactor,
     });
   }
 }
@@ -252,9 +246,8 @@ function draw() {
 // === Window / Resize Handling ===
 function windowResized() {
   try { clearTimeout(_menuResizeTimer); } catch (e) {}
-  _menuLastSize = { w: window.innerWidth, h: window.innerHeight };
-  const vv = window.visualViewport;
-  _menuResizeInitialScale = vv ? (vv.scale || 1) : 1;
+  const viewportSize = getViewportSize();
+  _menuLastSize = { w: viewportSize.width, h: viewportSize.height };
   _menuResizeTimer = setTimeout(() => {
     try {
 
@@ -267,31 +260,33 @@ function windowResized() {
       console.warn('[menu] windowResized overlay check failed', e);
     }
 
-
-    if (skipNextMenuReload) {
-      console.log('[menu] windowResized: skipping one-time programmatic reload');
-      skipNextMenuReload = false;
-      return;
-    }
-
-
-    const vvNow = window.visualViewport;
-    const currentScale = vvNow ? (vvNow.scale || 1) : 1;
-    const matchesSize = (_menuLastSize.w === window.innerWidth && _menuLastSize.h === window.innerHeight);
+    const latestViewportSize = getViewportSize();
+    const matchesSize = (_menuLastSize.w === latestViewportSize.width && _menuLastSize.h === latestViewportSize.height);
     if (matchesSize) {
-      if (Math.abs(currentScale - _menuResizeInitialScale) > 0.01) {
-        console.log('[menu] resize ignored because only zoom/viewport scale changed', { oldScale: _menuResizeInitialScale, newScale: currentScale });
-        return;
-      }
-      try {
-        location.reload();
-      } catch (e) {
-        console.warn('[menu] failed to reload after resize', e);
-      }
+      resizeMenuViewport();
     } else {
       windowResized();
     }
   }, 200);
+}
+
+function resizeMenuViewport() {
+  const viewportSize = getViewportSize();
+  resizeCanvas(viewportSize.width, viewportSize.height);
+
+  try {
+    if (videoBuffer && typeof videoBuffer.remove === 'function') videoBuffer.remove();
+  } catch (e) {}
+  try {
+    if (loopFallbackBuffer && typeof loopFallbackBuffer.remove === 'function') loopFallbackBuffer.remove();
+  } catch (e) {}
+  videoBuffer = createGraphics(width, height);
+  loopFallbackBuffer = null;
+  fallbackFrameReady = false;
+
+  calculateLayout();
+  positionMainMenuElements();
+  applyCurrentTextSize();
 }
 
 function keyPressed() {

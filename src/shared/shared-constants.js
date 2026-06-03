@@ -3,10 +3,6 @@
 
 const LEGACY_UNCAPPED_FPS = 999;
 const UNLIMITED_FPS_TARGET = 0;
-// p5's frameRate(0) HALTS the draw loop (target interval becomes Infinity), which
-// freezes the canvas to black. To run "uncapped" we hand p5 a high finite target
-// so it stops throttling while rAF/VSync still bound the real frame rate.
-const INTERNAL_UNCAPPED_FRAME_RATE = 1000;
 const SETTINGS_STORAGE_KEY = "game.settings";
 const LEGACY_SETTINGS_STORAGE_KEY = "menuSettings";
 
@@ -79,6 +75,16 @@ function getTargetFpsLabel(value) {
 function getFpsModeLabel(value) {
   const normalized = normalizeFpsMode(value);
   return normalized === "unlimited" ? "Unlimited" : normalized;
+}
+
+function applyFpsModeToP5(value) {
+  if (typeof frameRate !== "function") return DEFAULT_SETTINGS.targetFps;
+  const fpsMode = normalizeFpsMode(value, DEFAULT_SETTINGS.fpsMode);
+  const target = getFpsTargetForMode(fpsMode);
+  // p5's frameRate(0) stops the draw loop. Infinity makes p5's frame gate
+  // zero-length, so drawing follows browser requestAnimationFrame naturally.
+  frameRate(fpsMode === "unlimited" ? Number.POSITIVE_INFINITY : target);
+  return target;
 }
 
 function normalizePerformanceOverlaySetting(raw, fallback = DEFAULT_SETTINGS.performanceOverlayEnabled) {

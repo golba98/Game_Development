@@ -415,10 +415,10 @@ function applyColorMode(mode) {
 
 function adjustTextSize(sizeValue) {
   const normalized = normalizeUiScaleSetting(sizeValue, DEFAULT_SETTINGS.uiScale);
-  const scale = normalized / DEFAULT_SETTINGS.uiScale;
-  baseFontPx = scale * 0.04 * height;
-  smallFontPx = scale * 0.03 * height;
-  labelFontPx = scale * 0.035 * height;
+  const menuTextScale = normalized / DEFAULT_SETTINGS.uiScale;
+  baseFontPx = menuTextScale * 0.04 * height;
+  smallFontPx = menuTextScale * 0.03 * height;
+  labelFontPx = menuTextScale * 0.035 * height;
   headingFontPx = baseFontPx * 1.25;
 
   const applyFont = (element, sizePx) => {

@@ -5,6 +5,53 @@ function calculateLayout() {
   mainButtonGap  = 0.045 * height;
 }
 
+function getGameSettingsMessage(type = 'update-audio-settings') {
+  const fpsMode = normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode);
+  return {
+    type,
+    masterVol,
+    musicVol,
+    sfxVol,
+    difficulty: difficultySetting,
+    fpsMode,
+    targetFps: getFpsTargetForMode(fpsMode),
+    hudEnabled: showHUD,
+    performanceOverlayEnabled,
+    performanceOverlay: performanceOverlayEnabled,
+    uiScale: textSizeSetting,
+    textSizeSetting,
+    showStars,
+    screenShakeEnabled,
+    showParticles,
+    showFireflyLighting,
+    colorModeSetting,
+    invertYAxis,
+    sensitivitySetting,
+    languageSetting,
+  };
+}
+
+function positionMainMenuElements() {
+  const cx = width / 2;
+  const startY = height / 2 - (mainButtonHeight * 1.5 + mainButtonGap);
+  const settingsY = startY + mainButtonHeight + mainButtonGap;
+  const exitY = settingsY + mainButtonHeight + mainButtonGap;
+  const x = cx - mainButtonWidth / 2;
+
+  [
+    [playButtonBackground, x, startY],
+    [btnPlay, x, startY],
+    [settingsButtonBackground, x, settingsY],
+    [btnSettings, x, settingsY],
+    [exitButtonBackground, x, exitY],
+    [btnExit, x, exitY],
+  ].forEach(([element, px, py]) => {
+    if (!element) return;
+    element.size(mainButtonWidth, mainButtonHeight);
+    element.position(px, py);
+  });
+}
+
 function createMainMenu() {
   const cx = width / 2;
   const startY = height / 2 - (mainButtonHeight * 1.5 + mainButtonGap);
@@ -36,11 +83,13 @@ function createMainMenu() {
 
         const iframe = document.createElement('iframe');
         iframe.id = 'game-iframe';
+        const fpsMode = normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode);
         const params = new URLSearchParams({
           masterVol,
           musicVol,
           sfxVol,
-          difficulty: difficultySetting
+          difficulty: difficultySetting,
+          fpsMode,
         });
         iframe.src = `game.html?${params.toString()}`;
         Object.assign(iframe.style, {
@@ -61,11 +110,7 @@ function createMainMenu() {
               // Give keyboard focus to the game iframe so WASD input works
               try { iframe.focus(); } catch (e) {}
               try { iframe.contentWindow.focus(); } catch (e) {}
-              iframe.contentWindow.postMessage({
-                type: 'update-audio-settings',
-                masterVol, musicVol, sfxVol,
-                difficulty: difficultySetting
-              }, '*');
+              iframe.contentWindow.postMessage(getGameSettingsMessage(), '*');
               console.log('[parent] iframe load: sent audio settings to game iframe');
               (function waitAndRequestStart() {
                 const startTs = Date.now();
@@ -90,11 +135,7 @@ function createMainMenu() {
           try {
             const ifr = document.getElementById('game-iframe');
             if (ifr && ifr.contentWindow) {
-              ifr.contentWindow.postMessage({
-                type: 'update-audio-settings',
-                masterVol, musicVol, sfxVol,
-                difficulty: difficultySetting
-              }, '*');
+              ifr.contentWindow.postMessage(getGameSettingsMessage(), '*');
               console.log('[parent] fallback: posted audio settings to iframe after timeout');
             }
           } catch (e) {}
@@ -105,7 +146,7 @@ function createMainMenu() {
           try {
             const ifr = document.getElementById('game-iframe');
             if (ifr && ifr.contentWindow) {
-              ifr.contentWindow.postMessage({ type: 'game-activated' }, '*');
+              ifr.contentWindow.postMessage(getGameSettingsMessage('game-activated'), '*');
               console.log('[parent] posted game-activated to iframe');
               // Ensure iframe has keyboard focus for WASD input
               try { ifr.focus(); } catch (e) {}
@@ -118,7 +159,7 @@ function createMainMenu() {
         overlay.style.display = 'flex';
         const ifr = document.getElementById('game-iframe');
         if (ifr && ifr.contentWindow) {
-            ifr.contentWindow.postMessage({ type: 'game-activated' }, '*');
+            ifr.contentWindow.postMessage(getGameSettingsMessage('game-activated'), '*');
             console.log('[parent] posted game-activated to iframe (resume)');
             try { ifr.focus(); } catch (e) {}
             try { ifr.contentWindow.focus(); } catch (e) {}
