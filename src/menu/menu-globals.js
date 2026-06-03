@@ -25,9 +25,9 @@ let userControls = JSON.parse(JSON.stringify(DEFAULT_CONTROLS));
 
 if (typeof window !== 'undefined') {
   window.MENU_TEXT_SIZE_PRESETS = [
-    { label: 'Small', value: 60 },
+    { label: 'Compact', value: 60 },
     { label: 'Default', value: 75 },
-    { label: 'Big', value: 90 }
+    { label: 'Large', value: 90 }
   ];
 }
 
@@ -54,6 +54,9 @@ let bgMusic = null;
 let bgPlayMusic = null;
 let clickSFX = null;
 let menuMusicStopped = false;
+// Synchronous guard so re-entrant start calls (before bgMusic.isPlaying() flips
+// true) cannot fire a second bgMusic.loop().
+let isMenuMusicPlaying = false;
 
 let _lastMenuZoomLog = null;
 
@@ -83,7 +86,7 @@ let inGame = false;
 let loading = true;
 let loadingProgress = 0;
 
-let textSizeSetting = DEFAULT_SETTINGS.textSize;
+let textSizeSetting = DEFAULT_SETTINGS.uiScale;
 let difficultySetting = DEFAULT_SETTINGS.difficulty;
 let masterVol = DEFAULT_SETTINGS.masterVol;
 let musicVol = DEFAULT_SETTINGS.musicVol;
@@ -95,13 +98,13 @@ let showTutorials = true;
 let showHUD = true;
 let languageSetting = 'English';
 let colorModeSetting = 'None';
-let showFps = false;
+let performanceOverlayEnabled = DEFAULT_SETTINGS.performanceOverlayEnabled;
 let showStars = true;
 let screenShakeEnabled = true;
 let showParticles = true;
 let showFireflyLighting = true;
-let targetFps = 999;
-let fpsHistory = [];
+let targetFps = DEFAULT_SETTINGS.targetFps;
+let performanceTracker = createPerformanceTracker();
 
 let audioUnlocked = false;
 let videoLoopPending = false;

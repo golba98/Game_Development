@@ -22,35 +22,74 @@ function resetDefaults() {
   masterVol = DEFAULT_SETTINGS.masterVol;
   musicVol = DEFAULT_SETTINGS.musicVol;
   sfxVol = DEFAULT_SETTINGS.sfxVol;
-  textSizeSetting = DEFAULT_SETTINGS.textSize;
+  textSizeSetting = DEFAULT_SETTINGS.uiScale;
   difficultySetting = DEFAULT_SETTINGS.difficulty;
+  sensitivitySetting = 5;
+  invertYAxis = false;
+  showTutorials = true;
+  showHUD = true;
+  languageSetting = 'English';
+  colorModeSetting = 'None';
+  performanceOverlayEnabled = DEFAULT_SETTINGS.performanceOverlayEnabled;
+  showStars = true;
+  screenShakeEnabled = true;
+  showParticles = true;
+  showFireflyLighting = true;
+  targetFps = getFpsTargetForMode(DEFAULT_SETTINGS.fpsMode);
+  userControls = JSON.parse(JSON.stringify(DEFAULT_CONTROLS));
   applyVolumes();
   applyCurrentTextSize();
   syncSlidersToSettings();
+  if (typeof applyFPS === 'function') applyFPS();
+  if (typeof applyColorMode === 'function') applyColorMode(colorModeSetting);
   alert("↺ Settings reset to default (and saved).");
   saveAllSettings();
 }
 
 function saveAllSettings() {
+  const fpsMode = normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode);
   const settings = {
-    masterVol, musicVol, sfxVol, textSizeSetting, difficulty: difficultySetting,
-    sensitivitySetting, invertYAxis, showTutorials, showHUD,
+    masterVol, musicVol, sfxVol,
+    textSizeSetting,
+    uiScale: textSizeSetting,
+    difficulty: difficultySetting,
     sensitivitySetting, invertYAxis, showTutorials, showHUD,
     languageSetting, colorModeSetting, userControls,
-    showFps, showStars, screenShakeEnabled, showParticles, showFireflyLighting, targetFps
+    fpsMode,
+    performanceOverlay: performanceOverlayEnabled,
+    showStars,
+    screenShakeEnabled,
+    showParticles,
+    showFireflyLighting,
   };
-  localStorage.setItem("menuSettings", JSON.stringify(settings));
-  console.log("💾 Saved Settings:", settings);
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  console.log("Saved Settings:", settings);
 }
 
 function loadAllSettings() {
-  const saved = localStorage.getItem("menuSettings");
+  const saved = localStorage.getItem(SETTINGS_STORAGE_KEY) || localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY);
   if (saved) {
-    const s = JSON.parse(saved);
+    let s = null;
+    try {
+      s = JSON.parse(saved);
+    } catch (e) {
+      console.warn("Saved settings were invalid. Resetting to defaults.", e);
+      clearSavedSettings();
+      applyCurrentTextSize();
+      return;
+    }
+    if (!s || typeof s !== "object") {
+      clearSavedSettings();
+      applyCurrentTextSize();
+      return;
+    }
     masterVol = s.masterVol ?? masterVol;
     musicVol = s.musicVol ?? musicVol;
     sfxVol = s.sfxVol ?? sfxVol;
-    textSizeSetting = s.textSizeSetting ?? textSizeSetting;
+    textSizeSetting = normalizeUiScaleSetting(
+      s.uiScale ?? s.textSizeSetting,
+      textSizeSetting,
+    );
 
     sensitivitySetting = s.sensitivitySetting ?? sensitivitySetting;
     invertYAxis = s.invertYAxis ?? invertYAxis;
@@ -58,28 +97,30 @@ function loadAllSettings() {
     showHUD = s.showHUD ?? showHUD;
     languageSetting = s.languageSetting ?? languageSetting;
     colorModeSetting = s.colorModeSetting ?? colorModeSetting;
-    showFps = s.showFps ?? showFps;
+    performanceOverlayEnabled = normalizePerformanceOverlaySetting(s, performanceOverlayEnabled);
     showStars = s.showStars ?? showStars;
     screenShakeEnabled = s.screenShakeEnabled ?? screenShakeEnabled;
     showParticles = s.showParticles ?? showParticles;
     showFireflyLighting = s.showFireflyLighting ?? showFireflyLighting;
-    targetFps = s.targetFps ?? targetFps;
+    targetFps = getFpsTargetForMode(normalizeFpsMode(s.fpsMode ?? s.targetFps, normalizeFpsMode(targetFps)));
     if (s.userControls) userControls = s.userControls;
 
     const storedDifficulty = normalizeDifficultyChoice(s.difficulty);
     if (storedDifficulty) difficultySetting = storedDifficulty;
     applyVolumes();
     applyCurrentTextSize();
+    if (typeof applyFPS === 'function') applyFPS();
     syncSlidersToSettings();
     if (typeof applyColorMode === 'function') applyColorMode(colorModeSetting);
-    console.log("✅ Loaded Settings:", s);
+    console.log("Loaded Settings:", s);
   } else {
-    console.log("⚙️ No saved settings found. Using defaults.");
+    console.log("No saved settings found. Using defaults.");
     applyCurrentTextSize();
   }
 }
 
 function clearSavedSettings() {
-  localStorage.removeItem("menuSettings");
-  console.log("🗑️ Cleared saved settings.");
+  localStorage.removeItem(SETTINGS_STORAGE_KEY);
+  localStorage.removeItem(LEGACY_SETTINGS_STORAGE_KEY);
+  console.log("Cleared saved settings.");
 }

@@ -45,12 +45,6 @@ function setup() {
     @supports (image-rendering: -moz-crisp-edges) {
       canvas { image-rendering: -moz-crisp-edges !important; }
     }
-    @supports (image-rendering: -o-pixelated) {
-      canvas { image-rendering: -o-pixelated !important; }
-    }
-    @supports (image-rendering: -webkit-pixelated) {
-      canvas { image-rendering: -webkit-pixelated !important; }
-    }
     @supports (image-rendering: pixelated) {
       canvas { image-rendering: pixelated !important; }
     }
@@ -252,11 +246,16 @@ function setup() {
 
 function applyFPS() {
   if (typeof frameRate === "function") {
-    if (targetFps && targetFps > 0) {
+    const fpsMode = normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode);
+    targetFps = getFpsTargetForMode(fpsMode);
+    // Unlimited removes the finite game-side p5 frame pacing cap. Browser
+    // requestAnimationFrame/VSync can still naturally land near refresh rate.
+    if (fpsMode === "unlimited") {
+      frameRate(INTERNAL_UNCAPPED_FRAME_RATE);
+      verboseLog("[game] framerate target set to unlimited");
+    } else {
       frameRate(targetFps);
       verboseLog("[game] framerate target set to " + targetFps);
-    } else {
-      frameRate(60); // fallback
     }
   }
 }
@@ -564,6 +563,10 @@ function draw() {
 
   pop(); // END WORLD TRANSFORM
 
+  if (_rawDelta > 0) {
+    recordPerformanceSample(performanceTracker, 1000 / _rawDelta);
+  }
+
   // --- MINIMAP --- (Handled in game-hud.js via drawMinimap)
   if (hudEnabled) {
     drawDifficultyBadge();
@@ -580,70 +583,10 @@ function draw() {
       const vW = virtualW || width / gameScale;
       WeatherSystem.drawClock(vW - 60, 40, 25);
     }
-    if (showFps && typeof frameRate === "function") {
-      const vW = virtualW || width / gameScale;
+  }
 
-      const currentFps = frameRate();
-      if (currentFps > 0) {
-        fpsHistory.push(currentFps);
-        if (fpsHistory.length > 60) fpsHistory.shift();
-      }
-
-      let avgFps = 0,
-        low1Fps = 0;
-      if (fpsHistory.length > 0) {
-        avgFps = fpsHistory.reduce((a, b) => a + b) / fpsHistory.length;
-        const sorted = [...fpsHistory].sort((a, b) => a - b);
-        const low1Index = Math.max(0, Math.floor(sorted.length * 0.01));
-        low1Fps = sorted[low1Index];
-      }
-
-      push();
-
-      // Pixel Art Bronze Frame
-      const boxW = 110;
-      const boxH = 46;
-      const boxX = vW - 120;
-      const boxY = 80;
-
-      // Drop shadow
-      noStroke();
-      fill(0, 120);
-      rect(boxX + 2, boxY + 2, boxW, boxH, 2);
-
-      // Dark metallic backing
-      stroke(50, 40, 30);
-      strokeWeight(3);
-      fill(35, 30, 25);
-      rect(boxX, boxY, boxW, boxH, 2);
-
-      // Inner gold inlay
-      stroke(180, 150, 50);
-      strokeWeight(1.5);
-      noFill();
-      rect(boxX + 2, boxY + 2, boxW - 4, boxH - 4, 1);
-
-      // Corner rivets
-      fill(100, 90, 80);
-      noStroke();
-      rect(boxX + 4, boxY + 4, 2, 2);
-      rect(boxX + boxW - 6, boxY + 4, 2, 2);
-      rect(boxX + 4, boxY + boxH - 6, 2, 2);
-      rect(boxX + boxW - 6, boxY + boxH - 6, 2, 2);
-
-      // Text rendering
-      gTextSize(14);
-
-      fill(220, 220, 220); // Silver/grey
-      textAlign(LEFT, CENTER);
-      text(`AVG: ${Math.round(avgFps)}`, boxX + 12, boxY + 14);
-
-      fill(200, 100, 100);
-      gTextSize(12);
-      text(`1% LOW: ${Math.round(low1Fps)}`, boxX + 12, boxY + 30);
-
-      pop();
-    }
+  if (performanceOverlayEnabled) {
+    drawHudPerformanceOverlay();
   }
 
   // Dev-only perf overlay (?debug=1 / ?renderstats=1). Off in production.

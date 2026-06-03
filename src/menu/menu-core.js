@@ -28,13 +28,14 @@ function setup() {
   initializeMenuBackgroundVideo(bgVideo);
 
   applyVolumes();
-  startMenuMusicIfNeeded();
+  // Do NOT start music here — autoplay before a user gesture is blocked by the
+  // browser and emits an AudioContext warning. Music starts on first gesture below.
   const resumeOnFirstGesture = () => {
     try {
       console.log('[setup] first user gesture detected — attempting to unlock audio and start music');
-      unlockAudioAndStart(() => {
-        startMenuMusicIfNeeded();
-      });
+      // unlockAudioAndStart() unlocks/resumes the context and starts menu music
+      // itself once unlocked; passing a music callback here would double-start it.
+      unlockAudioAndStart();
     } catch (e) {
       console.warn('[setup] resumeOnFirstGesture failed', e);
     }
@@ -83,9 +84,13 @@ function setup() {
         if (typeof ev.data.sfxVol === 'number') sfxVol = ev.data.sfxVol;
         if (typeof ev.data.difficulty === 'string') difficultySetting = ev.data.difficulty;
         if (typeof ev.data.showTutorialsSetting === 'boolean') showTutorials = ev.data.showTutorialsSetting;
+        else if (typeof ev.data.showTutorials === 'boolean') showTutorials = ev.data.showTutorials;
         if (typeof ev.data.hudEnabled === 'boolean') showHUD = ev.data.hudEnabled;
-        if (typeof ev.data.showFps === 'boolean') showFps = ev.data.showFps;
-        if (typeof ev.data.targetFps === 'number') targetFps = ev.data.targetFps;
+        else if (typeof ev.data.showHUD === 'boolean') showHUD = ev.data.showHUD;
+        performanceOverlayEnabled = normalizePerformanceOverlaySetting(ev.data, performanceOverlayEnabled);
+        if (typeof ev.data.fpsMode !== 'undefined' || typeof ev.data.targetFps === 'number') {
+          targetFps = getFpsTargetForMode(normalizeFpsMode(ev.data.fpsMode ?? ev.data.targetFps, normalizeFpsMode(targetFps)));
+        }
         if (typeof ev.data.showStars === 'boolean') showStars = ev.data.showStars;
         if (typeof ev.data.screenShakeEnabled === 'boolean') screenShakeEnabled = ev.data.screenShakeEnabled;
         if (typeof ev.data.showParticles === 'boolean') showParticles = ev.data.showParticles;
@@ -93,11 +98,16 @@ function setup() {
         if (typeof ev.data.colorModeSetting === 'string') colorModeSetting = ev.data.colorModeSetting;
         if (typeof ev.data.invertYAxis === 'boolean') invertYAxis = ev.data.invertYAxis;
         if (typeof ev.data.sensitivitySetting === 'number') sensitivitySetting = ev.data.sensitivitySetting;
-        if (typeof ev.data.textSizeSetting === 'number') textSizeSetting = ev.data.textSizeSetting;
+        textSizeSetting = normalizeUiScaleSetting(
+          ev.data.uiScale ?? ev.data.textSizeSetting,
+          textSizeSetting,
+        );
         if (typeof ev.data.languageSetting === 'string') languageSetting = ev.data.languageSetting;
 
 
         applyVolumes();
+        applyFPS();
+        applyCurrentTextSize();
 
 
         saveAllSettings();
@@ -172,10 +182,14 @@ function setup() {
 
 function applyFPS() {
   if (typeof frameRate === 'function') {
-    if (targetFps && targetFps > 0) {
-      frameRate(targetFps);
+    const fpsMode = normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode);
+    targetFps = getFpsTargetForMode(fpsMode);
+    // Unlimited removes the finite game-side p5 frame pacing cap. The browser
+    // may still present frames near the display refresh rate due to rAF/VSync.
+    if (fpsMode === "unlimited") {
+      frameRate(INTERNAL_UNCAPPED_FRAME_RATE);
     } else {
-      frameRate(60); // fallback
+      frameRate(targetFps);
     }
   }
 }
@@ -200,29 +214,6 @@ function draw() {
   }
   noTint();
 
-  if (showingSettings) {
-    const cx = width / 2;
-    const cy = height / 2;
-    let panelW = 0.7 * width;
-    let panelH = 0.7 * height;
-
-    if (activeCategory === 'Controls') {
-      panelW = 0.8 * width;
-      panelH = 0.85 * height;
-    }
-
-    push();
-    imageMode(CENTER);
-    tint(255, 220);
-    image(rectSkin, cx, cy, panelW, panelH);
-    pop();
-
-    textSize(headingFontPx || 0.055 * height);
-    fill(0);
-    textAlign(CENTER, TOP);
-    text("Settings", cx, cy - panelH / 2 - 170);
-  }
-
   if (fadeAlpha > 0) {
     fill(0, fadeAlpha);
     rect(0, 0, width, height);
@@ -231,38 +222,30 @@ function draw() {
     }
   }
 
-  // Draw FPS Overlay if enabled
-  if (showFps && typeof frameRate !== 'undefined') {
-    const currentFps = frameRate();
-    if (currentFps > 0) {
-      fpsHistory.push(currentFps);
-      if (fpsHistory.length > 60) fpsHistory.shift();
-    }
+  if (typeof frameRate === 'function') {
+    recordPerformanceSample(performanceTracker, frameRate());
+  }
 
-    let avgFps = 0, low1Fps = 0;
-    if (fpsHistory.length > 0) {
-      avgFps = fpsHistory.reduce((a, b) => a + b) / fpsHistory.length;
-      const sorted = [...fpsHistory].sort((a, b) => a - b);
-      const low1Index = Math.max(0, Math.floor(sorted.length * 0.01));
-      low1Fps = sorted[low1Index];
+  const menuPerfDebug = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('debugPerf') === '1' || params.get('menuPerf') === '1';
+    } catch (e) {
+      return false;
     }
+  })();
 
-    push();
-    fill(0, 180);
-    stroke(180, 150, 50);
-    strokeWeight(2);
-    rect(width - 150, height - 70, 130, 56, 4); // Adjusted box to fit more text
-    
-    fill(255);
-    noStroke();
-    textSize(20);
-    textAlign(LEFT, CENTER);
-    text(`AVG: ${Math.round(avgFps)}`, width - 140, height - 54);
-    
-    fill(200, 100, 100);
-    textSize(16);
-    text(`1% LOW: ${Math.round(low1Fps)}`, width - 140, height - 32);
-    pop();
+  if (menuPerfDebug) {
+    const scale = getUiScaleMultiplier(textSizeSetting);
+    const size = getPerformanceOverlaySize(scale);
+    drawPerformanceOverlayPanel({
+      x: width - size.width - Math.round(20 * scale),
+      y: Math.round(20 * scale),
+      tracker: performanceTracker,
+      targetFps,
+      fpsMode: normalizeFpsMode(targetFps),
+      scale,
+    });
   }
 }
 
@@ -406,6 +389,280 @@ function injectCustomStyles() {
     button:hover {
       transform: scale(1.05);
       color: #ffea80 !important;
+    }
+
+    .gd-menu-settings-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      pointer-events: auto;
+      z-index: 2147483646;
+      background: rgba(0, 0, 0, 0.28);
+      --modal-panel-gap: 12px;
+      --modal-panel-padding: 20px 24px;
+      --modal-section-gap: 8px;
+      --modal-section-padding: 10px 12px;
+      --modal-row-height: 36px;
+      --modal-row-gap: 12px;
+      --modal-label-size: 18px;
+      --modal-control-size: 15px;
+      --modal-control-height: 36px;
+      --modal-section-title-size: 17px;
+      --modal-title-size: clamp(26px, 4.5vh, 38px);
+    }
+
+    .gd-menu-settings-overlay[data-ui-scale="compact"] {
+      --modal-panel-gap: 8px;
+      --modal-panel-padding: 14px 18px;
+      --modal-section-gap: 6px;
+      --modal-section-padding: 7px 10px;
+      --modal-row-height: 30px;
+      --modal-row-gap: 10px;
+      --modal-label-size: 13px;
+      --modal-control-size: 13px;
+      --modal-control-height: 30px;
+      --modal-section-title-size: 14px;
+      --modal-title-size: clamp(20px, 3.5vh, 32px);
+    }
+
+    .gd-menu-settings-overlay[data-ui-scale="large"] {
+      --modal-panel-gap: 16px;
+      --modal-panel-padding: 24px 28px;
+      --modal-section-gap: 12px;
+      --modal-section-padding: 14px 16px;
+      --modal-row-height: 44px;
+      --modal-row-gap: 16px;
+      --modal-label-size: 20px;
+      --modal-control-size: 20px;
+      --modal-control-height: 44px;
+      --modal-section-title-size: 22px;
+      --modal-title-size: clamp(32px, 5.5vh, 48px);
+    }
+
+    .gd-menu-settings-panel {
+      width: min(760px, calc(100vw - 48px));
+      max-height: calc(100vh - 80px);
+      display: flex;
+      flex-direction: column;
+      gap: var(--modal-panel-gap);
+      padding: var(--modal-panel-padding);
+      color: #f5f2e6;
+      background-color: rgba(10, 10, 14, 0.94);
+      background-image: url("assets/1-Background/1-Menu/Settings_Background.png");
+      background-size: cover;
+      background-position: center;
+      border: 4px solid rgba(184,134,11,0.82);
+      border-radius: 8px;
+      box-shadow: 0 22px 70px rgba(0,0,0,0.85), inset 0 0 0 2px rgba(255,204,0,0.12);
+      pointer-events: auto;
+      overflow: hidden;
+    }
+
+    .gd-menu-settings-title {
+      flex: 0 0 auto;
+      text-align: center;
+      color: #ffd678;
+      font-size: var(--modal-title-size);
+      line-height: 1;
+      text-shadow: 0 3px 0 #000, 0 0 14px rgba(255,204,0,0.32);
+    }
+
+    .gd-menu-settings-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 2px 6px 16px 2px;
+      scrollbar-width: thin;
+      scrollbar-color: #ffcc00 rgba(0,0,0,0.35);
+    }
+
+    .gd-menu-settings-body::-webkit-scrollbar { width: 8px; }
+    .gd-menu-settings-body::-webkit-scrollbar-thumb {
+      background: #ffcc00;
+      border-radius: 2px;
+    }
+
+    .gd-menu-settings-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--modal-section-gap);
+      padding: var(--modal-section-padding);
+      background: rgba(0,0,0,0.32);
+      border: 2px solid rgba(184,134,11,0.45);
+      border-radius: 6px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+    }
+
+    .gd-menu-settings-section-title {
+      color: #ffd678;
+      font-size: var(--modal-section-title-size);
+      line-height: 1;
+      text-shadow: 0 2px 0 #000;
+    }
+
+    .gd-menu-settings-row {
+      display: grid;
+      grid-template-columns: minmax(150px, 0.8fr) minmax(220px, 1.2fr);
+      align-items: center;
+      gap: var(--modal-row-gap);
+      min-height: var(--modal-row-height);
+    }
+
+    .gd-menu-settings-label {
+      color: #f5f2e6;
+      font-size: var(--modal-label-size);
+      line-height: 1.15;
+      text-align: left;
+      text-shadow: 0 2px 0 #000;
+      overflow-wrap: anywhere;
+    }
+
+    .gd-menu-settings-control {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .gd-menu-select,
+    .gd-menu-key-button,
+    .gd-menu-toggle,
+    .gd-menu-panel-button,
+    .gd-menu-segment {
+      min-height: var(--modal-control-height);
+      color: #fff;
+      background: rgba(28, 28, 34, 0.94);
+      border: 2px solid rgba(184,134,11,0.82);
+      border-radius: 4px;
+      text-shadow: 0 2px 0 #000;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.45);
+      cursor: pointer;
+    }
+
+    .gd-menu-select {
+      width: min(300px, 100%);
+      padding: 0 12px;
+      font-size: var(--modal-control-size);
+    }
+
+    .gd-menu-toggle {
+      width: 86px;
+      font-size: var(--modal-control-size);
+      letter-spacing: 0;
+    }
+
+    .gd-menu-toggle[data-enabled="true"],
+    .gd-menu-segment[data-active="true"] {
+      color: #17120a !important;
+      background: #ffcc00;
+      border-color: #fff0a8;
+      text-shadow: none;
+    }
+
+    .gd-menu-slider-wrap {
+      width: min(330px, 100%);
+      display: grid;
+      grid-template-columns: minmax(120px, 1fr) 58px;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .gd-menu-slider {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .gd-menu-slider-value {
+      color: #ffd678;
+      font-size: 14px;
+      text-align: right;
+      text-shadow: 0 2px 0 #000;
+    }
+
+    .gd-menu-segmented {
+      width: min(330px, 100%);
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .gd-menu-segment {
+      width: 100%;
+      font-size: var(--modal-control-size);
+      padding: 0 8px;
+    }
+
+    .gd-menu-key-button {
+      width: min(220px, 100%);
+      font-size: var(--modal-control-size);
+      padding: 0 10px;
+    }
+
+    .gd-menu-settings-footer {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 14px;
+      padding-top: 4px;
+    }
+
+    .gd-menu-panel-button {
+      width: min(220px, 42vw);
+      font-size: var(--modal-control-size);
+      padding: 0 14px;
+    }
+
+    .gd-menu-panel-button-secondary {
+      border-color: rgba(255,214,120,0.72);
+    }
+
+    .gd-menu-select:focus,
+    .gd-menu-key-button:focus,
+    .gd-menu-toggle:focus,
+    .gd-menu-panel-button:focus,
+    .gd-menu-segment:focus {
+      outline: 2px solid #fff0a8;
+      outline-offset: 2px;
+    }
+
+    @media (max-width: 680px) {
+      .gd-menu-settings-panel {
+        width: calc(100vw - 24px);
+        max-height: calc(100vh - 24px);
+        padding: 18px;
+      }
+
+      .gd-menu-settings-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .gd-menu-settings-control {
+        justify-content: stretch;
+      }
+
+      .gd-menu-select,
+      .gd-menu-slider-wrap,
+      .gd-menu-segmented,
+      .gd-menu-key-button {
+        width: 100%;
+      }
+
+      .gd-menu-settings-footer {
+        flex-direction: column-reverse;
+        align-items: stretch;
+      }
+
+      .gd-menu-panel-button {
+        width: 100%;
+      }
     }
 
     /* Terminal Styles */
