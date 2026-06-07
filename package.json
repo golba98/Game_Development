@@ -12,6 +12,6 @@
   "dependencies": {
     "@pixi/tilemap": "^3.2.2",
     "pixi-viewport": "^5.1.0",
-    "pixi.js": "^7.4.3"
+    "pixi.js": "^8.19.0"
   }
 }
