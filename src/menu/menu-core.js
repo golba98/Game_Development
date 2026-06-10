@@ -1,56 +1,84 @@
 // === Lifecycle / Setup / Rendering ===
 function preload() {
-  rectSkin = loadImage("assets/1-Background/1-Menu/Settings_Background.png");
-  myFont   = loadFont("assets/3-GUI/font.ttf");
-  bgVideo  = createVideo(MENU_VIDEO_PATH);
-  bgMusic      = loadSound('assets/8-Music/menu_music.wav');
-  clickSFX     = loadSound('assets/9-Sounds/Button_Press.mp3');
-  bgPlayButton = loadImage('assets/1-Background/1-Menu/Background.png');
+  const _dbg = (() => { try { return new URLSearchParams(window.location.search).get('debug') === '1'; } catch (e) { return false; } })();
+  if (_dbg) console.log('[preload] started — loading 5 menu assets');
+
+  // Error callbacks are required so p5.js decrements its preload counter even on
+  // failure — without them a single 404/decode-error leaves setup() uncalled forever.
+  const imgOk  = (n) => () => { if (_dbg) console.log('[preload] image ok:', n); };
+  const imgErr = (n) => () => console.warn('[preload] image failed (continuing):', n);
+  const sndOk  = (n) => () => { if (_dbg) console.log('[preload] sound ok:', n); };
+  const sndErr = (n) => () => console.warn('[preload] sound failed (continuing):', n);
+
+  rectSkin     = loadImage('assets/1-Background/1-Menu/Settings_Background.png', imgOk('Settings_Background'), imgErr('Settings_Background'));
+  myFont       = loadFont('assets/3-GUI/font.ttf',
+    () => { if (_dbg) console.log('[preload] font ok'); },
+    () => console.warn('[preload] font failed (continuing): font.ttf'));
+  bgVideo      = createVideo(MENU_VIDEO_PATH);  // DOM element — not tracked by p5 preload
+  bgMusic      = loadSound('assets/8-Music/menu_music.wav',    sndOk('menu_music'),    sndErr('menu_music'));
+  clickSFX     = loadSound('assets/9-Sounds/Button_Press.mp3', sndOk('Button_Press'), sndErr('Button_Press'));
+  bgPlayButton = loadImage('assets/1-Background/1-Menu/Background.png', imgOk('Background'), imgErr('Background'));
 }
 
 function setup() {
-  const loadingOverlay = document.getElementById('gd-loading-overlay');
-  if (loadingOverlay) loadingOverlay.remove();
-
-  const viewportSize = getViewportSize();
-  canvas = createCanvas(viewportSize.width, viewportSize.height);
-  canvas.style('z-index', '1');
-
-  canvas.style('pointer-events', 'none');
-
-  textFont(myFont);
-  noStroke();
-
-  loadAllSettings();
-  injectCustomStyles();
-  applyFPS();
-
-  videoBuffer = createGraphics(width, height);
-  initializeMenuBackgroundVideo(bgVideo);
-
-  applyVolumes();
-  // Do NOT start music here — autoplay before a user gesture is blocked by the
-  // browser and emits an AudioContext warning. Music starts on first gesture below.
-  const resumeOnFirstGesture = () => {
-    try {
-      console.log('[setup] first user gesture detected — attempting to unlock audio and start music');
-      // unlockAudioAndStart() unlocks/resumes the context and starts menu music
-      // itself once unlocked; passing a music callback here would double-start it.
-      unlockAudioAndStart();
-    } catch (e) {
-      console.warn('[setup] resumeOnFirstGesture failed', e);
-    }
-  };
-  window.addEventListener('pointerdown', resumeOnFirstGesture, { once: true });
-  window.addEventListener('keydown', resumeOnFirstGesture, { once: true });
-  calculateLayout();
-  createMainMenu();
-  installMenuZoomLogger();
-
+  const _dbg = (() => { try { return new URLSearchParams(window.location.search).get('debug') === '1'; } catch (e) { return false; } })();
+  if (_dbg) console.log('[setup] started');
   try {
-    const ac = typeof getAudioContext === 'function' ? getAudioContext() : null;
-    if (ac?.suspend) ac.suspend();
-  } catch (e) {}
+    const loadingOverlay = document.getElementById('gd-loading-overlay');
+    if (loadingOverlay) loadingOverlay.remove();
+    if (_dbg) console.log('[setup] loading overlay removed');
+
+    const viewportSize = getViewportSize();
+    canvas = createCanvas(viewportSize.width, viewportSize.height);
+    canvas.style('z-index', '1');
+    if (_dbg) console.log('[setup] canvas created', viewportSize.width, 'x', viewportSize.height);
+
+    canvas.style('pointer-events', 'none');
+
+    textFont(myFont);
+    noStroke();
+
+    loadAllSettings();
+    injectCustomStyles();
+    applyFPS();
+
+    videoBuffer = createGraphics(width, height);
+    initializeMenuBackgroundVideo(bgVideo);
+
+    applyVolumes();
+    // Do NOT start music here — autoplay before a user gesture is blocked by the
+    // browser and emits an AudioContext warning. Music starts on first gesture below.
+    const resumeOnFirstGesture = () => {
+      try {
+        console.log('[setup] first user gesture detected — attempting to unlock audio and start music');
+        // unlockAudioAndStart() unlocks/resumes the context and starts menu music
+        // itself once unlocked; passing a music callback here would double-start it.
+        unlockAudioAndStart();
+      } catch (e) {
+        console.warn('[setup] resumeOnFirstGesture failed', e);
+      }
+    };
+    window.addEventListener('pointerdown', resumeOnFirstGesture, { once: true });
+    window.addEventListener('keydown', resumeOnFirstGesture, { once: true });
+    calculateLayout();
+    createMainMenu();
+    if (_dbg) console.log('[setup] main menu created');
+    installMenuZoomLogger();
+
+    try {
+      const ac = typeof getAudioContext === 'function' ? getAudioContext() : null;
+      if (ac?.suspend) ac.suspend();
+    } catch (e) {}
+  } catch (e) {
+    console.error('[setup] failed:', e);
+    try {
+      const ov = document.getElementById('gd-loading-overlay');
+      if (ov) {
+        const msg = ov.querySelector('.gd-loading-message');
+        if (msg) msg.innerText = 'ERROR — check console';
+      }
+    } catch (_) {}
+  }
 }
 
   // === Iframe / Message handling ===
@@ -75,6 +103,25 @@ function setup() {
                 ? getGameSettingsMessage()
                 : { type: 'update-audio-settings', masterVol, musicVol, sfxVol, difficulty: difficultySetting })
             }, '*');
+          }
+        } catch (e) {}
+      }
+
+      else if (ev.data.type === 'game-ready') {
+        // Game scripts fully loaded, canvas created — safe to send game-activated now.
+        try {
+          const iframe = document.getElementById('game-iframe');
+          if (iframe && iframe.contentWindow && !iframe._gameActivatedSent) {
+            iframe._gameActivatedSent = true;
+            iframe.contentWindow.postMessage(
+              (typeof getGameSettingsMessage === 'function'
+                ? getGameSettingsMessage('game-activated')
+                : { type: 'game-activated', masterVol, musicVol, sfxVol }),
+              '*'
+            );
+            console.log('[parent] game-ready received: posted game-activated');
+            try { iframe.focus(); } catch (e) {}
+            try { iframe.contentWindow.focus(); } catch (e) {}
           }
         } catch (e) {}
       }
@@ -191,6 +238,12 @@ function applyFPS() {
 // === Draw / Render Loop ===
 function draw() {
   if (inGame) return;
+  if (!window._menuFirstDraw) {
+    window._menuFirstDraw = true;
+    try {
+      if (new URLSearchParams(window.location.search).get('debug') === '1') console.log('[draw] first menu draw frame');
+    } catch (e) {}
+  }
 
   updateBackgroundVideo();
 
@@ -231,9 +284,9 @@ function draw() {
 
   if (menuPerfDebug) {
     const uiScaleFactor = getUiScaleMultiplier(textSizeSetting);
-    const size = getPerformanceOverlaySize(uiScaleFactor);
+    const _sz = getPerformanceOverlaySize(uiScaleFactor);
     drawPerformanceOverlayPanel({
-      x: width - size.width - Math.round(20 * uiScaleFactor),
+      x: width - _sz.width - Math.round(20 * uiScaleFactor),
       y: Math.round(20 * uiScaleFactor),
       tracker: performanceTracker,
       targetFps,

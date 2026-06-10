@@ -136,9 +136,18 @@ function applyGameFpsMode(rawModeOrTarget, reason) {
   targetFps = requestedTargetFps;
   let appliedP5Target = requestedTargetFps;
 
-  if (typeof applyFpsModeToP5 === "function" && typeof frameRate === "function") {
-    appliedP5Target = applyFpsModeToP5(fpsMode);
-    targetFps = appliedP5Target;
+  if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi') {
+    // Pixi backend: control via ticker.maxFPS; p5.frameRate() must not gate frames.
+    if (typeof PixiApp !== 'undefined' && PixiApp.app && PixiApp.app.ticker) {
+      PixiApp.app.ticker.maxFPS = (fpsMode === 'unlimited') ? 0 : requestedTargetFps;
+    }
+    if (typeof frameRate === 'function') frameRate(Number.POSITIVE_INFINITY);
+  } else {
+    // p5 backend: use p5's built-in frame rate control.
+    if (typeof applyFpsModeToP5 === "function" && typeof frameRate === "function") {
+      appliedP5Target = applyFpsModeToP5(fpsMode);
+      targetFps = appliedP5Target;
+    }
   }
 
   const currentW = typeof width !== 'undefined' ? width : (typeof W !== 'undefined' ? W : 0);
@@ -158,6 +167,9 @@ function applyGameFpsMode(rawModeOrTarget, reason) {
     _lastLoggedFpsTarget = targetFps;
     _lastLoggedFpsCanvas = canvasSizeStr;
   }
+  if (typeof resetPerformanceTracker === "function" && typeof performanceTracker !== "undefined")
+    resetPerformanceTracker(performanceTracker);
+  if (typeof FramePerf !== "undefined") FramePerf.reset();
   return targetFps;
 }
 
