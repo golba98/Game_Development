@@ -167,4 +167,46 @@ const FramePerf = {
     this._lastLog = now;
     for (const key in this._sums) this._sums[key] = 0;
   },
+
+  snapshot: function () {
+    const frames = Math.max(1, this._frames);
+    const avg = (key) => (this._sums[key] ? this._sums[key] / frames : 0);
+
+    // For Pixi backend: use ticker.FPS (wall-clock rate) instead of p5.frameRate().
+    let fps;
+    if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi'
+        && typeof PixiApp !== 'undefined' && PixiApp.app && PixiApp.app.ticker) {
+      fps = PixiApp.app.ticker.FPS;
+    } else if (typeof frameRate === 'function') {
+      fps = frameRate();
+    } else {
+      fps = this._sums.totalMs > 0 ? 1000 / (this._sums.totalMs / frames) : 0;
+    }
+
+    const browserRafFps =
+      typeof BrowserRafSampler !== 'undefined' ? BrowserRafSampler.fps : fps;
+
+    return {
+      fps,
+      browserRafFps,
+      periodMs: typeof window._gameFramePeriodMs !== 'undefined' ? window._gameFramePeriodMs : avg('totalMs'),
+      workMs:   typeof window._gameFrameWorkMs   !== 'undefined' ? window._gameFrameWorkMs   : avg('totalMs'),
+      waitMs:   typeof window._gameFrameWaitMs   !== 'undefined' ? window._gameFrameWaitMs   : 0,
+      totalMs:     avg("totalMs"),
+      updateMs:    avg("updateMs"),
+      worldMs:     avg("worldMs"),
+      entityMs:    avg("entityMs"),
+      weatherMs:   avg("weatherMs"),
+      hudMs:       avg("hudMs"),
+      minimapMs:   avg("minimapMs"),
+      pixiFlushMs: avg("pixiFlushMs"),
+      backend: typeof RENDER_BACKEND !== "undefined" ? RENDER_BACKEND : "p5",
+    };
+  },
+
+  reset: function () {
+    this._frames = 0;
+    this._lastLog = 0;
+    for (const key in this._sums) this._sums[key] = 0;
+  },
 };

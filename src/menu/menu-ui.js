@@ -75,8 +75,12 @@ function createMainMenu() {
         overlay = document.createElement('div');
         overlay.id = 'game-overlay';
         Object.assign(overlay.style, {
-          position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column',
-          background: '#000', zIndex: 2147483647, margin: '0', padding: '0'
+          position: 'fixed', inset: '0',
+          width: '100vw', height: '100vh',
+          display: 'flex', flexDirection: 'column',
+          background: '#000', zIndex: 2147483647,
+          margin: '0', padding: '0',
+          opacity: '1', visibility: 'visible',
         });
 
 
@@ -93,7 +97,10 @@ function createMainMenu() {
         });
         iframe.src = `game.html?${params.toString()}`;
         Object.assign(iframe.style, {
-          width: '100%', height: '100%', border: 'none', background: '#000'
+          flex: '1 1 auto', minHeight: '0',
+          width: '100%', height: '100%',
+          display: 'block', border: 'none', background: '#000',
+          opacity: '1', visibility: 'visible', pointerEvents: 'auto',
         });
 
         overlay.appendChild(iframe);
@@ -103,6 +110,28 @@ function createMainMenu() {
           document.body.style.overflow = 'hidden';
         } catch (e) {}
         disableMenuBackgroundVideo();
+
+        try {
+          if (new URLSearchParams(location.search).get('gamedebug') === '1') {
+            setTimeout(() => {
+              const ifr2 = document.getElementById('game-iframe');
+              const ov2 = document.getElementById('game-overlay');
+              if (ifr2) {
+                const r = ifr2.getBoundingClientRect();
+                const cs = getComputedStyle(ifr2);
+                console.log('[dbg] iframe src:', ifr2.src);
+                console.log('[dbg] iframe rect:', JSON.stringify({w: r.width, h: r.height, top: r.top, left: r.left}));
+                console.log('[dbg] iframe display/opacity/visibility/zIndex:', cs.display, cs.opacity, cs.visibility, cs.zIndex);
+              }
+              if (ov2) {
+                const ovr = ov2.getBoundingClientRect();
+                const ovcs = getComputedStyle(ov2);
+                console.log('[dbg] overlay rect:', JSON.stringify({w: ovr.width, h: ovr.height}));
+                console.log('[dbg] overlay display/opacity/visibility/zIndex:', ovcs.display, ovcs.opacity, ovcs.visibility, ovcs.zIndex);
+              }
+            }, 600);
+          }
+        } catch (e) {}
 
         iframe.addEventListener('load', () => {
           try {
@@ -142,18 +171,20 @@ function createMainMenu() {
         }, 500);
 
 
+        // Fallback: if game never posts game-ready (e.g. game-core.js fails to load),
+        // send game-activated after 3s so the game at least gets its settings.
         setTimeout(() => {
           try {
             const ifr = document.getElementById('game-iframe');
-            if (ifr && ifr.contentWindow) {
+            if (ifr && ifr.contentWindow && !ifr._gameActivatedSent) {
+              ifr._gameActivatedSent = true;
               ifr.contentWindow.postMessage(getGameSettingsMessage('game-activated'), '*');
-              console.log('[parent] posted game-activated to iframe');
-              // Ensure iframe has keyboard focus for WASD input
+              console.log('[parent] fallback: posted game-activated to iframe after 3s');
               try { ifr.focus(); } catch (e) {}
               try { ifr.contentWindow.focus(); } catch (e) {}
             }
           } catch (e) {}
-        }, 180);
+        }, 3000);
       } else {
         disableMenuBackgroundVideo();
         overlay.style.display = 'flex';

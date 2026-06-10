@@ -18,8 +18,17 @@ const HUD_EDGE_MARGIN = 24;
 const HUD_PANEL_GAP = 10;
 let cachedHudLayoutFrame = -1;
 let cachedHudLayout = null;
+let cachedHudLayoutKey = "";
 let cachedCloudImagesSourceCount = -1;
 let cachedUsableCloudImages = [];
+
+// Minimap enemy/coin marker cache — recomputed at ~10 Hz instead of every frame.
+const _MINIMAP_MARKER_INTERVAL = 6; // frames between recomputes
+let _mmMarkerFrame = -100;           // frameCount when markers were last recomputed
+let _mmCachedEnemyDots = [];         // flat [px0,py0, px1,py1, ...] pairs
+let _mmCachedCoinDots = [];
+let _mmCacheDrawW = -1;              // layout dimensions when cache was built
+let _mmCacheDrawH = -1;
 
 function getHudUiScale() {
   const vW = virtualW || (width / gameScale);
@@ -28,50 +37,161 @@ function getHudUiScale() {
   return Math.max(0.85, Math.min(1.3, getUiScaleMultiplier(textSizeSetting) * viewportScale));
 }
 
-function getHudLayout() {
-  const currentFrame = typeof frameCount === 'number' ? frameCount : -1;
-  if (cachedHudLayout && cachedHudLayoutFrame === currentFrame) {
-    return cachedHudLayout;
-  }
+function getHudSafeArea(vW, vH, uiScaleFactor) {
+  const margin = Math.round(HUD_EDGE_MARGIN * uiScaleFactor);
+  const left = margin;
+  const top = margin;
+  const right = Math.max(left, vW - margin);
+  const bottom = Math.max(top, vH - margin);
 
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+    margin,
+    gap: Math.round(HUD_PANEL_GAP * uiScaleFactor),
+  };
+}
+
+function clampHudRect(x, y, w, h, safeArea, extraPad = 0) {
+  const pad = Math.max(0, Number(extraPad) || 0);
+  const minX = safeArea.left + pad;
+  const minY = safeArea.top + pad;
+  const maxX = Math.max(minX, safeArea.right - pad - w);
+  const maxY = Math.max(minY, safeArea.bottom - pad - h);
+
+  return {
+    x: constrain(x, minX, maxX),
+    y: constrain(y, minY, maxY),
+    w,
+    h,
+  };
+}
+
+function getHudLayout() {
   const vW = virtualW || (width / gameScale);
   const vH = virtualH || (height / gameScale);
   const uiScaleFactor = getHudUiScale();
-  const margin = Math.round(HUD_EDGE_MARGIN * uiScaleFactor);
-  const gap = Math.round(HUD_PANEL_GAP * uiScaleFactor);
-  const statBarW = Math.round(184 * uiScaleFactor);
-  const minimapSize = Math.round(Math.min(168 * uiScaleFactor, vW * 0.22, vH * 0.26));
-  const perfSize = getPerformanceOverlaySize(uiScaleFactor);
+  const layoutKey = [
+    Math.round(vW),
+    Math.round(vH),
+    Math.round(uiScaleFactor * 1000),
+    textSizeSetting || "",
+    showMinimap ? 1 : 0,
+    performanceOverlayEnabled ? 1 : 0,
+  ].join("|");
+  if (cachedHudLayout && cachedHudLayoutKey === layoutKey) {
+    return cachedHudLayout;
+  }
 
-  const perfX = vW - margin - perfSize.width;
-  const perfY = margin;
-  const minimapX = vW - margin - minimapSize;
-  const minimapY = perfY + perfSize.height + gap;
+  const safeArea = getHudSafeArea(vW, vH, uiScaleFactor);
+  const margin = safeArea.margin;
+  const gap = safeArea.gap;
+  const statBarW = Math.max(1, Math.min(Math.round(184 * uiScaleFactor), safeArea.width - Math.round(56 * uiScaleFactor)));
+  const perfPad = Math.round(10 * uiScaleFactor);
+  const perfSize = getPerformanceOverlaySize(uiScaleFactor, safeArea.width - perfPad * 2);
+  const perfRect = clampHudRect(
+    safeArea.right - perfSize.width - perfPad,
+    safeArea.top + perfPad,
+    perfSize.width,
+    perfSize.height,
+    safeArea,
+    perfPad,
+  );
 
-  cachedHudLayoutFrame = currentFrame;
+  const minimapPad = Math.min(Math.round(8 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
+  const availableRightHeight = Math.max(48, safeArea.bottom - (perfRect.y + perfSize.height + gap) - minimapPad);
+  const minimapSize = Math.round(Math.min(168 * uiScaleFactor, safeArea.width * 0.24, availableRightHeight * 0.72));
+  const minimapRect = clampHudRect(
+    safeArea.right - minimapSize - minimapPad,
+    perfRect.y + perfSize.height + gap,
+    minimapSize,
+    minimapSize,
+    safeArea,
+    minimapPad,
+  );
+
+  const bossPadX = Math.min(Math.round(14 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
+  const bossPadY = Math.round(11 * uiScaleFactor);
+  const bossBarW = Math.max(1, Math.min(safeArea.width - bossPadX * 2, safeArea.width * 0.34, Math.round(360 * uiScaleFactor)));
+  const bossBarH = Math.max(14, Math.round(16 * uiScaleFactor));
+  const bossShell = clampHudRect(
+    (vW - (bossBarW + bossPadX * 2)) / 2,
+    safeArea.top + Math.round(18 * uiScaleFactor),
+    bossBarW + bossPadX * 2,
+    bossBarH + bossPadY * 2,
+    safeArea,
+  );
+
+  const xpPadX = Math.min(Math.round(18 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
+  const xpPadY = Math.round(12 * uiScaleFactor);
+  const xpBarW = Math.max(1, Math.min(safeArea.width - xpPadX * 2, safeArea.width * 0.58, Math.round(440 * uiScaleFactor)));
+  const xpBarH = Math.max(12, Math.round(12 * uiScaleFactor));
+  const xpPanelW = xpBarW + xpPadX * 2;
+  const xpPanelH = xpBarH + xpPadY * 2;
+  const xpPulsePad = Math.ceil(xpPanelH * 0.05);
+  const xpShell = clampHudRect(
+    (vW - xpPanelW) / 2,
+    safeArea.bottom - xpPanelH - gap - xpPulsePad,
+    xpPanelW,
+    xpPanelH,
+    safeArea,
+    xpPulsePad,
+  );
+
+  const sprintPadY = Math.round(8 * uiScaleFactor);
+  const sprintContainerW = Math.max(1, Math.min(Math.round(200 * uiScaleFactor), safeArea.width - Math.round(20 * uiScaleFactor)));
+  const sprintContainerH = Math.round(32 * uiScaleFactor);
+  const sprintShell = clampHudRect(
+    safeArea.left + Math.round(18 * uiScaleFactor),
+    xpShell.y - gap - sprintContainerH - sprintPadY * 2,
+    sprintContainerW + Math.round(20 * uiScaleFactor),
+    sprintContainerH + sprintPadY * 2,
+    safeArea,
+  );
+
+  const statX = safeArea.left + Math.round(28 * uiScaleFactor);
+
+  cachedHudLayoutFrame = typeof frameCount === 'number' ? frameCount : -1;
+  cachedHudLayoutKey = layoutKey;
   cachedHudLayout = {
     vW,
     vH,
     uiScaleFactor,
+    safeArea,
     margin,
     gap,
     statBarW,
-    statX: margin,
-    healthY: margin + Math.round(6 * uiScaleFactor),
-    manaY: margin + Math.round(42 * uiScaleFactor),
-    scoreY: margin + Math.round(82 * uiScaleFactor),
-    inventoryY: margin + Math.round(118 * uiScaleFactor),
-    sprintY: vH - margin - Math.round(40 * uiScaleFactor),
-    bossY: margin + Math.round(28 * uiScaleFactor),
-    xpY: vH - margin - Math.round(22 * uiScaleFactor),
+    statX,
+    healthY: safeArea.top + Math.round(6 * uiScaleFactor),
+    manaY: safeArea.top + Math.round(42 * uiScaleFactor),
+    scoreY: safeArea.top + Math.round(82 * uiScaleFactor),
+    inventoryY: safeArea.top + Math.round(118 * uiScaleFactor),
+    sprintY: sprintShell.y + sprintPadY,
+    sprintContainerW,
+    bossX: bossShell.x + bossPadX,
+    bossY: bossShell.y + bossPadY,
+    bossBarW,
+    bossBarH,
+    bossPadX,
+    bossPadY,
+    xpX: xpShell.x + xpPadX,
+    xpY: xpShell.y + xpPadY,
+    xpBarW,
+    xpBarH,
+    xpPadX,
+    xpPadY,
     minimapSize,
-    minimapX,
-    minimapY,
-    perfX,
-    perfY,
+    minimapX: minimapRect.x,
+    minimapY: minimapRect.y,
+    perfX: perfRect.x,
+    perfY: perfRect.y,
     perfSize,
-    difficultyX: perfX - Math.round(44 * uiScaleFactor),
-    difficultyY: margin + Math.round(4 * uiScaleFactor),
+    difficultyX: Math.max(safeArea.left, perfRect.x - Math.round(44 * uiScaleFactor)),
+    difficultyY: safeArea.top + Math.round(4 * uiScaleFactor),
   };
   return cachedHudLayout;
 }
@@ -104,32 +224,60 @@ function drawHudPerformanceOverlay() {
     targetFps,
     fpsMode: normalizeFpsMode(targetFps),
     uiScaleFactor: layout.uiScaleFactor,
+    maxWidth: layout.safeArea.width - Math.round(20 * layout.uiScaleFactor),
   });
+}
+
+function drawBottomHud() {
+  drawXPBar();
+}
+
+function drawBossHud() {
+  drawBossHealthBar();
+}
+
+function drawLeftHud() {
+  drawHealthBar();
+  drawManaBar();
+  drawSprintMeter();
+  drawInventory();
+  drawScore();
+}
+
+function drawRightHud(opts = {}) {
+  const includeHud = opts.includeHud !== false;
+  if (includeHud) {
+    drawDifficultyBadge();
+    if (showMinimap) drawMinimap();
+    if (typeof drawHudWeatherClock === "function") drawHudWeatherClock();
+  }
+  if (opts.includePerformance) {
+    drawHudPerformanceOverlay();
+  }
 }
 
 function drawXPBar() {
   const layout = getHudLayout();
-  const vW = layout.vW;
-  const barW = Math.min(vW * 0.42, Math.round(440 * layout.uiScaleFactor));
-  const barH = Math.max(12, Math.round(12 * layout.uiScaleFactor));
-  const startX = (vW - barW) / 2;
+  const barW = layout.xpBarW;
+  const barH = layout.xpBarH;
+  const startX = layout.xpX;
   const startY = layout.xpY;
-  
+
   push();
-  
+
   // UI Pulse Effect when XP is gained
   const now = typeof millis === 'function' ? millis() : Date.now();
   let pulseScale = 1.0;
   if (now - lastXpChange < 300) {
       pulseScale = map(now - lastXpChange, 0, 300, 1.05, 1.0);
   }
-  
+
   translate(startX + barW/2, startY + barH/2);
   scale(pulseScale);
   translate(-(startX + barW/2), -(startY + barH/2));
 
   // Themed Background Container
-  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(18 * layout.uiScaleFactor), padY: Math.round(12 * layout.uiScaleFactor), alpha: 200 });
+  drawHudPanelShell(startX, startY, barW, barH, { padX: layout.xpPadX, padY: layout.xpPadY, alpha: 200 });
 
   // Bar Background (empty part)
   noStroke();
@@ -141,7 +289,7 @@ function drawXPBar() {
   if (xpPct > 0) {
     fill(100, 200, 255, 255);
     rect(startX, startY, barW * xpPct, barH, 4);
-    
+
     // Glossy highlight
     fill(255, 255, 255, 60);
     rect(startX, startY, barW * xpPct, barH / 2, 4);
@@ -155,7 +303,7 @@ function drawXPBar() {
   let sz = typeof gTextSize === 'function' ? 14 : 14;
   if (typeof gTextSize === 'function') gTextSize(sz); else textSize(sz);
   text(`Lv ${playerLevel} (${playerXP}/${xpToNextLevel})`, startX + barW/2, startY - Math.round(18 * layout.uiScaleFactor));
-  
+
   // Stat points indicator
   if (statPoints > 0) {
       fill(255, 215, 0); // Gold for available stat points
@@ -173,14 +321,14 @@ function drawHealthBar() {
   const barH = Math.max(16, Math.round(18 * layout.uiScaleFactor));
 
   push();
-  
+
   // UI Pulse Effect
   const now = millis();
   let pulseScale = 1.0;
   if (now - lastHealthChange < 200) {
       pulseScale = map(now - lastHealthChange, 0, 200, 1.1, 1.0);
   }
-  
+
   translate(startX + barW/2, startY + barH/2);
   scale(pulseScale);
   translate(-(startX + barW/2), -(startY + barH/2));
@@ -198,7 +346,7 @@ function drawHealthBar() {
   if (hpPct > 0) {
       fill(220, 40, 40);
       rect(startX, startY, barW * hpPct, barH, 2);
-      
+
       // Glossy highlight
       fill(255, 255, 255, 60);
       rect(startX, startY, barW * hpPct, barH / 2, 2);
@@ -236,7 +384,7 @@ function drawManaBar() {
   const barH = Math.max(12, Math.round(14 * layout.uiScaleFactor));
 
   push();
-  
+
   // Background Container
   drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(28 * layout.uiScaleFactor), padY: Math.round(8 * layout.uiScaleFactor), alpha: 200 });
 
@@ -251,7 +399,7 @@ function drawManaBar() {
       // Mana fill
       fill(50, 100, 255);
       rect(startX, startY, barW * mPct, barH, 2);
-      
+
       // Glossy highlight
       fill(255, 255, 255, 60);
       rect(startX, startY, barW * mPct, barH / 2, 2);
@@ -263,7 +411,7 @@ function drawManaBar() {
   circle(startX - Math.round(14 * layout.uiScaleFactor), startY + barH/2, Math.round(12 * layout.uiScaleFactor));
   fill(255, 255, 255, 100);
   circle(startX - Math.round(15 * layout.uiScaleFactor), startY + barH/2 - Math.round(2 * layout.uiScaleFactor), Math.round(4 * layout.uiScaleFactor));
-  
+
   // Text
   if (typeof uiFont !== 'undefined' && uiFont) textFont(uiFont);
   fill(255);
@@ -281,15 +429,15 @@ function drawBossHealthBar() {
   if (!boss) return;
 
   const layout = getHudLayout();
-  const barW = Math.min(layout.vW * 0.34, Math.round(360 * layout.uiScaleFactor));
-  const barH = Math.max(14, Math.round(16 * layout.uiScaleFactor));
-  const x = (layout.vW - barW) / 2;
+  const barW = layout.bossBarW;
+  const barH = layout.bossBarH;
+  const x = layout.bossX;
   const y = layout.bossY;
 
   push();
   drawHudPanelShell(x, y, barW, barH, {
-    padX: Math.round(14 * layout.uiScaleFactor),
-    padY: Math.round(11 * layout.uiScaleFactor),
+    padX: layout.bossPadX,
+    padY: layout.bossPadY,
     alpha: 190,
   });
 
@@ -316,7 +464,7 @@ function drawBossHealthBar() {
 
   fill(255, 255, 255, 34);
   rect(x + 2, y + 2, Math.max(0, (barW - 4) * hpPct), Math.max(2, (barH - 4) / 2), 1);
-  
+
   pop();
 }
 
@@ -342,59 +490,16 @@ function drawMinimap() {
   const offX = (mmW - drawW) / 2;
   const offY = (mmH - drawH) / 2;
 
-  tint(255, 230);
-  if (minimapImage) {
-    image(minimapImage, mmX + offX, mmY + offY, drawW, drawH);
+  const minimapComposite =
+    typeof HudCache !== "undefined" && HudCache.getMinimapComposite
+      ? HudCache.getMinimapComposite({ mmW, mmH, drawW, drawH, offX, offY })
+      : null;
+  if (minimapComposite) {
+    image(minimapComposite, mmX, mmY, mmW, mmH);
   } else {
-    image(mapImage, mmX + offX, mmY + offY, drawW, drawH);
-  }
-  noTint();
-
-  // Tree markers are baked into minimapImage by HudCache (see game-world.js),
-  // so they no longer need re-stroking every frame here. As a fallback, only
-  // draw them live if the bake didn't happen (no cached minimap image).
-  if (!minimapImage && treeObjects && logicalW && logicalH) {
-    fill(15, 70, 15);
-    stroke(0, 150);
-    strokeWeight(1);
-    for (const tr of treeObjects) {
-      const pxRel = tr.x / logicalW;
-      const pyRel = tr.y / logicalH;
-      circle(mmX + offX + (pxRel * drawW), mmY + offY + (pyRel * drawH), 4);
-    }
-  }
-
-  if (portalPos) {
-    fill(isPortalActive ? [180, 50, 255] : [100, 100, 100]); // Purple when active to match compass
-    stroke(0, 150);
-    strokeWeight(1);
-    const px = mmX + offX + (portalPos.x / logicalW * drawW);
-    const py = mmY + offY + (portalPos.y / logicalH * drawH);
-    rect(px - 3, py - 3, 6, 6);
-  }
-
-  // Draw Enemies on Minimap (Red Dots)
-  if (typeof enemies !== 'undefined' && enemies && enemies.length > 0 && logicalW && logicalH) {
-    fill(255, 50, 50); // Red
-    stroke(0, 150);
-    strokeWeight(1);
-    for (const e of enemies) {
-      const px = mmX + offX + (e.x / logicalW * drawW);
-      const py = mmY + offY + (e.y / logicalH * drawH);
-      circle(px, py, 4);
-    }
-  }
-
-  // Draw Coins on Minimap (Gold Dots)
-  if (typeof activeCoins !== 'undefined' && activeCoins && logicalW && logicalH) {
-    fill(255, 215, 0); // Gold
-    stroke(0, 150);
-    strokeWeight(1);
-    for (const coin of activeCoins) {
-        const px = mmX + offX + (coin.x / logicalW * drawW);
-        const py = mmY + offY + (coin.y / logicalH * drawH);
-        circle(px, py, 3);
-    }
+    tint(255, 230);
+    image(minimapImage || mapImage, mmX + offX, mmY + offY, drawW, drawH);
+    noTint();
   }
 
   if (playerPosition) {
@@ -421,34 +526,34 @@ function drawScore() {
   const layout = getHudLayout();
   const x = layout.statX;
   const y = layout.scoreY;
-  
+
   push();
-  
+
   // UI Pulse Effect
   const now = millis();
   let pulseScale = 1.0;
   if (now - lastScoreChange < 200) {
       pulseScale = map(now - lastScoreChange, 0, 200, 1.2, 1.0);
   }
-  
+
   translate(x + Math.round(70 * layout.uiScaleFactor), y - Math.round(5 * layout.uiScaleFactor));
   scale(pulseScale);
   translate(-(x + Math.round(70 * layout.uiScaleFactor)), -(y - Math.round(5 * layout.uiScaleFactor)));
 
   if (uiFont) textFont(uiFont);
-  
+
   // Outer Border
   stroke(0, 100);
   strokeWeight(4);
   fill(0, 150);
   rect(x - 5, y - Math.round(20 * layout.uiScaleFactor), Math.round(150 * layout.uiScaleFactor), Math.round(32 * layout.uiScaleFactor), 5);
-  
+
   // Inner Border
   stroke(255, 215, 0); // GOLD
   strokeWeight(2);
   noFill();
   rect(x - 3, y - Math.round(18 * layout.uiScaleFactor), Math.round(146 * layout.uiScaleFactor), Math.round(28 * layout.uiScaleFactor), 3);
-  
+
   // Text
   noStroke();
   fill(255, 255, 255);
@@ -516,7 +621,7 @@ function drawVignette() {
     // vW and vH are strictly the physical canvas dimensions since it is drawn after pop()
     const vW = width;
     const vH = height;
-    
+
     const ctx = drawingContext;
     const cache = drawVignette._cache || {};
     if (cache.w !== vW || cache.h !== vH || !cache.gradient) {
@@ -553,7 +658,7 @@ function drawDifficultyBadge() {
   const badgeSize = Math.round(32 * layout.uiScaleFactor);
   const x = layout.difficultyX;
   const y = layout.difficultyY;
-  
+
   // Determine color based on difficulty
   let badgeColor;
   let diff = (currentDifficulty || 'normal').toLowerCase();
@@ -562,12 +667,12 @@ function drawDifficultyBadge() {
   else badgeColor = color(192, 192, 192); // Silver (Normal)
 
   push();
-  
+
   // Draw Shield/Badge Background
   stroke(0, 0, 0, 150);
   strokeWeight(2);
   fill(badgeColor);
-  
+
   // Simple Shield Shape
   beginShape();
   vertex(x, y);
@@ -592,12 +697,12 @@ function drawDifficultyBadge() {
     if (uiFont) textFont(uiFont);
     gTextSize(16);
     const tW = textWidth(label);
-    
+
     // Tooltip bg
     fill(0, 0, 0, 220);
     noStroke();
     rect(x - tW - 10, y, tW + 8, 24, 4);
-    
+
     // Text
     fill(255);
     textAlign(RIGHT, CENTER);
@@ -610,10 +715,11 @@ function drawDifficultyBadge() {
 function drawHudWeatherClock() {
   if (typeof WeatherSystem === 'undefined') return;
   const layout = getHudLayout();
+  const safeArea = layout.safeArea;
   const clockRadius = Math.round(22 * layout.uiScaleFactor);
   const clockX = layout.minimapX + layout.minimapSize - clockRadius;
   const clockY = layout.minimapY + layout.minimapSize + Math.round(34 * layout.uiScaleFactor);
-  WeatherSystem.drawClock(clockX, Math.min(layout.vH - layout.margin - clockRadius, clockY), clockRadius);
+  WeatherSystem.drawClock(clockX, Math.min(safeArea.bottom - clockRadius, clockY), clockRadius);
 }
 
 function findGoalPosition() {
@@ -629,7 +735,7 @@ function findGoalPosition() {
 function drawSprintMeter() {
   const layout = getHudLayout();
   const now = millis();
-  
+
   const pct = (typeof smoothSprintPct === 'number') ? smoothSprintPct : 0;
   const maxDur = typeof playerMaxStamina !== 'undefined' ? playerMaxStamina * 30 : 3000;
   const actualPct = (typeof sprintRemainingMs === 'number' && maxDur > 0) ? (sprintRemainingMs / maxDur) : 0;
@@ -639,20 +745,20 @@ function drawSprintMeter() {
   if (sprintActive || actualPct < 0.99 || (sprintCooldownUntil > now)) {
     targetAlpha = 255;
   }
-  
+
   if (targetAlpha === 0) return;
 
   // Positioning: Bottom-Left
-  const startX = layout.statX; 
-  const startY = layout.sprintY; 
-  const barW = layout.statBarW;   
+  const startX = layout.statX;
+  const startY = layout.sprintY;
+  const barW = layout.statBarW;
   const barH = Math.max(10, Math.round(10 * layout.uiScaleFactor));
-  
-  const containerW = Math.round(200 * layout.uiScaleFactor);
+
+  const containerW = layout.sprintContainerW;
   const containerH = Math.round(32 * layout.uiScaleFactor);
 
   push();
-  
+
   // Themed Background Container
   if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) tint(255, targetAlpha);
   drawHudPanelShell(startX, startY, containerW, containerH, { padX: Math.round(10 * layout.uiScaleFactor), padY: Math.round(8 * layout.uiScaleFactor), alpha: 200 * (targetAlpha / 255) });
@@ -669,16 +775,16 @@ function drawSprintMeter() {
     let r = map(actualPct, 0, 1, 0, 100);
     let g = map(actualPct, 0, 1, 150, 255);
     let b = map(actualPct, 0, 1, 200, 255);
-    
+
     // Smooth pulse when sprinting
     let alphaPulse = targetAlpha;
     if (sprintActive) {
       alphaPulse = targetAlpha * (0.7 + 0.3 * Math.sin(now * 0.015));
     }
-    
+
     fill(r, g, b, alphaPulse);
     rect(startX + 30, startY + 11, barW * pct, barH, 2);
-    
+
     // Glossy highlight
     fill(255, 255, 255, 50 * (targetAlpha / 255));
     rect(startX + 30, startY + 11, barW * pct, barH / 2, 2);
@@ -696,7 +802,7 @@ function drawSprintMeter() {
   const ix = startX + 12;
   const iy = startY + containerH / 2 + 3;
   noStroke();
-  
+
   if (sprintActive) {
     fill(100, 255, 255, targetAlpha); // Bright Cyan
   } else if (now < sprintCooldownUntil) {
@@ -704,15 +810,15 @@ function drawSprintMeter() {
   } else {
     fill(180, 200, 255, targetAlpha); // Soft Blue
   }
-  
+
   // Lightning Bolt Shape
   beginShape();
-  vertex(ix, iy - 10); 
-  vertex(ix + 6, iy - 10); 
-  vertex(ix - 2, iy); 
-  vertex(ix + 4, iy); 
-  vertex(ix - 4, iy + 10); 
-  vertex(ix, iy); 
+  vertex(ix, iy - 10);
+  vertex(ix + 6, iy - 10);
+  vertex(ix - 2, iy);
+  vertex(ix + 4, iy);
+  vertex(ix - 4, iy + 10);
+  vertex(ix, iy);
   vertex(ix - 6, iy);
   endShape(CLOSE);
 
@@ -735,10 +841,11 @@ function findNearestCoin(px, py) {
 
 function drawCompass() {
     if (!playerPosition) return;
-    
+
     const layout = getHudLayout();
     const vW = layout.vW;
     const vH = layout.vH;
+    const safeArea = layout.safeArea;
     const camX = Math.floor(smoothCamX || 0);
     const camY = Math.floor(smoothCamY || 0);
     const pX = isMoving ? renderX : playerPosition.x;
@@ -771,7 +878,7 @@ function drawCompass() {
         const tScreenX = (m.x * cellSize + cellSize / 2) - camX;
         const tScreenY = (m.y * cellSize + cellSize / 2) - camY;
         const padding = 60;
-        
+
         // If on screen, skip pointer
         if (tScreenX > padding && tScreenX < vW - padding && tScreenY > padding && tScreenY < vH - padding) return;
 
@@ -779,17 +886,20 @@ function drawCompass() {
         const dy = tScreenY - pScreenY;
         const distTiles = Math.hypot(dx, dy) / cellSize;
         const angle = atan2(dy, dx);
-        
+
         const margin = Math.max(40, layout.margin + 12) + (i * 5);
-        const bottomLimit = vH - Math.max(margin, Math.round(72 * layout.uiScaleFactor));
+        const leftLimit = Math.min(safeArea.right, safeArea.left + margin);
+        const rightLimit = Math.max(leftLimit, safeArea.right - margin);
+        const topLimit = Math.min(safeArea.bottom, safeArea.top + margin);
+        const bottomLimit = Math.max(topLimit, safeArea.bottom - Math.max(margin, Math.round(48 * layout.uiScaleFactor)));
         let tMin = Infinity;
-        if (dx > 0) tMin = Math.min(tMin, (vW - margin - pScreenX) / dx);
-        if (dx < 0) tMin = Math.min(tMin, (margin - pScreenX) / dx);
+        if (dx > 0) tMin = Math.min(tMin, (rightLimit - pScreenX) / dx);
+        if (dx < 0) tMin = Math.min(tMin, (leftLimit - pScreenX) / dx);
         if (dy > 0) tMin = Math.min(tMin, (bottomLimit - pScreenY) / dy);
-        if (dy < 0) tMin = Math.min(tMin, (margin - pScreenY) / dy);
-        
-        const edgeX = constrain(pScreenX + dx * tMin, margin, vW - margin);
-        const edgeY = constrain(pScreenY + dy * tMin, margin, bottomLimit);
+        if (dy < 0) tMin = Math.min(tMin, (topLimit - pScreenY) / dy);
+
+        const edgeX = constrain(pScreenX + dx * tMin, leftLimit, rightLimit);
+        const edgeY = constrain(pScreenY + dy * tMin, topLimit, bottomLimit);
 
         let markerColor;
         if (m.type === 'enemy') markerColor = color(255, 50, 50);
@@ -797,11 +907,11 @@ function drawCompass() {
         else if (m.type === 'portal') markerColor = color(180, 50, 255);
 
         const alpha = map(sin(millis() / 200), -1, 1, 180, 255);
-        
+
         push();
         translate(edgeX, edgeY);
         rotate(angle);
-        
+
         // Arrow Shadow
         fill(0, 100);
         noStroke();
@@ -816,11 +926,11 @@ function drawCompass() {
         beginShape();
         vertex(20, 0); vertex(-10, -14); vertex(0, 0); vertex(-10, 14);
         endShape(CLOSE);
-        
+
         rotate(-angle);
-        noStroke(); 
+        noStroke();
         if (uiFont) textFont(uiFont);
-        
+
         // Label (COIN/ENEMY/PORTAL)
         textAlign(CENTER, BOTTOM);
         textSize(10);
@@ -852,23 +962,23 @@ function locatePortal() {
 
 function spawnCloud(forceX) {
   if (clouds.length >= MAX_CLOUDS) return;
-  
+
   const validImages = getUsableCloudImages();
   if (validImages.length === 0) return;
-  
+
   const cloudImg = validImages[Math.floor(Math.random() * validImages.length)];
-  
+
   // Use map coordinates (world space)
   const mapW = (logicalW || 150) * cellSize;
   const mapH = (logicalH || 150) * cellSize;
-  
-  const minY = -cellSize * 5; 
-  const maxY = mapH + cellSize * 5; 
+
+  const minY = -cellSize * 5;
+  const maxY = mapH + cellSize * 5;
   const yPos = minY + Math.random() * (maxY - minY);
 
   const baseSpeed = 0.3 + Math.random() * 1;
   const cloudRenderScale = 2.0 + Math.random() * 4.0;
-  
+
   // Spawn left of map if no forceX provided
   const startX = (typeof forceX === 'number') ? forceX : -cloudImg.width * cloudRenderScale - 200;
 
@@ -889,26 +999,26 @@ function spawnCloud(forceX) {
 
 function updateClouds() {
   const now = millis();
-  
+
   if (now - lastCloudSpawn > CLOUD_SPAWN_INTERVAL) {
     spawnCloud();
     lastCloudSpawn = now;
   }
-  
-  
+
+
   // Use map coordinates (world space)
   const mapW = (logicalW || 150) * cellSize;
 
   for (let i = clouds.length - 1; i >= 0; i--) {
     const cloud = clouds[i];
-    
+
     // Normalize speed to ~60fps (16.67ms)
     const dtScale = gameDelta / FRAME_TIME_MS;
     cloud.x += cloud.speed * dtScale;
     cloud.driftPhase += 0.01 * dtScale;
     cloud.y = cloud.baseY + Math.sin(cloud.driftPhase) * 20 * (cloud.verticalDrift || 0.1);
-    
-   
+
+
     const cloudWidth = cloud.img.width * cloud.renderScale;
     if (cloud.x > mapW + 500) {
       clouds.splice(i, 1);
@@ -918,7 +1028,6 @@ function updateClouds() {
 
 function drawClouds() {
   push();
-  // Weather tint
   let tintColor = [255, 255, 255, 255];
   if (typeof WeatherSystem !== 'undefined') {
       tintColor = WeatherSystem.getCloudTint();
@@ -927,6 +1036,15 @@ function drawClouds() {
   // Set shared state once instead of per cloud
   imageMode(CORNER);
 
+  // Use native Canvas2D globalAlpha for massive performance gain
+  // instead of p5's tint() which creates offscreen canvases.
+  const ctx = drawingContext;
+
+  // We can approximate the darkening from getCloudTint by drawing
+  // the cloud, then using source-atop to overlay a dark color if needed,
+  // but just letting the night overlay naturally darken them is usually
+  // enough. We'll at least apply the cloud's intrinsic opacity.
+
   for (const cloud of clouds) {
     const w = cloud.img.width * cloud.renderScale;
     const h = cloud.img.height * cloud.renderScale;
@@ -934,12 +1052,15 @@ function drawClouds() {
     // Cull clouds outside the viewport (clouds live in world space)
     if (!isInView(cloud.x, cloud.y, w, h)) continue;
 
-    // Combine cloud's own alpha with weather tint (alpha varies per cloud)
-    tint(tintColor[0], tintColor[1], tintColor[2], Math.min(tintColor[3], cloud.opacity));
+    const baseAlpha = cloud.opacity / 255;
+    const weatherAlphaMultiplier = Math.min(tintColor[3], 255) / 255;
+
+    ctx.globalAlpha = baseAlpha * weatherAlphaMultiplier;
+
     image(cloud.img, cloud.x, cloud.y, w, h);
   }
 
-  noTint();
+  ctx.globalAlpha = 1.0;
   pop();
 }
 

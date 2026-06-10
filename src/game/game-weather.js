@@ -42,6 +42,14 @@ const WeatherSystem = {
 
   particles: [],
 
+  // --- Performance caches ---
+  _nativeMapCtx: null,          // Cached 2D context for the darkness map (avoid getContext every frame)
+  _overlayFillStyle: null,      // Cached fillStyle string for darkness base fill
+  _overlayFillColor: null,      // [r,g,b,a] snapshot when _overlayFillStyle was built
+  _starColorStrings: null,      // Pre-built rgba strings: [colorIdx][alphaInt 0-255]
+  _starTwinkleTime: -Infinity,  // starTime value when _cachedTwinkle was last computed
+  _TWINKLE_UPDATE_INTERVAL: 0.05, // Recompute twinkle every 50 ms (~20 Hz)
+
   // Star color palette for natural variety
   STAR_COLORS: [
     [255, 255, 255], // Pure white
@@ -83,7 +91,7 @@ const WeatherSystem = {
 
         // 55% small, 25% medium, 20% large
         const sizeRoll = rng();
-        const size = sizeRoll < 0.55 ? 2 : sizeRoll < 0.8 ? 3 : 4;
+        const _starSize = sizeRoll < 0.55 ? 2 : sizeRoll < 0.8 ? 3 : 4;
 
         // Multi-frequency twinkle for natural look
         const twinkleSpeed1 = 1.0 + rng() * 2.5; // Primary oscillation
@@ -95,19 +103,21 @@ const WeatherSystem = {
         const colorIdx = Math.floor(rng() * this.STAR_COLORS.length);
         const color = this.STAR_COLORS[colorIdx];
 
-        const hasGlow = size >= STAR_GLOW_MIN_SIZE && rng() < STAR_GLOW_PROB;
+        const hasGlow = _starSize >= STAR_GLOW_MIN_SIZE && rng() < STAR_GLOW_PROB;
 
         this.stars.push({
           x,
           y,
-          size,
+          size: _starSize,
           color,
+          _colorIdx: colorIdx,
           hasGlow,
           twinkleSpeed1,
           twinkleSpeed2,
           twinklePhase1,
           twinklePhase2,
           twinkleDepth,
+          _cachedTwinkle: 1.0,
         });
         count++;
       }
@@ -115,11 +125,25 @@ const WeatherSystem = {
     this.starsGenerated = true;
   },
 
+  /** Pre-builds rgba string lookup table: _starColorStrings[colorIdx][alphaInt 0-255]. */
+  _buildStarColorStrings: function () {
+    this._starColorStrings = new Array(this.STAR_COLORS.length);
+    for (let ci = 0; ci < this.STAR_COLORS.length; ci++) {
+      const [r, g, b] = this.STAR_COLORS[ci];
+      const row = new Array(256);
+      for (let a = 0; a < 256; a++) {
+        row[a] = `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
+      }
+      this._starColorStrings[ci] = row;
+    }
+  },
+
   /** Draws the star field onto the given 2D context, scaled by current darkness alpha. */
   drawStars: function (ctx, w, h, darknessAlpha, camX, camY) {
     if (darknessAlpha < STAR_VISIBILITY_MIN_ALPHA) return;
 
     if (!this.starsGenerated) this.generateStars();
+    if (!this._starColorStrings) this._buildStarColorStrings();
 
     // Star visibility scales with darkness
     const starOpacity = Math.min(
@@ -135,39 +159,46 @@ const WeatherSystem = {
     const offsetX = (camX || 0) * this.PARALLAX_FACTOR + driftX;
     const offsetY = (camY || 0) * this.PARALLAX_FACTOR + driftY;
 
+    // Throttle twinkle recompute to ~20 Hz — imperceptible above 12 Hz visually.
+    if (time - this._starTwinkleTime >= this._TWINKLE_UPDATE_INTERVAL) {
+      this._starTwinkleTime = time;
+      for (const star of this.stars) {
+        const wave1 = Math.sin(time * star.twinkleSpeed1 + star.twinklePhase1);
+        const wave2 = Math.sin(time * star.twinkleSpeed2 + star.twinklePhase2);
+        star._cachedTwinkle =
+          1.0 -
+          star.twinkleDepth *
+            (0.6 * (0.5 + 0.5 * wave1) + 0.4 * (0.5 + 0.5 * wave2));
+      }
+    }
+
+    const colorStrings = this._starColorStrings;
+
     ctx.save();
     ctx.globalCompositeOperation = "lighter"; // Additive blending so stars glow on darkness
 
-    for (const star of this.stars) {
-      // Shift star coordinates by parallax BEFORE modulo
-      // Parallax makes the stars scroll Slower than the foreground
+    for (let si = 0; si < this.stars.length; si++) {
+      const star = this.stars[si];
 
       const sx = (((star.x - offsetX) % fieldSize) + fieldSize) % fieldSize;
       const sy = (((star.y - offsetY) % fieldSize) + fieldSize) % fieldSize;
 
-      // If the wrapped coordinate is outside the actual viewport width/height, don't draw
       if (sx > w + 10 || sy > h + 10 || sx < -10 || sy < -10) continue;
 
-      // Multi-frequency twinkle
-      const wave1 = Math.sin(time * star.twinkleSpeed1 + star.twinklePhase1);
-      const wave2 = Math.sin(time * star.twinkleSpeed2 + star.twinklePhase2);
-      const twinkle =
-        1.0 -
-        star.twinkleDepth *
-          (0.6 * (0.5 + 0.5 * wave1) + 0.4 * (0.5 + 0.5 * wave2));
-
+      const twinkle = star._cachedTwinkle !== undefined ? star._cachedTwinkle : 1.0;
       const alpha = starOpacity * twinkle;
-      const [r, g, b] = star.color;
+      const colorIdx = star._colorIdx !== undefined ? star._colorIdx : 0;
       const px = Math.floor(sx + (camX || 0));
       const py = Math.floor(sy + (camY || 0));
 
       if (star.hasGlow) {
-        const glowAlpha = alpha * STAR_GLOW_ALPHA_FACTOR;
-        ctx.fillStyle = `rgba(${r},${g},${b},${glowAlpha.toFixed(3)})`;
+        const glowAlphaInt = Math.min(255, (alpha * STAR_GLOW_ALPHA_FACTOR * 255) | 0);
+        ctx.fillStyle = colorStrings[colorIdx][glowAlphaInt];
         ctx.fillRect(px - 1, py - 1, star.size + 2, star.size + 2);
       }
 
-      ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+      const alphaInt = Math.min(255, (alpha * 255) | 0);
+      ctx.fillStyle = colorStrings[colorIdx][alphaInt];
       ctx.fillRect(px, py, star.size, star.size);
     }
     ctx.restore();
@@ -365,13 +396,27 @@ const WeatherSystem = {
       this.nativeMap = document.createElement("canvas");
       this.nativeMap.width = cw;
       this.nativeMap.height = ch;
+      // No willReadFrequently — keeps the canvas GPU-accelerated (matches main canvas policy).
+      this._nativeMapCtx = this.nativeMap.getContext("2d");
+      this._overlayFillStyle = null; // Invalidate cached fillStyle on resize
     }
 
-    const ctx = this.nativeMap.getContext("2d", { willReadFrequently: true });
+    const ctx = this._nativeMapCtx;
 
-    // 1. Fill entire screen with darkness
+    // 1. Fill entire screen with darkness — rebuild fillStyle string only when color changes.
+    const cc = this.currentColor;
+    if (
+      !this._overlayFillColor ||
+      this._overlayFillColor[0] !== cc[0] ||
+      this._overlayFillColor[1] !== cc[1] ||
+      this._overlayFillColor[2] !== cc[2] ||
+      this._overlayFillColor[3] !== cc[3]
+    ) {
+      this._overlayFillStyle = `rgba(${cc[0]}, ${cc[1]}, ${cc[2]}, ${(cc[3] / 255).toFixed(4)})`;
+      this._overlayFillColor = [cc[0], cc[1], cc[2], cc[3]];
+    }
     ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = `rgba(${this.currentColor[0]}, ${this.currentColor[1]}, ${this.currentColor[2]}, ${this.currentColor[3] / 255})`;
+    ctx.fillStyle = this._overlayFillStyle;
     ctx.fillRect(0, 0, cw, ch);
 
     // 2. Erase holes for dynamic lights.
@@ -441,27 +486,27 @@ const WeatherSystem = {
     translate(x, y);
     rectMode(CENTER);
 
-    const size = radius * 2;
+    const _clockSize = radius * 2;
 
     // --- 1. Outer Square Frame (Pixel-Themed Bronze) ---
     noStroke();
     fill(0, 120);
-    rect(2, 2, size + 10, size + 10, 4); // Drop shadow
+    rect(2, 2, _clockSize + 10, _clockSize + 10, 4); // Drop shadow
 
     stroke(50, 40, 30);
     strokeWeight(3);
     fill(35, 30, 25); // Dark metallic backing
-    rect(0, 0, size + 6, size + 6, 2);
+    rect(0, 0, _clockSize + 6, _clockSize + 6, 2);
 
     stroke(180, 150, 50); // Inner gold inlay
     strokeWeight(1.5);
     noFill();
-    rect(0, 0, size + 2, size + 2, 1);
+    rect(0, 0, _clockSize + 2, _clockSize + 2, 1);
 
     // Corner rivets (mechanical pixel look)
     fill(100, 90, 80);
     noStroke();
-    const off = size / 2 + 1;
+    const off = _clockSize / 2 + 1;
     rect(-off, -off, 4, 4);
     rect(off, -off, 4, 4);
     rect(off, off, 4, 4);
@@ -470,15 +515,15 @@ const WeatherSystem = {
     // --- 2. Quilted Background ---
     push();
     drawingContext.beginPath();
-    drawingContext.rect(-size / 2, -size / 2, size, size);
+    drawingContext.rect(-_clockSize / 2, -_clockSize / 2, _clockSize, _clockSize);
     drawingContext.clip();
 
     stroke(45, 40, 35, 150);
     strokeWeight(1);
     const step = 10;
-    for (let i = -size; i < size; i += step) {
-      line(i, -size, i + size, size);
-      line(i + size, -size, i, size);
+    for (let i = -_clockSize; i < _clockSize; i += step) {
+      line(i, -_clockSize, i + _clockSize, _clockSize);
+      line(i + _clockSize, -_clockSize, i, _clockSize);
     }
 
     // --- 3. Sky Strip (Rotates behind the frame) ---
@@ -487,9 +532,9 @@ const WeatherSystem = {
     rotate(skyRotation);
     noStroke();
     fill(40, 100, 220, 100); // Day half
-    arc(0, 0, size * 1.5, size * 1.5, PI, TWO_PI);
+    arc(0, 0, _clockSize * 1.5, _clockSize * 1.5, PI, TWO_PI);
     fill(10, 10, 40, 140); // Night half
-    arc(0, 0, size * 1.5, size * 1.5, 0, PI);
+    arc(0, 0, _clockSize * 1.5, _clockSize * 1.5, 0, PI);
     pop();
 
     pop(); // End clipping

@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Modern Game Menu</title>
 
+    <script>
+      /* Safety net: if p5's setup() never fires (asset load hangs, decode error, etc.)
+         the loading overlay would stay forever. Remove it after 9 s and warn. */
+      (function () {
+        setTimeout(function () {
+          var ov = document.getElementById('gd-loading-overlay');
+          if (ov) {
+            console.warn('[menu] Loading timeout — setup() not called within 9 s. Forcing overlay removal.');
+            ov.remove();
+          }
+        }, 9000);
+      })();
+    </script>
+
     <script defer src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/addons/p5.sound.min.js"></script>
 
@@ -23,17 +37,17 @@
 
 
     <style>
-      
+
       html,
       body {
         margin: 0;
         padding: 0;
-        overflow: hidden; 
+        overflow: hidden;
         height: 100%;
-        background-color: #000; 
+        background-color: #000;
       }
 
-      
+
       canvas {
         display: block;
         position: absolute;
@@ -50,12 +64,12 @@
       body > div,
       body > input,
       body > select {
-        position: absolute; 
-        z-index: 10; 
+        position: absolute;
+        z-index: 10;
       }
-      @font-face { 
-        font-family: 'PixelGameFont'; 
-        src: url('assets/3-GUI/font.ttf'); 
+      @font-face {
+        font-family: 'PixelGameFont';
+        src: url('assets/3-GUI/font.ttf');
         font-display: swap;
       }
       #gd-loading-overlay {
