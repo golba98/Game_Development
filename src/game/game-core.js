@@ -11,6 +11,7 @@ const PLAYER_BBOX_HEIGHT_SCALE = 1.25;
 
 // Tracks previous simulation state to detect pause→resume edge for perf-tracker reset.
 let _wasSimulating = null;
+const _missingHudHookWarnings = new Set();
 
 // Continuously samples the raw browser rAF rate — independent of any FPS cap.
 // Runs a lightweight parallel rAF loop that never renders.
@@ -43,6 +44,25 @@ const BrowserRafSampler = {
     requestAnimationFrame(this._tick.bind(this));
   },
 };
+
+function callHudHook(hookName, opts = {}) {
+  const hook =
+    (typeof window !== "undefined" && typeof window[hookName] === "function")
+      ? window[hookName]
+      : (typeof globalThis !== "undefined" && typeof globalThis[hookName] === "function")
+        ? globalThis[hookName]
+        : null;
+
+  if (hook) {
+    return hook();
+  }
+
+  if (!opts.optional && !_missingHudHookWarnings.has(hookName)) {
+    _missingHudHookWarnings.add(hookName);
+    console.warn(`[game] HUD hook missing: ${hookName}`);
+  }
+  return undefined;
+}
 
 // Per-frame callback registered with Pixi ticker for Pixi backend.
 // Replaces p5's rAF-driven draw loop when RENDER_BACKEND === 'pixi'.
@@ -730,22 +750,22 @@ function draw() {
   // --- HUD --- (safe-area layout handled in game-hud.js)
   if (hudEnabled) {
     if (typeof FramePerf !== "undefined") FramePerf.start("hud");
-    drawBottomHud();
-    drawLeftHud();
-    drawBossHud();
-    drawCompass();
-    drawDifficultyBadge();
-    if (typeof drawHudWeatherClock === "function") drawHudWeatherClock();
+    callHudHook("drawBottomHud");
+    callHudHook("drawLeftHud");
+    callHudHook("drawBossHud");
+    callHudHook("drawCompass");
+    callHudHook("drawDifficultyBadge");
+    callHudHook("drawHudWeatherClock", { optional: true });
 
     if (showMinimap) {
       if (typeof FramePerf !== "undefined") FramePerf.start("minimap");
-      drawMinimap();
+      callHudHook("drawMinimap");
     }
   }
 
   if (performanceOverlayEnabled) {
     if (typeof FramePerf !== "undefined") FramePerf.start("perfPanel");
-    drawHudPerformanceOverlay();
+    callHudHook("drawHudPerformanceOverlay");
   }
 
   // Dev-only perf overlay (?debug=1 / ?renderstats=1). Off in production.

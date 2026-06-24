@@ -1067,4 +1067,23 @@ function drawClouds() {
 
 
 
-window.locatePortal = locatePortal;
+if (typeof window !== "undefined") {
+  Object.assign(window, {
+    drawBottomHud,
+    drawBossHud,
+    drawCompass,
+    drawDifficultyBadge,
+    drawHealthBar,
+    drawHudPerformanceOverlay,
+    drawHudWeatherClock,
+    drawInventory,
+    drawLeftHud,
+    drawManaBar,
+    drawMinimap,
+    drawScore,
+    drawSprintMeter,
+    drawVignette,
+    drawXPBar,
+    locatePortal,
+  });
+}
