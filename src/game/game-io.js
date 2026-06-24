@@ -232,6 +232,7 @@ function applyLoadedMap(obj) {
     try { mapLoadComplete = true; } catch (e) {}
     try { showLoadingOverlay = false; } catch (e) {}
     completeLoadingProgress();
+    try { updateLoadingOverlayDom(); } catch (e) {}
     return true;
   } catch (err) {
     console.warn('[game] applyLoadedMap error', err);
@@ -308,6 +309,7 @@ function loadMapFromStorage() {
     try { mapLoadComplete = true; } catch (e) {}
     try { showLoadingOverlay = false; } catch (e) {}
     completeLoadingProgress();
+    try { updateLoadingOverlayDom(); } catch (e) {}
     return true;
   } catch (err) {
     console.warn('[game] loadMapFromStorage error', err);
@@ -425,7 +427,7 @@ function loadLocalSettings() {
     if (typeof parsed.showTutorialsSetting === 'boolean') showTutorialsSetting = parsed.showTutorialsSetting;
     else if (typeof parsed.showTutorials === 'boolean') showTutorialsSetting = parsed.showTutorials;
     performanceOverlayEnabled = normalizePerformanceOverlaySetting(parsed, performanceOverlayEnabled);
-    targetFps = getFpsTargetForMode(normalizeFpsMode(parsed.fpsMode ?? parsed.targetFps, normalizeFpsMode(targetFps)));
+    applyGameFpsMode(parsed.fpsMode ?? parsed.targetFps, "load-settings");
     if (typeof parsed.showStars          === 'boolean') showStars           = parsed.showStars;
     if (typeof parsed.screenShakeEnabled === 'boolean') screenShakeEnabled  = parsed.screenShakeEnabled;
     if (typeof parsed.showParticles      === 'boolean') {
@@ -441,7 +443,6 @@ function loadLocalSettings() {
     if (typeof parsed.colorModeSetting   === 'string') { colorModeSetting = parsed.colorModeSetting; applyColorMode(colorModeSetting); }
     if (typeof parsed.languageSetting    === 'string')  languageSetting     = parsed.languageSetting;
     if (typeof applyVolumes === 'function') applyVolumes();
-    if (typeof applyFPS === 'function') applyFPS();
     verboseLog('[game] loaded saved settings', parsed);
     try {
       const storedKeys = localStorage.getItem(KEYBINDS_KEY);
@@ -497,6 +498,7 @@ window.addEventListener('message', (ev) => {
   try {
     switch (ev.data.type) {
       case 'game-activated': {
+        console.log('[game] game-activated received');
         try {
           loadLocalSettings();
           applySettingsMessage(ev.data);
@@ -564,8 +566,7 @@ function applySettingsMessage(data) {
     setDifficulty(data.difficulty, { reason: 'message:update-settings' });
   }
   if (typeof data.fpsMode !== 'undefined' || typeof data.targetFps === 'number') {
-    targetFps = getFpsTargetForMode(normalizeFpsMode(data.fpsMode ?? data.targetFps, normalizeFpsMode(targetFps)));
-    if (typeof applyFPS === 'function') applyFPS();
+    applyGameFpsMode(data.fpsMode ?? data.targetFps, "settings-message");
   }
   if (typeof data.hudEnabled === 'boolean') hudEnabled = data.hudEnabled;
   else if (typeof data.showHUD === 'boolean') hudEnabled = data.showHUD;

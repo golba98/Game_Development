@@ -39,10 +39,8 @@ const PixiApp = {
       powerPreference: 'high-performance',
     });
 
-    // CRITICAL: p5's requestAnimationFrame loop drives frame pacing.
-    // Pixi must NOT also run its own ticker or two loops would race.
-    this.app.ticker.stop();
-    try { PIXI.Ticker.shared.stop(); } catch (e) {}
+    // Ticker starts paused; game-core.js starts it after registering _pixiGameTick.
+    // Do NOT call ticker.start() here — the game loop callback must be added first.
 
     // Inject the Pixi canvas as the first child of #game-root so p5's canvas
     // (appended later by adoptCanvas) lands on top in DOM stacking order.
@@ -88,7 +86,13 @@ const PixiApp = {
     this.app.stage.addChild(this.minimapContainer);
   },
 
-  // Flush the WebGL frame — call once at the end of each p5 draw().
+  // Set Pixi ticker FPS cap. 0 = uncapped (Unlimited mode). Call from applyGameFpsMode.
+  setTargetFps: function (fps) {
+    if (!this.app || !this.app.ticker) return;
+    this.app.ticker.maxFPS = (fps > 0 && fps < 10000) ? fps : 0;
+  },
+
+  // Flush the WebGL frame — called from inside draw() on both p5 and Pixi backends.
   render: function () {
     if (this.app) this.app.renderer.render(this.app.stage);
   },

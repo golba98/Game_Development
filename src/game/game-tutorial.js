@@ -128,6 +128,7 @@ function loadTutorialMap() {
     showLoadingOverlay = false;
     mapLoadComplete = true;
     completeLoadingProgress();
+    try { updateLoadingOverlayDom(); } catch (e) {}
   }
 }
 

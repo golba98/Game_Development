@@ -744,3 +744,11 @@ function releaseGameAssets() {
   genTempData = {};
 }
 
+if (typeof window !== "undefined") {
+  Object.assign(window, {
+    getDifficultyDisplayLabel,
+    normalizeDifficultyValue,
+    releaseGameAssets,
+    setDifficulty,
+  });
+}

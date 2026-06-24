@@ -9,6 +9,80 @@ const GENPHASE_PART2 = 3; // wait for heavy work, then run generateMap_Part2
 // Player bounding-box height relative to cellSize (used for tree-fade overlap test)
 const PLAYER_BBOX_HEIGHT_SCALE = 1.25;
 
+// Tracks previous simulation state to detect pause→resume edge for perf-tracker reset.
+let _wasSimulating = null;
+const _missingHudHookWarnings = new Set();
+
+// Continuously samples the raw browser rAF rate — independent of any FPS cap.
+// Runs a lightweight parallel rAF loop that never renders.
+const BrowserRafSampler = {
+  fps: 0,
+  avgDeltaMs: 16.67,
+  _samples: [],
+  _lastTime: null,
+  _active: false,
+
+  start: function () {
+    if (this._active) return;
+    this._active = true;
+    this._lastTime = performance.now();
+    requestAnimationFrame(this._tick.bind(this));
+  },
+
+  _tick: function (now) {
+    if (!this._active) return;
+    const delta = now - this._lastTime;
+    this._lastTime = now;
+    if (delta > 0 && delta < 500) {
+      this._samples.push(delta);
+      if (this._samples.length > 120) this._samples.shift();
+      if (this._samples.length >= 10) {
+        this.avgDeltaMs = this._samples.reduce((a, b) => a + b, 0) / this._samples.length;
+        this.fps = 1000 / this.avgDeltaMs;
+      }
+    }
+    requestAnimationFrame(this._tick.bind(this));
+  },
+};
+
+function callHudHook(hookName, opts = {}) {
+  const hook =
+    (typeof window !== "undefined" && typeof window[hookName] === "function")
+      ? window[hookName]
+      : (typeof globalThis !== "undefined" && typeof globalThis[hookName] === "function")
+        ? globalThis[hookName]
+        : null;
+
+  if (hook) {
+    return hook();
+  }
+
+  if (!opts.optional && !_missingHudHookWarnings.has(hookName)) {
+    _missingHudHookWarnings.add(hookName);
+    console.warn(`[game] HUD hook missing: ${hookName}`);
+  }
+  return undefined;
+}
+
+// Per-frame callback registered with Pixi ticker for Pixi backend.
+// Replaces p5's rAF-driven draw loop when RENDER_BACKEND === 'pixi'.
+function _pixiGameTick() {
+  const ticker = PixiApp.app.ticker;
+  const periodMs = ticker.elapsedMS; // ms since last tick (Pixi's wall-clock measurement)
+
+  // Set p5 globals so draw() sees correct delta and frame counter.
+  window.deltaTime = Math.min(periodMs, 50); // spiral-of-death clamp
+  window.frameCount = (window.frameCount || 0) + 1;
+
+  const workStart = performance.now();
+  try { draw(); } catch (e) { console.error('[pixi-tick] draw() threw:', e); }
+  const workMs = performance.now() - workStart;
+
+  window._gameFramePeriodMs = periodMs;
+  window._gameFrameWorkMs   = workMs;
+  window._gameFrameWaitMs   = Math.max(0, periodMs - workMs);
+}
+
 function setup() {
   verboseLog(
     "!!! NEW VERSION LOADED !!! - FIXED_VIRTUAL_HEIGHT = " +
@@ -58,6 +132,17 @@ function setup() {
 
   applyGameFpsMode(targetFps, "setup");
 
+  if (typeof document !== "undefined" && document.addEventListener) {
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) {
+        if (typeof resetPerformanceTracker === "function")
+          resetPerformanceTracker(performanceTracker);
+        if (typeof FramePerf !== "undefined") FramePerf.reset();
+        if (typeof GameLoop !== "undefined") GameLoop.reset();
+      }
+    });
+  }
+
   pixelDensity(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_DENSITY));
 
   gameScale = H / FIXED_VIRTUAL_HEIGHT;
@@ -77,7 +162,15 @@ function setup() {
       cnv.elt.style.position = 'absolute';
       cnv.elt.style.inset = '0';
     }
+    // Hand frame-pacing to the Pixi ticker. p5's rAF loop is stopped;
+    // _pixiGameTick calls draw() on every ticker frame.
+    noLoop();
+    PixiApp.app.ticker.add(_pixiGameTick);
+    PixiApp.app.ticker.start();
   }
+
+  // Persistent browser rAF diagnostic sampler — runs regardless of backend.
+  BrowserRafSampler.start();
 
   ensureTextSizeOverride();
 
@@ -266,23 +359,6 @@ function setup() {
     }
   } catch (e) {}
 
-  // Dev-only browser rAF sampler
-  try {
-    let rafSamples = [];
-    let lastRafTime = performance.now();
-    const sampleRaf = (now) => {
-      rafSamples.push(now - lastRafTime);
-      lastRafTime = now;
-      if (rafSamples.length < 45) {
-        requestAnimationFrame(sampleRaf);
-      } else {
-        rafSamples = rafSamples.slice(10); // discard first few unstable frames
-        const avg = rafSamples.reduce((a, b) => a + b, 0) / rafSamples.length;
-        console.info("[game] browser rAF sample", { fps: Math.round(1000 / avg), deltaMs: Number(avg.toFixed(2)) });
-      }
-    };
-    requestAnimationFrame((now) => { lastRafTime = now; requestAnimationFrame(sampleRaf); });
-  } catch (e) {}
 }
 
 function windowResized() {
@@ -437,6 +513,9 @@ function draw() {
       showLoadingOverlay = false;
       completeLoadingProgress();
       updateLoadingOverlayDom();
+      if (typeof resetPerformanceTracker === "function")
+        resetPerformanceTracker(performanceTracker);
+      if (typeof FramePerf !== "undefined") FramePerf.reset();
     }
   }
 
@@ -635,29 +714,58 @@ function draw() {
   pop(); // END WORLD TRANSFORM
   if (typeof FramePerf !== "undefined") FramePerf.end();
 
-  if (_rawDelta > 0) {
-    recordPerformanceSample(performanceTracker, 1000 / _rawDelta);
+  // Feed overlay from FramePerf — same EMA source as console [perf] logs.
+  if (typeof FramePerf !== "undefined" && typeof performanceTracker !== "undefined") {
+    const _nowSim = SceneManager.isSimulating();
+
+    // Pause→resume edge: flush paused frames from the rolling window.
+    if (_wasSimulating === false && _nowSim) {
+      resetPerformanceTracker(performanceTracker);
+      FramePerf.reset();
+    }
+    _wasSimulating = _nowSim;
+    performanceTracker.paused = !_nowSim;
+
+    if (_nowSim) {
+      const snap = FramePerf.snapshot();
+      if (snap && snap.fps > 0) {
+        recordPerformanceSample(performanceTracker, snap.fps);
+        performanceTracker.totalMs    = snap.totalMs;
+        performanceTracker.updateMs   = snap.updateMs;
+        performanceTracker.worldMs    = snap.worldMs;
+        performanceTracker.entityMs   = snap.entityMs;
+        performanceTracker.weatherMs  = snap.weatherMs;
+        performanceTracker.hudMs      = snap.hudMs;
+        performanceTracker.minimapMs  = snap.minimapMs;
+        performanceTracker.pixiFlushMs   = snap.pixiFlushMs;
+        performanceTracker.backend        = snap.backend;
+        performanceTracker.browserRafFps  = snap.browserRafFps;
+        performanceTracker.periodMs       = snap.periodMs;
+        performanceTracker.workMs         = snap.workMs;
+        performanceTracker.waitMs         = snap.waitMs;
+      }
+    }
   }
 
   // --- HUD --- (safe-area layout handled in game-hud.js)
   if (hudEnabled) {
     if (typeof FramePerf !== "undefined") FramePerf.start("hud");
-    drawBottomHud();
-    drawLeftHud();
-    drawBossHud();
-    drawCompass();
-    drawDifficultyBadge();
-    if (typeof drawHudWeatherClock === "function") drawHudWeatherClock();
+    callHudHook("drawBottomHud");
+    callHudHook("drawLeftHud");
+    callHudHook("drawBossHud");
+    callHudHook("drawCompass");
+    callHudHook("drawDifficultyBadge");
+    callHudHook("drawHudWeatherClock", { optional: true });
 
     if (showMinimap) {
       if (typeof FramePerf !== "undefined") FramePerf.start("minimap");
-      drawMinimap();
+      callHudHook("drawMinimap");
     }
   }
 
   if (performanceOverlayEnabled) {
     if (typeof FramePerf !== "undefined") FramePerf.start("perfPanel");
-    drawHudPerformanceOverlay();
+    callHudHook("drawHudPerformanceOverlay");
   }
 
   // Dev-only perf overlay (?debug=1 / ?renderstats=1). Off in production.

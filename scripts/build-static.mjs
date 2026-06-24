@@ -44,25 +44,25 @@ async function collectFiles(dir) {
 await collectFiles(outputDir);
 
 const oversized = [];
-let largest = { filePath: "", size: 0 };
+let largest = { filePath: "", fileSizeBytes: 0 };
 
 for (const filePath of files) {
-  const { size } = await stat(filePath);
+  const { size: fileSizeBytes } = await stat(filePath);
 
-  if (size > largest.size) {
-    largest = { filePath, size };
+  if (fileSizeBytes > largest.fileSizeBytes) {
+    largest = { filePath, fileSizeBytes };
   }
 
-  if (size > maxAssetBytes) {
-    oversized.push({ filePath, size });
+  if (fileSizeBytes > maxAssetBytes) {
+    oversized.push({ filePath, fileSizeBytes });
   }
 }
 
 if (oversized.length > 0) {
   const details = oversized
-    .map(({ filePath, size }) => {
+    .map(({ filePath, fileSizeBytes }) => {
       const relativePath = path.relative(outputDir, filePath);
-      const mib = (size / 1024 / 1024).toFixed(1);
+      const mib = (fileSizeBytes / 1024 / 1024).toFixed(1);
       return `- ${relativePath}: ${mib} MiB`;
     })
     .join("\n");
@@ -71,7 +71,7 @@ if (oversized.length > 0) {
 }
 
 const largestRelativePath = path.relative(outputDir, largest.filePath);
-const largestMib = (largest.size / 1024 / 1024).toFixed(1);
+const largestMib = (largest.fileSizeBytes / 1024 / 1024).toFixed(1);
 
 console.log(`Built ${files.length} static files into dist/`);
 console.log(`Largest asset: ${largestRelativePath} (${largestMib} MiB)`);

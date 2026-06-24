@@ -106,13 +106,5 @@ function openCharacterMenu() {
 }
 
 window.openCharacterMenu = openCharacterMenu;
-window.drawMinimap = drawMinimap;
-window.drawHealthBar = drawHealthBar;
-window.drawXPBar = drawXPBar;
-window.drawScore = drawScore;
-window.drawInventory = drawInventory;
-window.drawVignette = drawVignette;
-window.drawDifficultyBadge = drawDifficultyBadge;
-window.drawSprintMeter = drawSprintMeter;
 function clearHUD() { /* placeholder to prevent errors if called */ }
 window.clearHUD = clearHUD;
