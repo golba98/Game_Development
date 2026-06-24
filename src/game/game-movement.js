@@ -32,6 +32,56 @@ const CUT_COIN_CHANCE            = 0.1;   // chance cutting a flower drops a coi
 const CUT_HEALTH_CHANCE          = 0.15;  // chance cutting a flower drops a health pickup
 const JUMP_HEIGHT_SCALE          = 1.5;   // jump arc height as a multiple of cellSize
 
+// Triggers the visual and logical move, applying progress-based queuing if a move is active.
+function startMove(dx, dy) {
+  if (!playerPosition) return;
+
+  const targetX = Math.max(0, Math.min(playerPosition.x + dx, (logicalW || 0) - 1));
+  const targetY = Math.max(0, Math.min(playerPosition.y + dy, (logicalH || 0) - 1));
+
+  // Determine facing/looking direction immediately
+  if (dx < 0) facing = 'left';
+  else if (dx > 0) facing = 'right';
+
+  if (dx !== 0 && dy !== 0) {
+    lastDirection = deltaToDirection(dx, dy);
+  } else if (dx !== 0) {
+    lastDirection = dx < 0 ? 'W' : 'E';
+  } else if (dy !== 0) {
+    lastDirection = dy < 0 ? 'N' : 'S';
+  }
+
+  // If not currently moving, start the step immediately
+  if (!isMoving) {
+    if (canMoveTo(playerPosition.x, playerPosition.y, targetX, targetY)) {
+      handleItemInteraction(targetX, targetY);
+      const prevX = playerPosition.x;
+      const prevY = playerPosition.y;
+      playerPosition.x = targetX;
+      playerPosition.y = targetY;
+      lastMoveDX = dx;
+      lastMoveDY = dy;
+      startMoveVisual(prevX, prevY, targetX, targetY);
+    }
+  }
+  // If we are already moving, check if we can queue the next step
+  else if (!queuedMove) {
+    const elapsed = millis() - moveStartMillis;
+    const duration = Math.max(1, lastMoveDurationMs);
+    const progress = elapsed / duration;
+
+    // Only queue if current move is at least 75% complete to prevent double-steps
+    if (progress >= 0.75) {
+      if (canMoveTo(playerPosition.x, playerPosition.y, targetX, targetY)) {
+        queuedMove = {
+          dx: dx,
+          dy: dy
+        };
+      }
+    }
+  }
+}
+
 // Polls key state each frame; triggers dash, moves player one tile, and queues chained moves.
 function handleMovement() {
   if (isTerminalOpen) return;
@@ -42,15 +92,22 @@ function handleMovement() {
       if (dashTimer <= 0) isDashing = false;
   }
 
-  if (isJumping || (isMoving && (millis() - lastMoveTime < getActiveMoveCooldownMs()))) return;
-  // Read held keys from the centralized InputState (event-driven, so taps that
-  // happen between frames at low FPS are still seen). Semantics match keyIsDown.
+  if (isJumping) return;
+
+  // Don't poll inputs for a new step if we are early in the current visual move
+  if (isMoving) {
+    const elapsed = millis() - moveStartMillis;
+    const duration = Math.max(1, lastMoveDurationMs);
+    if (elapsed / duration < 0.75) {
+      return;
+    }
+  }
+
   const keyLeft  = InputState.isDown(playerKeybinds.moveLeft);
   const keyRight = InputState.isDown(playerKeybinds.moveRight);
   const keyUp    = InputState.isDown(playerKeybinds.moveUp);
   const keyDown  = InputState.isDown(playerKeybinds.moveDown);
   const shiftHeld = InputState.isDown(playerKeybinds.sprint);
-  const now = millis();
 
   // Dash trigger
   if (shiftHeld && !isDashing && dashCooldown <= 0 && (keyLeft || keyRight || keyUp || keyDown)) {
@@ -60,102 +117,39 @@ function handleMovement() {
       verboseLog('[game] DASH!');
   }
 
-  let moved = false;
-  let targetX = playerPosition.x;
-  let targetY = playerPosition.y;
-  const maxTileX = (logicalW || 0) - 1;
-  const maxTileY = (logicalH || 0) - 1;
-  // Returns true on initial key-down or after hold delays for key-repeat.
-  function keyTriggered(keyNow, prevKey, holdObj) {
-    if (keyNow && !prevKey) {
-      holdObj.start = now;
-      holdObj.last = now;
-      return true;
-    }
-    if (keyNow && prevKey) {
-      if (holdObj.start > 0 && (now - holdObj.start >= HOLD_INITIAL_DELAY_MS) && (now - holdObj.last >= HOLD_REPEAT_INTERVAL_MS)) {
-        holdObj.last = now;
-        return true;
-      }
-      return false;
-    }
-    holdObj.start = 0;
-    holdObj.last = 0;
-    return false;
+  let dx = 0;
+  let dy = 0;
+  if (keyLeft) dx -= 1;
+  if (keyRight) dx += 1;
+
+  const actualUp = invertYAxis ? keyDown : keyUp;
+  const actualDown = invertYAxis ? keyUp : keyDown;
+  if (actualUp) dy -= 1;
+  if (actualDown) dy += 1;
+
+  if (dx !== 0 || dy !== 0) {
+    startMove(dx, dy);
   }
-  const trigLeft  = keyTriggered(keyLeft,  prevKeyA, holdState.A);
-  const trigRight = keyTriggered(keyRight, prevKeyD, holdState.D);
-  const trigUp    = keyTriggered(keyUp,    prevKeyW, holdState.W);
-  const trigDown  = keyTriggered(keyDown,  prevKeyS, holdState.S);
-  if (trigLeft)  { facing = 'left';  targetX--; moved = true; }
-  else if (trigRight) { facing = 'right'; targetX++; moved = true; }
-  const upTrig   = invertYAxis ? trigDown : trigUp;
-  const downTrig = invertYAxis ? trigUp   : trigDown;
-  if (upTrig)   { targetY--; moved = true; }
-  else if (downTrig) { targetY++; moved = true; }
-  if (targetX < 0) targetX = 0;
-  if (targetY < 0) targetY = 0;
-  if (targetX > maxTileX) targetX = maxTileX;
-  if (targetY > maxTileY) targetY = maxTileY;
-  if (moved) {
-    if (canMoveTo(playerPosition.x, playerPosition.y, targetX, targetY)) {
-      handleItemInteraction(targetX, targetY);
-      const prevX = playerPosition.x;
-      const prevY = playerPosition.y;
-      if (isMoving) {
-        const qx = Math.max(0, Math.min(targetX, maxTileX));
-        const qy = Math.max(0, Math.min(targetY, maxTileY));
-        queuedMove = { prevX, prevY, targetX: qx, targetY: qy };
-      } else {
-        playerPosition.x = targetX;
-        playerPosition.y = targetY;
-        lastMoveDX = playerPosition.x - prevX;
-        lastMoveDY = playerPosition.y - prevY;
-        lastDirection = deltaToDirection(lastMoveDX, lastMoveDY);
-        startMoveVisual(prevX, prevY, playerPosition.x, playerPosition.y);
-      }
-    }
-  }
-  prevKeyA = keyLeft;
-  prevKeyD = keyRight;
-  prevKeyW = keyUp;
-  prevKeyS = keyDown;
+
+  // Update animation speed matching actual speed
+  const duration = getActiveMoveDurationMs();
+  playerAnimSpeed = duration * 1.5;
 }
 
 // Programmatically moves the player one step in the given WASD direction.
 function tryMoveDirection(keyChar) {
   if (!playerPosition) return;
   const k = keyChar ? keyChar.toUpperCase() : '';
-  let targetX = playerPosition.x;
-  let targetY = playerPosition.y;
-  if (k === 'A') { facing = 'left'; targetX--; }
-  else if (k === 'D') { facing = 'right'; targetX++; }
-  else if (k === 'W') { targetY--; }
-  else if (k === 'S') { targetY++; }
+  let dx = 0;
+  let dy = 0;
+  if (k === 'A') dx = -1;
+  else if (k === 'D') dx = 1;
+  else if (k === 'W') dy = -1;
+  else if (k === 'S') dy = 1;
   else return;
-  const maxTileX = (logicalW || 0) - 1;
-  const maxTileY = (logicalH || 0) - 1;
-  targetX = Math.max(0, Math.min(targetX, maxTileX));
-  targetY = Math.max(0, Math.min(targetY, maxTileY));
-  if (!canMoveTo(playerPosition.x, playerPosition.y, targetX, targetY)) return;
-  handleItemInteraction(targetX, targetY);
-  const prevX = playerPosition.x;
-  const prevY = playerPosition.y;
-  if (isMoving) {
-    queuedMove = { prevX, prevY, targetX, targetY };
-  } else {
-    playerPosition.x = targetX;
-    playerPosition.y = targetY;
-    lastMoveDX = playerPosition.x - prevX;
-    lastMoveDY = playerPosition.y - prevY;
-    lastDirection = deltaToDirection(lastMoveDX, lastMoveDY);
-    startMoveVisual(prevX, prevY, playerPosition.x, playerPosition.y);
-  }
-  const now = millis();
-  if (k === 'A') { holdState.A.start = now; holdState.A.last = now; prevKeyA = true; }
-  if (k === 'D') { holdState.D.start = now; holdState.D.last = now; prevKeyD = true; }
-  if (k === 'W') { holdState.W.start = now; holdState.W.last = now; prevKeyW = true; }
-  if (k === 'S') { holdState.S.start = now; holdState.S.last = now; prevKeyS = true; }
+
+  const finalDy = invertYAxis ? -dy : dy;
+  startMove(dx, finalDy);
 }
 
 // Picks up the item at (targetX, targetY) and applies its effect to the player.
@@ -214,45 +208,40 @@ function handleItemInteraction(targetX, targetY) {
   }
 }
 
-// Returns false if the target tile is solid, a hill (unless jumping), an obstacle, or an enemy.
-function canMoveTo(fromX, fromY, toX, toY) {
-  const fromState = getTileState(fromX, fromY);
-  const toState = getTileState(toX, toY);
-  const targetIdx = toY * logicalW + toX;
-  const currentIdx = fromY * logicalW + fromX;
+// Returns true if tile at (tx, ty) is passable from current cell (cx, cy).
+function isTilePassable(tx, ty, cx, cy) {
+  if (tx < 0 || tx >= logicalW || ty < 0 || ty >= logicalH) return false;
 
-  const isToHill = (toState >= TILE_TYPES.HILL_NORTH && toState <= TILE_TYPES.HILL_NORTHWEST) || toState === TILE_TYPES.CLIFF;
-  const isFromHill = (fromState >= TILE_TYPES.HILL_NORTH && fromState <= TILE_TYPES.HILL_NORTHWEST) || fromState === TILE_TYPES.CLIFF;
-  const isToLogOrRamp = (toState === TILE_TYPES.LOG || toState === TILE_TYPES.RAMP);
-  const isFromLogOrRamp = (fromState === TILE_TYPES.LOG || fromState === TILE_TYPES.RAMP);
-
-  const isToObstacle = decorativeObstaclePositions.has(targetIdx);
-  const isFromObstacle = decorativeObstaclePositions.has(currentIdx);
+  const toState = getTileState(tx, ty);
+  const targetIdx = ty * logicalW + tx;
 
   // 1. Decorative Obstacles
+  const isToObstacle = decorativeObstaclePositions.has(targetIdx);
   if (isToObstacle) {
-    if (isJumping || isFromObstacle) return true; // Can jump over/onto or walk between obstacles
+    if (isJumping) return true;
+    const currentIdx = cy * logicalW + cx;
+    if (decorativeObstaclePositions.has(currentIdx)) return true;
     return false;
   }
 
   // 2. Hills (Cliffs)
-  if (isToHill) {
-    // Can move to a hill if jumping OR if already on a hill
-    if (isJumping || isFromHill) return true;
+  const toStateHill = (toState >= TILE_TYPES.HILL_NORTH && toState <= TILE_TYPES.HILL_NORTHWEST) || toState === TILE_TYPES.CLIFF;
+  if (toStateHill) {
+    if (isJumping) return true;
+    const fromState = getTileState(cx, cy);
+    const isFromHill = (fromState >= TILE_TYPES.HILL_NORTH && fromState <= TILE_TYPES.HILL_NORTHWEST) || fromState === TILE_TYPES.CLIFF;
+    if (isFromHill) return true;
     return false;
   }
 
   // 3. Logs & Ramps (Bridges)
-  if (isToLogOrRamp) {
-    // Bridges should always be walkable from anywhere
-    return true;
-  }
+  const isToLogOrRamp = (toState === TILE_TYPES.LOG || toState === TILE_TYPES.RAMP);
+  if (isToLogOrRamp) return true;
 
   // 4. Enemies
   if (enemies && enemies.length > 0) {
     for (const e of enemies) {
-      // If enemy is effectively at the target tile
-      if (Math.floor(e.x) === toX && Math.floor(e.y) === toY) {
+      if (Math.floor(e.x) === tx && Math.floor(e.y) === ty) {
         return false;
       }
     }
@@ -261,15 +250,20 @@ function canMoveTo(fromX, fromY, toX, toY) {
   // 5. General Solidarity
   if (isSolid(toState)) return false;
 
+  // 6. Edge layer check
   try {
-    if (EDGE_LAYER_ENABLED && edgeLayer && logicalW && logicalH) {
-      if (toX >= 0 && toX < logicalW && toY >= 0 && toY < logicalH) {
-        const idx = toY * logicalW + toX;
-        if (edgeLayer[idx]) return false;
-      }
+    if (EDGE_LAYER_ENABLED && edgeLayer) {
+      const idx = ty * logicalW + tx;
+      if (edgeLayer[idx]) return false;
     }
   } catch (e) {}
+
   return true;
+}
+
+// Returns false if the target tile is solid, a hill (unless jumping), an obstacle, or an enemy.
+function canMoveTo(fromX, fromY, toX, toY) {
+  return isTilePassable(toX, toY, fromX, fromY);
 }
 
 // Returns true if a tile is impassable (not in WALKABLE_TILES and not an item tile).
@@ -335,6 +329,14 @@ function updateMovementInterpolation() {
   const progress = constrain(elapsed / duration, 0, 1);
   renderX = lerp(renderStartX, renderTargetX, progress);
   renderY = lerp(renderStartY, renderTargetY, progress);
+
+  // Debug verification logging behind the debug flag
+  if (typeof PerfOverlay !== 'undefined' && PerfOverlay.enabled) {
+    if (frameCount % 60 === 0) {
+      console.log(`[debug-movement] pos=(${playerPosition.x}, ${playerPosition.y}) render=(${renderX.toFixed(2)}, ${renderY.toFixed(2)}) progress=${progress.toFixed(2)}`);
+    }
+  }
+
   if (progress >= 1) {
     isMoving = false;
     renderStartX = renderTargetX;
@@ -342,12 +344,26 @@ function updateMovementInterpolation() {
     if (queuedMove) {
       const q = queuedMove;
       queuedMove = null;
-      playerPosition.x = q.targetX;
-      playerPosition.y = q.targetY;
-      lastMoveDX = playerPosition.x - q.prevX;
-      lastMoveDY = playerPosition.y - q.prevY;
-      lastDirection = deltaToDirection(lastMoveDX, lastMoveDY);
-      startMoveVisual(renderStartX, renderStartY, playerPosition.x, playerPosition.y);
+
+      const targetX = Math.max(0, Math.min(playerPosition.x + q.dx, (logicalW || 0) - 1));
+      const targetY = Math.max(0, Math.min(playerPosition.y + q.dy, (logicalH || 0) - 1));
+
+      if (canMoveTo(playerPosition.x, playerPosition.y, targetX, targetY)) {
+        handleItemInteraction(targetX, targetY);
+        const prevX = playerPosition.x;
+        const prevY = playerPosition.y;
+        playerPosition.x = targetX;
+        playerPosition.y = targetY;
+        lastMoveDX = q.dx;
+        lastMoveDY = q.dy;
+        lastDirection = deltaToDirection(q.dx, q.dy);
+        if (q.dx < 0) facing = 'left';
+        else if (q.dx > 0) facing = 'right';
+
+        startMoveVisual(renderStartX, renderStartY, targetX, targetY);
+      } else {
+        lastMoveTime = millis();
+      }
     } else {
       lastMoveTime = millis();
     }
@@ -950,6 +966,10 @@ function neighbors(x, y) {
 
 // BFS from target back to start; returns the first step the enemy should take, or null.
 function findNextStep(startX, startY, targetX, targetY, maxDist = 12, maxNodes = 250) {
+    startX = Math.round(startX);
+    startY = Math.round(startY);
+    targetX = Math.round(targetX);
+    targetY = Math.round(targetY);
     if (startX === targetX && startY === targetY) return null;
 
     const dist = Math.hypot(startX - targetX, startY - targetY);

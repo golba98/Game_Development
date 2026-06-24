@@ -754,6 +754,11 @@ let terrainLayer;
 
 let playerPosition = null;
 
+// --- Camera & Visual Smoothing Constants (Phase 1) ---
+const CAMERA_FOLLOW_SMOOTHING = 0.12;  // Camera lerp weight per 16.67ms (0.12 = smooth, higher = snappier)
+const CAMERA_LEAD_FACTOR      = 0.0;   // Subtle camera lead in motion direction (0.0 = disabled, 0.15 = active)
+const PIXI_ROUND_PIXELS       = true;  // Choose whether Pixi rounds rendering coordinates to integers (default true)
+
 // --- Movement Timing ---
 const BASE_MOVE_DURATION_MS = 100;
 const BASE_MOVE_COOLDOWN_MS = 160;
