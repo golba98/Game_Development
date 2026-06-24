@@ -90,7 +90,13 @@ function getHudLayout() {
   const safeArea = getHudSafeArea(vW, vH, uiScaleFactor);
   const margin = safeArea.margin;
   const gap = safeArea.gap;
-  const statBarW = Math.max(1, Math.min(Math.round(184 * uiScaleFactor), safeArea.width - Math.round(56 * uiScaleFactor)));
+
+  // --- Layout Constants (Amended) ---
+  const HUD_MARGIN = Math.round(28 * uiScaleFactor);
+  const HUD_GAP = Math.round(10 * uiScaleFactor);
+  const HUD_GAP_SMALL = Math.round(4 * uiScaleFactor);
+
+  const statBarW = Math.round(Math.max(1, Math.min(184 * uiScaleFactor, safeArea.width - 56 * uiScaleFactor)));
   const perfPad = Math.round(10 * uiScaleFactor);
   const perfSize = getPerformanceOverlaySize(uiScaleFactor, safeArea.width - perfPad * 2);
   const perfRect = clampHudRect(
@@ -102,30 +108,83 @@ function getHudLayout() {
     perfPad,
   );
 
+  // --- Top-Left Player Stats (Height-Based Stack) ---
+  // Health Shell Y calculations
+  const healthBarH = Math.round(Math.max(16, 18 * uiScaleFactor));
+  const healthPadY = Math.round(10 * uiScaleFactor);
+  const healthShellHeight = healthBarH + healthPadY * 2;
+  const healthShellY = HUD_MARGIN;
+  const healthY = Math.round(healthShellY + healthPadY);
+
+  // Mana Shell Y calculations
+  const manaBarH = Math.round(Math.max(12, 14 * uiScaleFactor));
+  const manaPadY = Math.round(8 * uiScaleFactor);
+  const manaShellHeight = manaBarH + manaPadY * 2;
+  const manaShellY = Math.round(healthShellY + healthShellHeight + HUD_GAP_SMALL);
+  const manaY = Math.round(manaShellY + manaPadY);
+
+  // Gold Shell Y calculations
+  const goldShellHeight = Math.round(32 * uiScaleFactor);
+  const goldShellY = Math.round(manaShellY + manaShellHeight + HUD_GAP_SMALL);
+  const scoreY = Math.round(goldShellY + 20 * uiScaleFactor);
+
+  // Inventory Shell Y calculations
+  const inventoryShellY = Math.round(goldShellY + goldShellHeight + HUD_GAP);
+  const inventoryY = Math.round(inventoryShellY + 8 * uiScaleFactor);
+
+  // --- Right-Side Layout (Vertical Column) ---
+  const rightColumnRight = Math.round(vW - HUD_MARGIN);
+  const clockRadius = Math.round(22 * uiScaleFactor);
   const minimapPad = Math.min(Math.round(8 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
   const availableRightHeight = Math.max(48, safeArea.bottom - (perfRect.y + perfSize.height + gap) - minimapPad);
   const minimapSize = Math.round(Math.min(168 * uiScaleFactor, safeArea.width * 0.24, availableRightHeight * 0.72));
+
+  // Height of top right widget area above minimap
+  const topRightWidgetHeight = Math.round(Math.max(32 * uiScaleFactor * 1.2, 22 * uiScaleFactor * 2));
+  const minimapX = Math.round(rightColumnRight - minimapSize);
+  const minimapY = Math.round(HUD_MARGIN + topRightWidgetHeight + HUD_GAP);
+
   const minimapRect = clampHudRect(
-    safeArea.right - minimapSize - minimapPad,
-    perfRect.y + perfSize.height + gap,
+    minimapX,
+    minimapY,
     minimapSize,
     minimapSize,
     safeArea,
     minimapPad,
   );
 
+  // --- Top-Center Boss Bar (Responsive Fallback) ---
   const bossPadX = Math.min(Math.round(14 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
   const bossPadY = Math.round(11 * uiScaleFactor);
-  const bossBarW = Math.max(1, Math.min(safeArea.width - bossPadX * 2, safeArea.width * 0.34, Math.round(360 * uiScaleFactor)));
-  const bossBarH = Math.max(14, Math.round(16 * uiScaleFactor));
+  let bossBarW = Math.round(Math.max(1, Math.min(safeArea.width - bossPadX * 2, safeArea.width * 0.34, 360 * uiScaleFactor)));
+  const bossBarH = Math.round(Math.max(14, 16 * uiScaleFactor));
+
+  // Determine clear space between top-left cluster and right column
+  const leftStatsRight = Math.round(HUD_MARGIN + statBarW + 56 * uiScaleFactor);
+  const rightColumnLeft = Math.round(vW - HUD_MARGIN - minimapSize);
+  const centerSpace = Math.round(rightColumnLeft - leftStatsRight);
+  const safetyMargin = Math.round(20 * uiScaleFactor);
+
+  // Responsive fallback logic
+  let bossYCoord = Math.round(48 * uiScaleFactor);
+  if (bossBarW + bossPadX * 2 > centerSpace - safetyMargin) {
+    const maxFittingWidth = centerSpace - safetyMargin - bossPadX * 2;
+    bossBarW = Math.round(Math.max(180 * uiScaleFactor, maxFittingWidth));
+  }
+  // If screen is narrow or they still collide, push the boss bar below top-left stats
+  if (vW < Math.round(850 * uiScaleFactor) || (bossBarW + bossPadX * 2 > centerSpace - safetyMargin)) {
+    bossYCoord = Math.round(HUD_MARGIN + 130 * uiScaleFactor);
+  }
+
   const bossShell = clampHudRect(
-    (vW - (bossBarW + bossPadX * 2)) / 2,
-    safeArea.top + Math.round(18 * uiScaleFactor),
-    bossBarW + bossPadX * 2,
-    bossBarH + bossPadY * 2,
+    Math.round((vW - (bossBarW + bossPadX * 2)) / 2),
+    Math.round(bossYCoord - bossPadY),
+    Math.round(bossBarW + bossPadX * 2),
+    Math.round(bossBarH + bossPadY * 2),
     safeArea,
   );
 
+  // --- XP & Level Bar (Raised Bottom-Center) ---
   const xpPadX = Math.min(Math.round(18 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
   const xpPadY = Math.round(12 * uiScaleFactor);
   const xpBarW = Math.max(1, Math.min(safeArea.width - xpPadX * 2, safeArea.width * 0.58, Math.round(440 * uiScaleFactor)));
@@ -134,64 +193,70 @@ function getHudLayout() {
   const xpPanelH = xpBarH + xpPadY * 2;
   const xpPulsePad = Math.ceil(xpPanelH * 0.05);
   const xpShell = clampHudRect(
-    (vW - xpPanelW) / 2,
-    safeArea.bottom - xpPanelH - gap - xpPulsePad,
+    Math.round((vW - xpPanelW) / 2),
+    Math.round(vH - HUD_MARGIN - xpPanelH - 8 * uiScaleFactor),
     xpPanelW,
     xpPanelH,
     safeArea,
     xpPulsePad,
   );
 
+  // --- Stamina Meter (Bottom-Left) ---
   const sprintPadY = Math.round(8 * uiScaleFactor);
   const sprintContainerW = Math.max(1, Math.min(Math.round(200 * uiScaleFactor), safeArea.width - Math.round(20 * uiScaleFactor)));
   const sprintContainerH = Math.round(32 * uiScaleFactor);
   const sprintShell = clampHudRect(
-    safeArea.left,
-    xpShell.y - gap - sprintContainerH - sprintPadY * 2,
-    sprintContainerW + Math.round(20 * uiScaleFactor),
-    sprintContainerH + sprintPadY * 2,
+    HUD_MARGIN,
+    Math.round(vH - HUD_MARGIN - (sprintContainerH + sprintPadY * 2)),
+    Math.round(sprintContainerW + 20 * uiScaleFactor),
+    Math.round(sprintContainerH + sprintPadY * 2),
     safeArea,
   );
 
-  const statX = safeArea.left + Math.round(28 * uiScaleFactor);
+  const statX = Math.round(HUD_MARGIN + 28 * uiScaleFactor);
 
   cachedHudLayoutFrame = typeof frameCount === 'number' ? frameCount : -1;
   cachedHudLayoutKey = layoutKey;
   cachedHudLayout = {
-    vW,
-    vH,
+    vW: Math.round(vW),
+    vH: Math.round(vH),
     uiScaleFactor,
     safeArea,
     margin,
     gap,
+    HUD_MARGIN,
+    HUD_GAP,
+    HUD_GAP_SMALL,
     statBarW,
     statX,
-    healthY: safeArea.top + Math.round(10 * uiScaleFactor),
-    manaY: safeArea.top + Math.round(46 * uiScaleFactor),
-    scoreY: safeArea.top + Math.round(88 * uiScaleFactor),
-    inventoryY: safeArea.top + Math.round(118 * uiScaleFactor),
-    sprintY: sprintShell.y + sprintPadY,
+    healthY: Math.round(healthY),
+    manaY: Math.round(manaY),
+    scoreY: Math.round(scoreY),
+    inventoryY: Math.round(inventoryY),
+    sprintY: Math.round(sprintShell.y + sprintPadY),
     sprintContainerW,
-    bossX: bossShell.x + bossPadX,
-    bossY: bossShell.y + bossPadY,
+    bossX: Math.round(bossShell.x + bossPadX),
+    bossY: Math.round(bossShell.y + bossPadY),
     bossBarW,
     bossBarH,
     bossPadX,
     bossPadY,
-    xpX: xpShell.x + xpPadX,
-    xpY: xpShell.y + xpPadY,
+    xpX: Math.round(xpShell.x + xpPadX),
+    xpY: Math.round(xpShell.y + xpPadY),
     xpBarW,
     xpBarH,
     xpPadX,
     xpPadY,
     minimapSize,
-    minimapX: minimapRect.x,
-    minimapY: minimapRect.y,
-    perfX: perfRect.x,
-    perfY: perfRect.y,
+    minimapX: Math.round(minimapRect.x),
+    minimapY: Math.round(minimapRect.y),
+    perfX: Math.round(perfRect.x),
+    perfY: Math.round(perfRect.y),
     perfSize,
-    difficultyX: Math.max(safeArea.left, perfRect.x - Math.round(44 * uiScaleFactor)),
-    difficultyY: safeArea.top + Math.round(4 * uiScaleFactor),
+    difficultyX: Math.round(minimapX),
+    difficultyY: Math.round(HUD_MARGIN + 4 * uiScaleFactor),
+    clockX: Math.round(rightColumnRight - clockRadius),
+    clockY: Math.round(HUD_MARGIN + clockRadius),
   };
   return cachedHudLayout;
 }
@@ -524,7 +589,7 @@ function drawMinimap() {
 
 function drawScore() {
   const layout = getHudLayout();
-  const goldShellX = layout.safeArea.left;
+  const goldShellX = layout.HUD_MARGIN;
   const goldShellW = Math.round(150 * layout.uiScaleFactor);
   const y = layout.scoreY;
 
@@ -576,7 +641,7 @@ function drawInventory() {
   const layout = getHudLayout();
   const padX = Math.round(8 * layout.uiScaleFactor);
   const padY = Math.round(8 * layout.uiScaleFactor);
-  const startX = layout.safeArea.left + padX;
+  const startX = layout.HUD_MARGIN + padX;
   const startY = layout.inventoryY;
   const slotW = Math.round(48 * layout.uiScaleFactor);
   const slotH = Math.round(48 * layout.uiScaleFactor);
@@ -723,9 +788,7 @@ function drawHudWeatherClock() {
   const layout = getHudLayout();
   const safeArea = layout.safeArea;
   const clockRadius = Math.round(22 * layout.uiScaleFactor);
-  const clockX = layout.minimapX + layout.minimapSize / 2;
-  const clockY = layout.minimapY + layout.minimapSize + clockRadius + Math.round(12 * layout.uiScaleFactor);
-  WeatherSystem.drawClock(clockX, Math.min(safeArea.bottom - clockRadius, clockY), clockRadius);
+  WeatherSystem.drawClock(layout.clockX, Math.min(safeArea.bottom - clockRadius, layout.clockY), clockRadius);
 }
 
 function findGoalPosition() {
@@ -757,7 +820,7 @@ function drawSprintMeter() {
   // Positioning: Bottom-Left
   const padX = Math.round(10 * layout.uiScaleFactor);
   const padY = Math.round(8 * layout.uiScaleFactor);
-  const startX = layout.safeArea.left + padX;
+  const startX = layout.HUD_MARGIN + padX;
   const startY = layout.sprintY;
   const containerW = layout.sprintContainerW;
   const containerH = Math.round(32 * layout.uiScaleFactor);
