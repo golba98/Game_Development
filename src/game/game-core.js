@@ -540,40 +540,52 @@ function draw() {
     const pX = isMoving ? renderX : playerPosition.x;
     const pY = isMoving ? renderY : playerPosition.y;
 
-    const playerPixelX = pX * cellSize + cellSize / 2;
-    const playerPixelY = pY * cellSize + cellSize / 2;
+    // Optional camera lead in movement direction
+    let leadX = 0;
+    let leadY = 0;
+    if (isMoving && typeof CAMERA_LEAD_FACTOR !== "undefined" && CAMERA_LEAD_FACTOR > 0) {
+      const dx = renderTargetX - renderStartX;
+      const dy = renderTargetY - renderStartY;
+      const len = Math.hypot(dx, dy) || 1;
+      leadX = (dx / len) * CAMERA_LEAD_FACTOR * cellSize;
+      leadY = (dy / len) * CAMERA_LEAD_FACTOR * cellSize;
+    }
+
+    const playerPixelX = pX * cellSize + cellSize / 2 + leadX;
+    const playerPixelY = pY * cellSize + cellSize / 2 + leadY;
 
     targetCamX = playerPixelX - virtualW / 2;
     targetCamY = playerPixelY - virtualH / 2;
-
-    if (mapW > virtualW) {
-      targetCamX = Math.max(0, Math.min(targetCamX, mapW - virtualW));
-    } else {
-      targetCamX = -(virtualW - mapW) / 2;
-    }
-
-    if (mapH > virtualH) {
-      targetCamY = Math.max(0, Math.min(targetCamY, mapH - virtualH));
-    } else {
-      targetCamY = -(virtualH - mapH) / 2;
-    }
   }
 
   // Camera Smoothing
+  const smoothT = typeof CAMERA_FOLLOW_SMOOTHING !== "undefined" ? CAMERA_FOLLOW_SMOOTHING : 0.12;
   if (smoothCamX === null || smoothCamY === null) {
     smoothCamX = targetCamX;
     smoothCamY = targetCamY;
   } else {
-    // Adaptive smoothing based on frame time (normalized to ~60fps)
-    // 0.18 is the base lerp at 60Hz; scales smoothly for 144Hz+
-    const t = 1 - Math.pow(1 - 0.18, gameDelta / FRAME_TIME_MS);
+    // Adaptive smoothing based on frame time (normalized to ~60fps / 16.67ms)
+    const t = 1 - Math.pow(1 - smoothT, gameDelta / 16.67);
     smoothCamX = lerp(smoothCamX, targetCamX, t);
     smoothCamY = lerp(smoothCamY, targetCamY, t);
   }
 
-  // Use floor to prevent sub-pixel shimmering on tiles
-  const drawCamX = Math.floor(smoothCamX);
-  const drawCamY = Math.floor(smoothCamY);
+  // Clamp camera to world bounds AFTER smoothing
+  if (mapW > virtualW) {
+    smoothCamX = Math.max(0, Math.min(smoothCamX, mapW - virtualW));
+  } else {
+    smoothCamX = -(virtualW - mapW) / 2;
+  }
+
+  if (mapH > virtualH) {
+    smoothCamY = Math.max(0, Math.min(smoothCamY, mapH - virtualH));
+  } else {
+    smoothCamY = -(virtualH - mapH) / 2;
+  }
+
+  // Unrounded float camera coordinates to allow smooth sub-pixel camera translation
+  const drawCamX = smoothCamX;
+  const drawCamY = smoothCamY;
 
   // World-space visible rect (+ padding) for viewport culling this frame.
   // virtualW/H are already in world units (W / gameScale), matching the

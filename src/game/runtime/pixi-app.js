@@ -28,6 +28,7 @@ const PixiApp = {
 
     // Pixel-art nearest-neighbour scaling (set before any textures are created)
     PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
+    PIXI.settings.ROUND_PIXELS = typeof PIXI_ROUND_PIXELS !== 'undefined' ? PIXI_ROUND_PIXELS : true;
 
     this.app = new PIXI.Application({
       width,

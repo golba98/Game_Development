@@ -52,10 +52,18 @@ const InputState = {
       { capture: true },
     );
 
-    // Losing focus never delivers keyup, which would otherwise leave a key
-    // "stuck down" (e.g. walking forever after Alt+Tab). Clear on blur.
     window.addEventListener("blur", function () {
       self._down.clear();
+    });
+
+    window.addEventListener("focusout", function () {
+      self._down.clear();
+    });
+
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) {
+        self._down.clear();
+      }
     });
 
     this._installed = true;
