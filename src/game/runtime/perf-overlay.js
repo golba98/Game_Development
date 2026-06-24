@@ -74,10 +74,18 @@ const PerfOverlay = {
 
     // p5 globals: deltaTime is last frame interval (ms), frameRate() is fps.
     if (typeof deltaTime !== "undefined") {
-      this._frameMs = this._ema(this._frameMs, deltaTime);
+      let dt = deltaTime;
+      if (typeof dt !== "number" || isNaN(dt) || !isFinite(dt) || dt < 0) {
+        dt = 16.67;
+      }
+      this._frameMs = this._ema(this._frameMs, dt);
     }
     if (typeof frameRate === "function") {
-      this._fps = this._ema(this._fps, frameRate());
+      let rawFps = frameRate();
+      if (typeof rawFps !== "number" || isNaN(rawFps) || !isFinite(rawFps) || rawFps <= 0 || rawFps > 10000) {
+        rawFps = 60;
+      }
+      this._fps = this._ema(this._fps, rawFps);
     }
   },
 

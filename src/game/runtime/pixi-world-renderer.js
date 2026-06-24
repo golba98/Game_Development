@@ -12,6 +12,7 @@
 
 const PixiWorldRenderer = {
   _terrainSprite: null,
+  _terrainTexture: null,
 
   // Upload the current mapImage canvas as a Pixi texture.
   // mapImage is a p5.Graphics; its underlying HTMLCanvasElement is at mapImage.elt.
@@ -19,15 +20,15 @@ const PixiWorldRenderer = {
     if (!PixiApp.app) return;
     if (typeof mapImage === 'undefined' || !mapImage) return;
 
-    // Destroy previous sprite + texture to free GPU memory
+    // Destroy previous sprite + texture safely to free GPU memory and clean caches
     if (this._terrainSprite) {
       try {
-        this._terrainSprite.texture.destroy(true);
         PixiApp.terrainContainer.removeChild(this._terrainSprite);
-        this._terrainSprite.destroy({ children: true });
+        this._terrainSprite.destroy({ texture: true, baseTexture: true });
       } catch (e) {}
       this._terrainSprite = null;
     }
+    this._terrainTexture = null;
 
     // p5.Graphics.elt is the underlying HTMLCanvasElement
     const srcCanvas = mapImage.elt ||
@@ -37,7 +38,18 @@ const PixiWorldRenderer = {
       return;
     }
 
+    // Safely check and remove canvas/texture from cache if Pixi methods are available
+    try {
+      if (PIXI.Texture && typeof PIXI.Texture.removeFromCache === 'function') {
+        PIXI.Texture.removeFromCache(srcCanvas);
+      }
+      if (PIXI.BaseTexture && typeof PIXI.BaseTexture.removeFromCache === 'function') {
+        PIXI.BaseTexture.removeFromCache(srcCanvas);
+      }
+    } catch (e) {}
+
     const tex = PIXI.Texture.from(srcCanvas);
+    this._terrainTexture = tex;
     this._terrainSprite = new PIXI.Sprite(tex);
     this._terrainSprite.position.set(0, 0);
     PixiApp.terrainContainer.addChild(this._terrainSprite);

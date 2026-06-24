@@ -1,4 +1,6 @@
 // === Persistence / Settings Storage ===
+let lastSavedSettingsJson = null;
+
 function saveSettings() {
   playClickSFX();
   saveAllSettings();
@@ -62,8 +64,14 @@ function saveAllSettings() {
     screenShakeEnabled,
     showParticles,
     showFireflyLighting,
+    v: 1, // settings version
   };
-  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  const settingsJson = JSON.stringify(settings);
+  if (settingsJson === lastSavedSettingsJson) {
+    return; // No changes, skip write/log
+  }
+  lastSavedSettingsJson = settingsJson;
+  localStorage.setItem(SETTINGS_STORAGE_KEY, settingsJson);
   console.log("Saved Settings:", settings);
 }
 
@@ -84,6 +92,21 @@ function loadAllSettings() {
       applyCurrentTextSize();
       return;
     }
+
+    // Migration: Migrate implicit bug-induced "unlimited" defaults to stable 60 FPS
+    if (!s.v) {
+      if (s.fpsMode === "unlimited" || s.targetFps === 0) {
+        s.fpsMode = "60";
+        s.targetFps = 60;
+      }
+      s.v = 1;
+      try {
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(s));
+      } catch (e) {}
+    }
+
+    lastSavedSettingsJson = JSON.stringify(s);
+
     masterVol = s.masterVol ?? masterVol;
     musicVol = s.musicVol ?? musicVol;
     sfxVol = s.sfxVol ?? sfxVol;

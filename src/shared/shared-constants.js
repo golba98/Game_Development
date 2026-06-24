@@ -40,6 +40,7 @@ function getUiScaleMultiplier(value, fallback = DEFAULT_SETTINGS.uiScale) {
 }
 
 function normalizeTargetFps(value, fallback = DEFAULT_SETTINGS.targetFps) {
+  if (value === null || value === undefined || value === "" || typeof value === "boolean") return fallback;
   if (value === LEGACY_UNCAPPED_FPS) return UNLIMITED_FPS_TARGET;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -48,6 +49,7 @@ function normalizeTargetFps(value, fallback = DEFAULT_SETTINGS.targetFps) {
 }
 
 function normalizeFpsMode(value, fallback = DEFAULT_SETTINGS.fpsMode) {
+  if (value === null || value === undefined || value === "" || typeof value === "boolean") return fallback;
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
     if (normalized === "unlimited" || normalized === "uncapped") return "unlimited";

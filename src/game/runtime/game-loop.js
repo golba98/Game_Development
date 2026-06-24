@@ -29,6 +29,7 @@ const GameLoop = {
   MAX_FIXED_STEPS: 5,
 
   _accumulator: 0,
+  _resetNextDelta: false,
 
   // Last clamped delta (ms), exposed for any caller that wants it.
   lastDelta: 1000 / 60,
@@ -38,11 +39,16 @@ const GameLoop = {
    * Falls back to one fixed step if the input is missing/non-finite.
    */
   clampDelta: function (rawDelta) {
+    if (this._resetNextDelta) {
+      this._resetNextDelta = false;
+      this.lastDelta = this.FIXED_STEP_MS;
+      return this.lastDelta;
+    }
     const dt =
       typeof rawDelta === "number" && isFinite(rawDelta)
         ? rawDelta
         : this.FIXED_STEP_MS;
-    this.lastDelta = Math.min(Math.max(dt, 0), this.MAX_FRAME_MS);
+    this.lastDelta = Math.min(Math.max(dt, 0.1), this.MAX_FRAME_MS);
     return this.lastDelta;
   },
 
@@ -76,11 +82,12 @@ const GameLoop = {
   /** Reset accumulated time, e.g. after a long load or map regen. */
   reset: function () {
     this._accumulator = 0;
+    this._resetNextDelta = true;
   },
 };
 
 const FramePerf = {
-  LOG_INTERVAL_MS: 2000,
+  LOG_INTERVAL_MS: 1000,
   enabled: true,
   _frameStart: 0,
   _stageStart: 0,
@@ -138,14 +145,32 @@ const FramePerf = {
     this._sums.totalMs += now - this._frameStart;
     this._frames++;
     if (!this._lastLog) this._lastLog = now;
+
+    // Check if performance/debug overlay mode is active
+    const isPerfOverlayMode = (typeof performanceOverlayEnabled !== "undefined" && performanceOverlayEnabled) ||
+                              (typeof PerfOverlay !== "undefined" && PerfOverlay.enabled);
+    if (!isPerfOverlayMode) {
+      // Quiet mode: reset aggregates every second to avoid overflow, but do not log
+      if (now - this._lastLog >= this.LOG_INTERVAL_MS) {
+        this._frames = 0;
+        this._lastLog = now;
+        for (const key in this._sums) this._sums[key] = 0;
+      }
+      return;
+    }
+
     if (now - this._lastLog < this.LOG_INTERVAL_MS) return;
 
     const frames = Math.max(1, this._frames);
     const avg = (key) => Number((this._sums[key] / frames).toFixed(2));
-    const fps =
+    let fps =
       typeof frameRate === "function"
         ? Math.round(frameRate())
         : Math.round(1000 / Math.max(1, avg("totalMs")));
+    if (typeof fps !== 'number' || isNaN(fps) || !isFinite(fps) || fps <= 0 || fps > 10000) {
+      fps = 60;
+    }
+
     const perfObj = {
       fps,
       backend: typeof RENDER_BACKEND !== 'undefined' ? RENDER_BACKEND : 'p5',
@@ -183,8 +208,15 @@ const FramePerf = {
       fps = this._sums.totalMs > 0 ? 1000 / (this._sums.totalMs / frames) : 0;
     }
 
-    const browserRafFps =
+    if (typeof fps !== 'number' || isNaN(fps) || !isFinite(fps) || fps <= 0 || fps > 10000) {
+      fps = 60;
+    }
+
+    let browserRafFps =
       typeof BrowserRafSampler !== 'undefined' ? BrowserRafSampler.fps : fps;
+    if (typeof browserRafFps !== 'number' || isNaN(browserRafFps) || !isFinite(browserRafFps) || browserRafFps <= 0 || browserRafFps > 10000) {
+      browserRafFps = fps;
+    }
 
     return {
       fps,

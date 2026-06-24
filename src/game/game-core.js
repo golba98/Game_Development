@@ -429,11 +429,6 @@ function _confirmResize() {
     return;
   }
 
-  try {
-    createMapImage();
-  } catch (e) {
-    console.warn("createMapImage failed", e);
-  }
   redraw();
 }
 
