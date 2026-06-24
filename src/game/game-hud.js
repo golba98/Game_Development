@@ -146,7 +146,7 @@ function getHudLayout() {
   const sprintContainerW = Math.max(1, Math.min(Math.round(200 * uiScaleFactor), safeArea.width - Math.round(20 * uiScaleFactor)));
   const sprintContainerH = Math.round(32 * uiScaleFactor);
   const sprintShell = clampHudRect(
-    safeArea.left + Math.round(18 * uiScaleFactor),
+    safeArea.left,
     xpShell.y - gap - sprintContainerH - sprintPadY * 2,
     sprintContainerW + Math.round(20 * uiScaleFactor),
     sprintContainerH + sprintPadY * 2,
@@ -166,9 +166,9 @@ function getHudLayout() {
     gap,
     statBarW,
     statX,
-    healthY: safeArea.top + Math.round(6 * uiScaleFactor),
-    manaY: safeArea.top + Math.round(42 * uiScaleFactor),
-    scoreY: safeArea.top + Math.round(82 * uiScaleFactor),
+    healthY: safeArea.top + Math.round(10 * uiScaleFactor),
+    manaY: safeArea.top + Math.round(46 * uiScaleFactor),
+    scoreY: safeArea.top + Math.round(88 * uiScaleFactor),
     inventoryY: safeArea.top + Math.round(118 * uiScaleFactor),
     sprintY: sprintShell.y + sprintPadY,
     sprintContainerW,
@@ -524,7 +524,8 @@ function drawMinimap() {
 
 function drawScore() {
   const layout = getHudLayout();
-  const x = layout.statX;
+  const goldShellX = layout.safeArea.left;
+  const goldShellW = Math.round(150 * layout.uiScaleFactor);
   const y = layout.scoreY;
 
   push();
@@ -536,9 +537,12 @@ function drawScore() {
       pulseScale = map(now - lastScoreChange, 0, 200, 1.2, 1.0);
   }
 
-  translate(x + Math.round(70 * layout.uiScaleFactor), y - Math.round(5 * layout.uiScaleFactor));
+  const centerX = goldShellX + goldShellW / 2;
+  const centerY = y - Math.round(5 * layout.uiScaleFactor);
+
+  translate(centerX, centerY);
   scale(pulseScale);
-  translate(-(x + Math.round(70 * layout.uiScaleFactor)), -(y - Math.round(5 * layout.uiScaleFactor)));
+  translate(-centerX, -centerY);
 
   if (uiFont) textFont(uiFont);
 
@@ -546,20 +550,20 @@ function drawScore() {
   stroke(0, 100);
   strokeWeight(4);
   fill(0, 150);
-  rect(x - 5, y - Math.round(20 * layout.uiScaleFactor), Math.round(150 * layout.uiScaleFactor), Math.round(32 * layout.uiScaleFactor), 5);
+  rect(goldShellX, y - Math.round(20 * layout.uiScaleFactor), goldShellW, Math.round(32 * layout.uiScaleFactor), 5);
 
   // Inner Border
   stroke(255, 215, 0); // GOLD
   strokeWeight(2);
   noFill();
-  rect(x - 3, y - Math.round(18 * layout.uiScaleFactor), Math.round(146 * layout.uiScaleFactor), Math.round(28 * layout.uiScaleFactor), 3);
+  rect(goldShellX + 2, y - Math.round(18 * layout.uiScaleFactor), goldShellW - 4, Math.round(28 * layout.uiScaleFactor), 3);
 
   // Text
   noStroke();
   fill(255, 255, 255);
   textSize(Math.round(16 * layout.uiScaleFactor));
   textAlign(LEFT, CENTER);
-  text(t('gold_hud', playerScore), x + 5, y - Math.round(5 * layout.uiScaleFactor));
+  text(t('gold_hud', playerScore), goldShellX + Math.round(10 * layout.uiScaleFactor), y - Math.round(5 * layout.uiScaleFactor));
   pop();
 }
 
@@ -570,7 +574,9 @@ function drawInventory() {
   if (potions === 0 && speeds === 0) return;
 
   const layout = getHudLayout();
-  const startX = layout.statX;
+  const padX = Math.round(8 * layout.uiScaleFactor);
+  const padY = Math.round(8 * layout.uiScaleFactor);
+  const startX = layout.safeArea.left + padX;
   const startY = layout.inventoryY;
   const slotW = Math.round(48 * layout.uiScaleFactor);
   const slotH = Math.round(48 * layout.uiScaleFactor);
@@ -580,11 +586,11 @@ function drawInventory() {
   if (potions > 0) slots.push({ label: 'P', count: potions, col: [0, 200, 80] });
   if (speeds > 0) slots.push({ label: 'S', count: speeds, col: [0, 210, 240] });
 
-  const containerW = slots.length * (slotW + slotSpacing) + slotSpacing + 10;
-  const containerH = slotH + 20;
+  const containerW = slots.length * (slotW + slotSpacing) + slotSpacing + Math.round(10 * layout.uiScaleFactor);
+  const containerH = slotH + Math.round(20 * layout.uiScaleFactor);
 
   push();
-  drawHudPanelShell(startX, startY, containerW - 16, containerH - 16, { padX: 8, padY: 8, alpha: 180 });
+  drawHudPanelShell(startX, startY, containerW - padX * 2, containerH - padY * 2, { padX: padX, padY: padY, alpha: 180 });
 
   for (let i = 0; i < slots.length; i++) {
     const s = slots[i];
@@ -717,8 +723,8 @@ function drawHudWeatherClock() {
   const layout = getHudLayout();
   const safeArea = layout.safeArea;
   const clockRadius = Math.round(22 * layout.uiScaleFactor);
-  const clockX = layout.minimapX + layout.minimapSize - clockRadius;
-  const clockY = layout.minimapY + layout.minimapSize + Math.round(34 * layout.uiScaleFactor);
+  const clockX = layout.minimapX + layout.minimapSize / 2;
+  const clockY = layout.minimapY + layout.minimapSize + clockRadius + Math.round(12 * layout.uiScaleFactor);
   WeatherSystem.drawClock(clockX, Math.min(safeArea.bottom - clockRadius, clockY), clockRadius);
 }
 
@@ -749,25 +755,27 @@ function drawSprintMeter() {
   if (targetAlpha === 0) return;
 
   // Positioning: Bottom-Left
-  const startX = layout.statX;
+  const padX = Math.round(10 * layout.uiScaleFactor);
+  const padY = Math.round(8 * layout.uiScaleFactor);
+  const startX = layout.safeArea.left + padX;
   const startY = layout.sprintY;
-  const barW = layout.statBarW;
-  const barH = Math.max(10, Math.round(10 * layout.uiScaleFactor));
-
   const containerW = layout.sprintContainerW;
   const containerH = Math.round(32 * layout.uiScaleFactor);
+
+  const barW = containerW - Math.round(40 * layout.uiScaleFactor);
+  const barH = Math.max(10, Math.round(10 * layout.uiScaleFactor));
 
   push();
 
   // Themed Background Container
   if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) tint(255, targetAlpha);
-  drawHudPanelShell(startX, startY, containerW, containerH, { padX: Math.round(10 * layout.uiScaleFactor), padY: Math.round(8 * layout.uiScaleFactor), alpha: 200 * (targetAlpha / 255) });
+  drawHudPanelShell(startX, startY, containerW, containerH, { padX: padX, padY: padY, alpha: 200 * (targetAlpha / 255) });
   if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) noTint();
 
   // Bar Background (empty part)
   noStroke();
   fill(30, 30, 40, targetAlpha);
-  rect(startX + 30, startY + 11, barW, barH, 2);
+  rect(startX + Math.round(30 * layout.uiScaleFactor), startY + Math.round(11 * layout.uiScaleFactor), barW, barH, 2);
 
   // Bar Fill
   if (pct > 0.005) {
@@ -783,24 +791,24 @@ function drawSprintMeter() {
     }
 
     fill(r, g, b, alphaPulse);
-    rect(startX + 30, startY + 11, barW * pct, barH, 2);
+    rect(startX + Math.round(30 * layout.uiScaleFactor), startY + Math.round(11 * layout.uiScaleFactor), barW * pct, barH, 2);
 
     // Glossy highlight
     fill(255, 255, 255, 50 * (targetAlpha / 255));
-    rect(startX + 30, startY + 11, barW * pct, barH / 2, 2);
+    rect(startX + Math.round(30 * layout.uiScaleFactor), startY + Math.round(11 * layout.uiScaleFactor), barW * pct, barH / 2, 2);
   }
 
   // Cooldown Overlay (stamina flashing red)
   if (typeof sprintCooldownUntil === 'number' && now < sprintCooldownUntil) {
     if (Math.floor(now / 150) % 2 === 0) {
         fill(255, 50, 50, 120 * (targetAlpha / 255));
-        rect(startX + 30, startY + 11, barW, barH, 2);
+        rect(startX + Math.round(30 * layout.uiScaleFactor), startY + Math.round(11 * layout.uiScaleFactor), barW, barH, 2);
     }
   }
 
   // Icon (Energy/Lightning)
-  const ix = startX + 12;
-  const iy = startY + containerH / 2 + 3;
+  const ix = startX + Math.round(12 * layout.uiScaleFactor);
+  const iy = startY + containerH / 2 + Math.round(3 * layout.uiScaleFactor);
   noStroke();
 
   if (sprintActive) {
@@ -813,13 +821,13 @@ function drawSprintMeter() {
 
   // Lightning Bolt Shape
   beginShape();
-  vertex(ix, iy - 10);
-  vertex(ix + 6, iy - 10);
-  vertex(ix - 2, iy);
-  vertex(ix + 4, iy);
-  vertex(ix - 4, iy + 10);
+  vertex(ix, iy - Math.round(10 * layout.uiScaleFactor));
+  vertex(ix + Math.round(6 * layout.uiScaleFactor), iy - Math.round(10 * layout.uiScaleFactor));
+  vertex(ix - Math.round(2 * layout.uiScaleFactor), iy);
+  vertex(ix + Math.round(4 * layout.uiScaleFactor), iy);
+  vertex(ix - Math.round(4 * layout.uiScaleFactor), iy + Math.round(10 * layout.uiScaleFactor));
   vertex(ix, iy);
-  vertex(ix - 6, iy);
+  vertex(ix - Math.round(6 * layout.uiScaleFactor), iy);
   endShape(CLOSE);
 
   pop();
