@@ -348,6 +348,8 @@ function showFilePickerToLoadActiveMap() {
 }
 
 // Writes all current settings and keybinds to localStorage; debounced unless immediate=true.
+let lastPersistedSettingsJson = null;
+
 function persistSavedSettings(immediate = false) {
   const commit = () => {
     try {
@@ -373,9 +375,18 @@ function persistSavedSettings(immediate = false) {
         screenShakeEnabled,
         showParticles,
         showFireflyLighting,
+        v: 1, // settings version
       };
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-      localStorage.setItem(KEYBINDS_KEY, JSON.stringify(playerKeybinds));
+      const settingsJson = JSON.stringify(settings);
+      const keybindsJson = JSON.stringify(playerKeybinds);
+
+      if (settingsJson === lastPersistedSettingsJson && keybindsJson === localStorage.getItem(KEYBINDS_KEY)) {
+        return; // No actual change, skip writing and posting message
+      }
+
+      lastPersistedSettingsJson = settingsJson;
+      localStorage.setItem(SETTINGS_KEY, settingsJson);
+      localStorage.setItem(KEYBINDS_KEY, keybindsJson);
       verboseLog('[game] persisted settings', settings);
       if (window.parent && window.parent !== window) {
         window.parent.postMessage({
@@ -408,7 +419,22 @@ function loadLocalSettings() {
   try {
     const stored = localStorage.getItem(SETTINGS_KEY) || localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY);
     if (!stored) return;
-    const parsed = JSON.parse(stored);
+    let parsed = JSON.parse(stored);
+
+    // Migration: Migrate implicit bug-induced "unlimited" defaults to stable 60 FPS
+    if (parsed && !parsed.v) {
+      if (parsed.fpsMode === "unlimited" || parsed.targetFps === 0) {
+        parsed.fpsMode = "60";
+        parsed.targetFps = 60;
+      }
+      parsed.v = 1;
+      try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(parsed));
+      } catch (e) {}
+    }
+
+    lastPersistedSettingsJson = JSON.stringify(parsed);
+
     if (typeof parsed.masterVol        === 'number')  masterVol           = parsed.masterVol;
     if (typeof parsed.musicVol         === 'number')  musicVol            = parsed.musicVol;
     if (typeof parsed.sfxVol           === 'number')  sfxVol              = parsed.sfxVol;
