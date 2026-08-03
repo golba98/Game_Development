@@ -468,6 +468,50 @@ function showToast(message, type = 'info', duration = 3000) {
   }
 }
 
+// Displays a centred, non-blocking phase title while the lighting continues to
+// crossfade underneath it. Reusing one node prevents stacked banners after lag.
+function showTimeTransition(title, subtitle, phase = 'day') {
+  try {
+    const old = document.getElementById('game-time-transition');
+    if (old) old.remove();
+
+    const el = document.createElement('div');
+    el.id = 'game-time-transition';
+    el.dataset.phase = phase;
+    el.style.cssText = [
+      'position:fixed', 'top:13%', 'left:50%', 'z-index:99990',
+      'transform:translate(-50%,-12px)', 'pointer-events:none',
+      'min-width:min(420px,72vw)', 'padding:12px 24px', 'text-align:center',
+      'font-family:PixelGameFont,monospace', 'border:2px solid rgba(255,214,120,.75)',
+      'border-radius:4px', 'background:rgba(5,8,18,.82)',
+      'box-shadow:0 12px 34px rgba(0,0,0,.65),inset 0 0 18px rgba(90,130,255,.12)',
+      'opacity:0', 'transition:opacity .6s ease,transform .6s ease'
+    ].join(';');
+
+    const colors = { dusk: '#ffbd73', night: '#a9c8ff', dawn: '#ffe0a3', day: '#fff4bd' };
+    const heading = document.createElement('div');
+    heading.textContent = title;
+    heading.style.cssText = `color:${colors[phase] || colors.day};font-size:clamp(20px,3vw,34px);text-shadow:0 3px 0 #000;letter-spacing:1px`;
+    const detail = document.createElement('div');
+    detail.textContent = subtitle;
+    detail.style.cssText = 'margin-top:6px;color:#f5f2e6;font-size:clamp(10px,1.4vw,14px);text-shadow:0 2px 0 #000';
+    el.append(heading, detail);
+    document.body.appendChild(el);
+
+    requestAnimationFrame(() => {
+      el.style.opacity = '1';
+      el.style.transform = 'translate(-50%,0)';
+    });
+    setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transform = 'translate(-50%,-12px)';
+      setTimeout(() => el.remove(), 650);
+    }, 3000);
+  } catch (error) {
+    console.warn('[game] time transition UI failed', error);
+  }
+}
+
 
 // ── Error display helper ──
 (function () {

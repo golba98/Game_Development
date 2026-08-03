@@ -12,21 +12,32 @@ const PLAYER_BBOX_HEIGHT_SCALE = 1.25;
 // Tracks previous simulation state to detect pause→resume edge for perf-tracker reset.
 let _wasSimulating = null;
 const _missingHudHookWarnings = new Set();
+let _lastPixiTickErrorMessage = "";
+let _lastPixiTickErrorAt = 0;
 
-// Continuously samples the raw browser rAF rate — independent of any FPS cap.
-// Runs a lightweight parallel rAF loop that never renders.
+// Samples raw browser rAF only while a performance overlay is open. Keeping a
+// second rAF loop alive in normal gameplay wastes CPU and used to allocate a new
+// bound callback plus reduce a 120-item array on every display frame.
 const BrowserRafSampler = {
   fps: 0,
   avgDeltaMs: 16.67,
   _samples: [],
   _lastTime: null,
   _active: false,
+  _boundTick: null,
 
   start: function () {
     if (this._active) return;
     this._active = true;
     this._lastTime = performance.now();
-    requestAnimationFrame(this._tick.bind(this));
+    if (!this._boundTick) this._boundTick = this._tick.bind(this);
+    requestAnimationFrame(this._boundTick);
+  },
+
+  stop: function () {
+    this._active = false;
+    this._lastTime = null;
+    this._samples.length = 0;
   },
 
   _tick: function (now) {
@@ -41,9 +52,37 @@ const BrowserRafSampler = {
         this.fps = 1000 / this.avgDeltaMs;
       }
     }
-    requestAnimationFrame(this._tick.bind(this));
+    requestAnimationFrame(this._boundTick);
   },
 };
+
+function isRuntimePerfEnabled() {
+  return (
+    (typeof performanceOverlayEnabled !== "undefined" && performanceOverlayEnabled) ||
+    (typeof PerfOverlay !== "undefined" && PerfOverlay.enabled)
+  );
+}
+
+function handlePixiTickError(error) {
+  const message = error && error.message ? String(error.message) : String(error);
+  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+
+  // Generation errors must return to phase 1 instead of throwing forever on
+  // a completed loading bar. The run ID prevents stale phase data being reused.
+  if (genPhase > 0) {
+    genPhase = GENPHASE_PART1;
+    genTimer = (typeof millis === "function" ? millis() : now) + 100;
+    genTempData = { runId: generationRunId, clearArea: null };
+  }
+
+  // Keep the console useful: report a repeated frame-loop failure at most once
+  // per second rather than adding the same stack on every display frame.
+  if (message !== _lastPixiTickErrorMessage || now - _lastPixiTickErrorAt >= 1000) {
+    console.error('[pixi-tick] draw() threw:', error);
+    _lastPixiTickErrorMessage = message;
+    _lastPixiTickErrorAt = now;
+  }
+}
 
 function callHudHook(hookName, opts = {}) {
   const hook =
@@ -74,13 +113,16 @@ function _pixiGameTick() {
   window.deltaTime = Math.min(periodMs, 50); // spiral-of-death clamp
   window.frameCount = (window.frameCount || 0) + 1;
 
-  const workStart = performance.now();
-  try { draw(); } catch (e) { console.error('[pixi-tick] draw() threw:', e); }
-  const workMs = performance.now() - workStart;
-
-  window._gameFramePeriodMs = periodMs;
-  window._gameFrameWorkMs   = workMs;
-  window._gameFrameWaitMs   = Math.max(0, periodMs - workMs);
+  if (isRuntimePerfEnabled()) {
+    const workStart = performance.now();
+    try { draw(); } catch (e) { handlePixiTickError(e); }
+    const workMs = performance.now() - workStart;
+    window._gameFramePeriodMs = periodMs;
+    window._gameFrameWorkMs   = workMs;
+    window._gameFrameWaitMs   = Math.max(0, periodMs - workMs);
+  } else {
+    try { draw(); } catch (e) { handlePixiTickError(e); }
+  }
 }
 
 function setup() {
@@ -168,9 +210,6 @@ function setup() {
     PixiApp.app.ticker.add(_pixiGameTick);
     PixiApp.app.ticker.start();
   }
-
-  // Persistent browser rAF diagnostic sampler — runs regardless of backend.
-  BrowserRafSampler.start();
 
   ensureTextSizeOverride();
 
@@ -271,11 +310,7 @@ function setup() {
   let serverFetchPromise = Promise.resolve(false);
 
   try {
-    const loc = window.location;
-    const isLocal =
-      loc.hostname === "localhost" || loc.hostname === "127.0.0.1";
-    const forceServer = urlParams.get("useServer") === "1";
-    if (isLocal || forceServer) {
+    if (typeof shouldAttemptMapFetch === "function" && shouldAttemptMapFetch()) {
       serverFetchPromise = tryFetchActiveMap();
     }
   } catch (e) {}
@@ -323,7 +358,10 @@ function setup() {
       serverFetchPromise.finally(() => {
         setTimeout(() => {
           if (typeof mapLoadComplete === "undefined" || !mapLoadComplete) {
-            if (genPhase === 0) generateMap();
+            // Do not start a second world while a phased generation is already
+            // active. Successful phase 2 marks mapLoadComplete before this
+            // fallback is allowed to run.
+            if (genPhase === 0 && !playerPosition && !mapStates) generateMap();
           }
         }, 1000);
       });
@@ -441,6 +479,9 @@ function createFullWindowCanvas() {
 }
 
 function draw() {
+  if (isRuntimePerfEnabled()) BrowserRafSampler.start();
+  else BrowserRafSampler.stop();
+
   if (typeof FramePerf !== "undefined") FramePerf.beginFrame();
 
   try {
@@ -462,13 +503,32 @@ function draw() {
 
   if (typeof FramePerf !== "undefined") FramePerf.start("update");
 
-  if (typeof WeatherSystem !== "undefined" && SceneManager.isSimulating()) {
-    const wasNight = isNightTime();
+  // Training is a fixed daylight scene. Correct stale weather state immediately
+  // (including state retained after using the tutorial reset command).
+  if (
+    isTutorialMap &&
+    typeof WeatherSystem !== "undefined" &&
+    (WeatherSystem.cycle !== CYCLE_DAY_START || WeatherSystem.currentColor[3] !== 0)
+  ) {
+    WeatherSystem.reset();
+  }
+
+  if (typeof WeatherSystem !== "undefined" && SceneManager.isSimulating() && !isTutorialMap) {
+    const previousPhase = typeof WeatherSystem.getPhase === 'function'
+      ? WeatherSystem.getPhase()
+      : (isNightTime() ? 'night' : 'day');
     WeatherSystem.update(gameDelta);
-    const nowNight = isNightTime();
-    // Spawn ghosts when night begins; despawn when night ends
-    if (!wasNight && nowNight) spawnNightGhosts();
-    else if (wasNight && !nowNight) despawnGhosts();
+    const currentPhase = typeof WeatherSystem.getPhase === 'function'
+      ? WeatherSystem.getPhase()
+      : (isNightTime() ? 'night' : 'day');
+
+    if (previousPhase !== currentPhase) {
+      if (currentPhase === 'night') {
+        spawnNightGhosts();
+      } else if (currentPhase === 'dawn') {
+        despawnGhosts();
+      }
+    }
   }
 
   if (genPhase > 0) {
@@ -489,7 +549,11 @@ function draw() {
         if (typeof FramePerf !== "undefined") FramePerf.endFrame();
         return;
       }
-      generateMap_Part1();
+      if (!generateMap_Part1()) {
+        genTimer = millis() + 100;
+        if (typeof FramePerf !== "undefined") FramePerf.endFrame();
+        return;
+      }
       overlayMessage = "Roughening & Eroding...";
       updateLoadingOverlayDom();
       genTimer = millis() + 800;
@@ -503,7 +567,12 @@ function draw() {
         if (typeof FramePerf !== "undefined") FramePerf.endFrame();
         return;
       }
-      generateMap_Part2();
+      if (!generateMap_Part2()) {
+        genPhase = GENPHASE_PART1;
+        genTimer = millis() + 100;
+        if (typeof FramePerf !== "undefined") FramePerf.endFrame();
+        return;
+      }
       genPhase = 0;
       showLoadingOverlay = false;
       completeLoadingProgress();
@@ -602,7 +671,9 @@ function draw() {
   if (RENDER_BACKEND === 'pixi' && typeof PixiApp !== 'undefined' && PixiApp.app) {
     clear();
   } else {
-    background(34, 139, 34);
+    // Keep uncovered areas transparent so #game-root's repeating forest fill
+    // shows around maps smaller than the viewport.
+    clear();
   }
 
   // START WORLD TRANSFORM
@@ -670,7 +741,7 @@ function draw() {
       }
 
       // VICTORY CHECK
-      if (enemies && enemies.length === 0 && !hasAnyCoins() && !victoryShown) {
+      if (!isTutorialMap && enemies && enemies.length === 0 && !hasAnyCoins() && !victoryShown) {
         triggerVictory();
       }
 
@@ -683,12 +754,29 @@ function draw() {
           portalPos.y,
         );
         if (d < 0.8) {
-          verboseLog("[game] Entered Portal! Generating next map.");
+          const completedTraining = isTutorialMap;
+          verboseLog(completedTraining
+            ? "[game] Training portal entered. Starting the first world."
+            : "[game] Entered Portal! Generating next level.");
           isPortalActive = false;
           victoryShown = false;
-          generateMap(); // Create a whole new world
+          if (completedTraining) {
+            // Completion belongs to the exit action, not the last coin pickup.
+            // Set both persisted and in-memory state before map generation so
+            // this cannot accidentally reload the tutorial start.
+            localStorage.setItem("tutorialComplete", "true");
+            isTutorialMap = false;
+            currentLevel = 1;
+          } else {
+            currentLevel++;
+          }
+          generateMap();
           try {
-            showToast(t("world_cleared"), "info", 3500);
+            showToast(
+              completedTraining ? "Training complete — entering the forest" : t("world_cleared"),
+              "info",
+              3500,
+            );
           } catch (e) {}
         }
       }
@@ -715,7 +803,7 @@ function draw() {
     }
   }
 
-  if (typeof Renderer !== "undefined")
+  if (!isTutorialMap && typeof Renderer !== "undefined")
     Renderer.drawNightOverlay(drawCamX, drawCamY);
 
   pop(); // END WORLD TRANSFORM
@@ -761,8 +849,12 @@ function draw() {
     callHudHook("drawLeftHud");
     callHudHook("drawBossHud");
     callHudHook("drawCompass");
-    callHudHook("drawDifficultyBadge");
-    callHudHook("drawHudWeatherClock", { optional: true });
+    // Difficulty and time-of-day are not active training concepts. Removing
+    // them also declutters the top edge while the tutorial checklist is shown.
+    if (!isTutorialMap) {
+      callHudHook("drawDifficultyBadge");
+      callHudHook("drawHudWeatherClock", { optional: true });
+    }
 
     if (showMinimap) {
       if (typeof FramePerf !== "undefined") FramePerf.start("minimap");
@@ -799,18 +891,15 @@ function draw() {
 
   pop(); // End Top level Push
 
-  drawVignette();
+  // The vignette reads as darkness on the compact training map; reserve it for
+  // the actual forest levels where the day/night system is active.
+  if (!isTutorialMap) drawVignette();
 
   // Pixi entity sprites (overlay/decor/coin/portal) — update after Renderer.drawWorld()
-  // has built currentDrawables, and before PixiApp.render() flushes the GPU frame.
+  // has built currentDrawables. PIXI.Application's low-priority ticker callback
+  // renders the updated stage once after this game callback returns.
   if (RENDER_BACKEND === 'pixi' && typeof PixiEntityRenderer !== 'undefined') {
     PixiEntityRenderer.update();
-  }
-
-  // Flush the Pixi WebGL frame (terrain + entity sprites).
-  if (RENDER_BACKEND === 'pixi' && typeof PixiApp !== 'undefined' && PixiApp.app) {
-    if (typeof FramePerf !== 'undefined') FramePerf.start('pixiFlush');
-    PixiApp.render();
   }
 
   // Roll input edge-latches at frame end so wasPressed/wasReleased report

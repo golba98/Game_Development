@@ -41,6 +41,10 @@ function loadTutorialMap() {
     mapStates = new Uint8Array(logicalW * logicalH);
     terrainLayer = new Uint8Array(logicalW * logicalH);
 
+    // Training is intentionally daylight-only so the teaching prompts and
+    // route remain consistently readable.
+    if (typeof WeatherSystem !== "undefined") WeatherSystem.reset();
+
     const W = logicalW,
       H = logicalH;
     // Local helper to set a single tile
@@ -255,7 +259,6 @@ function handleTutorialLogic() {
     }
     if (!hasAnyCoins()) {
       isPortalActive = true;
-      localStorage.setItem("tutorialComplete", "true");
       _advanceTutorial(TUTORIAL_STEP_PORTAL, t("tut_coins_collected"));
     }
     if (pX < TUTORIAL_GAP1_X && pY < TUTORIAL_WALL_Y)
@@ -346,8 +349,13 @@ function drawTutorial() {
     t("tut_step_collect"),
     t("tut_step_portal"),
   ];
-  const listX = 15,
-    listY = 80,
+  const hudLayout = typeof getHudLayout === "function" ? getHudLayout() : null;
+  const listX = hudLayout ? hudLayout.HUD_MARGIN : 15,
+    // Reserve a separate lower-left lane for training objectives. This must not
+    // depend on the compact stat-stack math: health/mana/gold occupy the top.
+    listY = hudLayout
+      ? Math.max(240, hudLayout.scoreY + Math.round(120 * hudLayout.uiScaleFactor))
+      : 240,
     rowH = 22,
     panelW = 110;
   const panelH = stepNames.length * rowH + 16;

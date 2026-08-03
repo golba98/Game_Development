@@ -6,6 +6,17 @@ const TERMINAL_PANEL_WIDTH = 700; // px — terminal overlay width
 const TERMINAL_PANEL_HEIGHT = 450; // px — terminal overlay height
 const TERMINAL_SPAWN_DIST = 10; // tile radius used by /spawn boss
 
+// Capture terminal shortcuts at the window level so they work regardless of
+// canvas focus, p5 key normalization, or keyboard layout. F2 is the canonical
+// shortcut; Backquote (`/~) is retained as a convenient alternative.
+window.addEventListener('keydown', event => {
+  const isTerminalShortcut = event.key === 'F2' || event.code === 'Backquote';
+  if (!isTerminalShortcut || event.repeat) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  toggleTerminal();
+}, { capture: true });
+
 // Shows or hides the debug terminal overlay; creates it on first use.
 function toggleTerminal() {
   if (!terminalEl) createTerminalUI();
@@ -109,7 +120,7 @@ function createTerminalUI() {
   terminalEl.innerHTML = `
         <div id="terminal-header">
             <span id="terminal-title">SYSTEM COMMAND INTERFACE</span>
-            <span id="terminal-close">ESC to Close</span>
+            <span id="terminal-close">F2 / ESC to Close</span>
         </div>
         <div id="terminal-history">
             <div class="terminal-log">CORE OS [Version 1.0.42]</div>
@@ -155,7 +166,7 @@ function createTerminalUI() {
       }
     } else if (e.key === "Escape") {
       toggleTerminal();
-    } else if (e.key === "'" && e.ctrlKey) {
+    } else if (e.key === "F2" || e.code === "Backquote" || (e.key === "'" && e.ctrlKey)) {
       e.preventDefault();
       toggleTerminal();
     }
@@ -331,36 +342,31 @@ function processTerminalCommand(cmd) {
     if (typeof WeatherSystem === "undefined") {
       log("ERROR: Weather system not active.", "terminal-error");
     } else if (parts[1] === "dawn") {
-      WeatherSystem.cycle = 0.2; // CYCLE_NIGHT_END
-      WeatherSystem.calculateColor();
-      if (WeatherSystem.lightMap) WeatherSystem.lightMap.clear();
-      despawnGhosts();
+      WeatherSystem.transitionTo(CYCLE_NIGHT_END);
       log(
-        "SUCCESS: Temporal shift complete. Time set to DAWN.",
+        "SUCCESS: Dawn transition started.",
         "terminal-success",
       );
     } else if (parts[1] === "day") {
-      WeatherSystem.cycle = 0.3; // CYCLE_DAY_START
-      WeatherSystem.calculateColor();
-      if (WeatherSystem.lightMap) WeatherSystem.lightMap.clear();
-      despawnGhosts();
+      WeatherSystem.transitionTo(CYCLE_DAY_START);
       log(
-        "SUCCESS: Temporal shift complete. Time set to DAY.",
+        "SUCCESS: Daylight transition started.",
         "terminal-success",
       );
     } else if (parts[1] === "dusk" || parts[1] === "sunset") {
-      WeatherSystem.cycle = 0.6; // CYCLE_DAY_END
-      WeatherSystem.calculateColor();
+      WeatherSystem.transitionTo(CYCLE_DAY_END);
       log(
-        "SUCCESS: Temporal shift complete. Time set to DUSK.",
+        "SUCCESS: Dusk transition started.",
         "terminal-success",
       );
     } else if (parts[1] === "night") {
-      WeatherSystem.cycle = 0.9; // CYCLE_NIGHT_START
-      WeatherSystem.calculateColor();
-      spawnNightGhosts();
+      if (isTutorialMap) {
+        log("TRAINING LOCK: Night mode begins after entering the forest.", "terminal-hint");
+        return;
+      }
+      WeatherSystem.transitionTo(CYCLE_NIGHT_START);
       log(
-        "SUCCESS: Temporal shift complete. Time set to NIGHT. Ghosts emerge from the shadows...",
+        "SUCCESS: Night transition started. Ghosts arrive when darkness settles.",
         "terminal-success",
       );
     } else {

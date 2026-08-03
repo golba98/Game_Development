@@ -38,8 +38,10 @@ function isInClearRect(x, y, startX, endX, startY, endY) {
 
 // Entry point: clears state and kicks off phased map generation.
 function generateMap() {
+  generationRunId++;
   genPhase = 0;
   clearPreviousGameState();
+  genTempData = { runId: generationRunId, clearArea: null };
 
   isTutorialMap = (localStorage.getItem('tutorialComplete') !== 'true');
 
@@ -54,8 +56,14 @@ function generateMap() {
 // Phase 1: allocates map arrays and fills terrain with noise or scatter.
 function generateMap_Part1() {
   verboseLog('[game] Generating Part 1 (Base)...');
+  const runId = generationRunId;
 
-  if (!W || !H) return;
+  // Portal generation can begin during the same frame that the tutorial state
+  // is cleared. Recover viewport dimensions from p5/the window rather than
+  // silently advancing with no phase data.
+  if (!W) W = (typeof width === 'number' && width > 0) ? width : window.innerWidth;
+  if (!H) H = (typeof height === 'number' && height > 0) ? height : window.innerHeight;
+  if (!W || !H) return false;
 
   logicalW = FIXED_MAP_WIDTH_TILES;
   logicalH = FIXED_MAP_HEIGHT_TILES;
@@ -94,12 +102,17 @@ function generateMap_Part1() {
       }
   }
 
-  genTempData = { clearArea };
+  genTempData = { runId, clearArea };
+  return true;
 }
 
 // Phase 2: carves rivers, places hills, spawns enemies/coins/trees, and finalises the map.
 function generateMap_Part2() {
   verboseLog('[game] Generating Part 2 (Roughness)...');
+  if (!genTempData || genTempData.runId !== generationRunId || !genTempData.clearArea) {
+    verboseLog('[game] Phase 2 data was stale or incomplete; retrying Phase 1.');
+    return false;
+  }
   enemies = []; // CLEAR ALL PREVIOUS ENEMIES TO PREVENT DUPLICATES
   const { clearArea } = genTempData;
 
@@ -279,6 +292,8 @@ function generateMap_Part2() {
   redraw();
   autosaveMap();
   persistActiveMapToServer('generated');
+  mapLoadComplete = true;
+  return true;
 }
 
 // Calculates the protected clear area (player start zone) dimensions and bounds.

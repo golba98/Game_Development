@@ -5,6 +5,7 @@
 const COMBO_WINDOW_MS = 800; // ms within which successive attacks chain into a combo
 const ESC_TOGGLE_DEBOUNCE_MS = 300; // ms minimum between ESC-triggered pause toggles
 const POTION_HEAL_AMOUNT = 2; // HP restored when consuming a potion from inventory
+const SPEED_POTION_DURATION_MS = 8000;
 const MOUSE_ATTACK_MIN_DIST = 0.5; // minimum tile distance from player for mouse-aim to override key direction
 
 // Initiates a player attack: consumes stamina, resolves direction, advances combo counter.
@@ -165,10 +166,6 @@ function togglePauseMenuFromEscape() {
 
 // Routes keyboard shortcuts: terminal toggle, jump, map regen, asset toggle, inventory use.
 function keyPressed() {
-  if (key === "'" && keyIsDown(CONTROL)) {
-    toggleTerminal();
-    return false;
-  }
   if (isTerminalOpen) return; // Disable other inputs while terminal is open
 
   if (activeTutorial) {
@@ -278,6 +275,7 @@ function keyPressed() {
       if (playerHealth < maxHealth) {
         playerInventory["potion"]--;
         playerHealth = Math.min(maxHealth, playerHealth + POTION_HEAL_AMOUNT);
+        lastHealthChange = typeof millis === "function" ? millis() : Date.now();
         spawnDamageText(
           `+${POTION_HEAL_AMOUNT} HP`,
           playerPosition.x,
@@ -301,16 +299,18 @@ function keyPressed() {
   if (key === "2") {
     if (playerInventory && playerInventory["speed"] > 0) {
       playerInventory["speed"]--;
+      const now = typeof millis === "function" ? millis() : performance.now();
+      speedPotionBoostUntil = Math.max(speedPotionBoostUntil, now) + SPEED_POTION_DURATION_MS;
       if (typeof sprintRemainingMs === "number") {
         const maxDur =
           typeof playerMaxStamina !== "undefined"
             ? playerMaxStamina * 30
             : 3000;
         sprintRemainingMs = maxDur;
-        sprintActive = true;
+        sprintCooldownUntil = 0;
       }
       spawnDamageText(
-        t("speed_up"),
+        `${t("speed_up")} 8s`,
         playerPosition.x,
         playerPosition.y,
         [255, 215, 0],
@@ -342,7 +342,10 @@ function keyPressed() {
             : Math.hypot(e.x - playerPosition.x, e.y - playerPosition.y);
         if (d <= 3.5) {
           const dmg = playerBaseDamage * 2;
-          e.health = (e.health || 1) - dmg;
+          const currentEnemyHealth = Number.isFinite(e.health)
+            ? e.health
+            : (e.maxHealth || 1);
+          e.health = currentEnemyHealth - dmg;
           spawnDamageText(`-${dmg}`, e.x, e.y, [255, 100, 255]);
           e.hurtTimer = 300;
 
@@ -350,8 +353,12 @@ function keyPressed() {
             e.y - playerPosition.y,
             e.x - playerPosition.x,
           );
-          e.x += Math.cos(angle) * 1.5;
-          e.y += Math.sin(angle) * 1.5;
+          applyPlayerKnockback(
+            e,
+            Math.cos(angle) * 1.5,
+            Math.sin(angle) * 1.5,
+            { crushOnSolid: false },
+          );
 
           if (e.health <= 0) {
             spawnSplat(e.x, e.y, e.type === "mantis" ? "acid" : "egg");
@@ -447,7 +454,10 @@ function keyPressed() {
                 : Math.hypot(e.x - this.x, e.y - this.y);
             if (d <= 0.8) {
               const dmg = playerBaseDamage;
-              e.health = (e.health || 1) - dmg;
+              const currentEnemyHealth = Number.isFinite(e.health)
+                ? e.health
+                : (e.maxHealth || 1);
+              e.health = currentEnemyHealth - dmg;
               spawnDamageText(`-${dmg}`, e.x, e.y, [200, 200, 255]);
               e.hurtTimer = 200;
               if (e.health <= 0) {
@@ -543,14 +553,3 @@ try {
 } catch (e) {
   /* ignore */
 }
-
-// ── WASD + P key handler ──
-window.addEventListener("keydown", (ev) => {
-  if (isGameOver || isTerminalOpen) return;
-  const k = ev.key ? ev.key.toUpperCase() : "";
-  if (k === "W" || k === "A" || k === "S" || k === "D") {
-    try {
-      tryMoveDirection(k);
-    } catch (e) {}
-  }
-});

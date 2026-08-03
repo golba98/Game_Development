@@ -121,9 +121,7 @@ let showStars = true;
 let screenShakeEnabled = true;
 let showParticles = true;
 let showFireflyLighting = true;
-// Default to a capped 60fps for stable frame pacing and lower drawImage cost.
-// The settings UI now exposes 60 / 120 / Unlimited; Unlimited is stored as 0
-// and applied internally as natural requestAnimationFrame pacing.
+// One fixed render target keeps frame pacing consistent on every device.
 let targetFps = DEFAULT_SETTINGS.targetFps;
 
 let _lastLoggedFpsMode = null;
@@ -131,15 +129,15 @@ let _lastLoggedFpsTarget = null;
 let _lastLoggedFpsCanvas = null;
 
 function applyGameFpsMode(rawModeOrTarget, reason) {
-  const fpsMode = normalizeFpsMode(rawModeOrTarget, normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode));
-  const requestedTargetFps = getFpsTargetForMode(fpsMode);
+  const fpsMode = '60';
+  const requestedTargetFps = 60;
   targetFps = requestedTargetFps;
   let appliedP5Target = requestedTargetFps;
 
   if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi') {
     // Pixi backend: control via ticker.maxFPS; p5.frameRate() must not gate frames.
     if (typeof PixiApp !== 'undefined' && PixiApp.app && PixiApp.app.ticker) {
-      PixiApp.app.ticker.maxFPS = (fpsMode === 'unlimited') ? 0 : requestedTargetFps;
+      PixiApp.app.ticker.maxFPS = requestedTargetFps;
     }
     if (typeof frameRate === 'function') frameRate(Number.POSITIVE_INFINITY);
   } else {
@@ -612,6 +610,7 @@ const BACK_BUTTON_VERTICAL_OFFSET = 120;
 let genPhase = 0;
 let genTimer = 0;
 let genTempData = {};
+let generationRunId = 0;
 
 const FIXED_VIRTUAL_HEIGHT = 900;
 const FIXED_MAP_WIDTH_TILES = 150;
@@ -619,9 +618,11 @@ const FIXED_MAP_HEIGHT_TILES = 150;
 let gameScale = 1;
 
 // --- Render performance ---
-// Cap devicePixelRatio so HiDPI/retina displays don't render ~4x the pixels.
-// Pixel-art look is preserved because image smoothing is disabled.
-const MAX_PIXEL_DENSITY = 2;
+// The game uses two fullscreen canvases in Pixi mode (WebGL world + p5 HUD).
+// Rendering both at retina density quadruples their fragment/pixel workload and
+// is especially expensive at 1440p/4K. One backing pixel per CSS pixel is the
+// appropriate default for deliberately pixelated, nearest-neighbour artwork.
+const MAX_PIXEL_DENSITY = 1;
 
 // Dev-only render instrumentation. Enable with ?renderstats=1 in the URL.
 // `lastCount` is the previous frame's total drawImage calls (captured at the
@@ -799,6 +800,7 @@ let sprintActive = false;
 let sprintEndMillis = 0;
 let sprintCooldownUntil = 0;
 let sprintRemainingMs = SPRINT_MAX_DURATION_MS;
+let speedPotionBoostUntil = 0;
 let sprintLastUpdate = 0;
 let smoothSprintPct = 1.0; // starts at 1.0 = full bar; animated toward sprintEnergy each frame
 let lerpedSprintPct = 1.0;

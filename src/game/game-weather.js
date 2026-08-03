@@ -16,8 +16,9 @@ const STAR_SEED = 54321;
 
 const WeatherSystem = {
   // Config
-  dayDurationSeconds: 120, // Reduced from 300 to 120 for faster cycle
+  dayDurationSeconds: 240, // Long enough for dusk and dawn to feel natural
   cycle: CYCLE_DAY_START, // Start at full day to avoid initial "orange" filter
+  timeTransition: null,
 
   // Colors (r, g, b, alpha) — standard dark-to-light transition
   colors: {
@@ -206,15 +207,47 @@ const WeatherSystem = {
 
   /** Advances the day/night cycle by `dt` ms and recalculates the overlay colour. */
   update: function (dt) {
-    const increment = dt / 1000 / this.dayDurationSeconds;
-    this.cycle = (this.cycle + increment) % 1.0;
+    if (this.timeTransition) {
+      const transition = this.timeTransition;
+      transition.elapsed = Math.min(transition.duration, transition.elapsed + dt);
+      const progress = this.easeInOutSine(transition.elapsed / transition.duration);
+      this.cycle = (transition.start + transition.distance * progress) % 1.0;
+      if (transition.elapsed >= transition.duration) this.timeTransition = null;
+    } else {
+      const increment = dt / 1000 / this.dayDurationSeconds;
+      this.cycle = (this.cycle + increment) % 1.0;
+    }
     this.starTime += dt / 1000;
     this.calculateColor();
+  },
+
+  // Moves forward through the real dawn/dusk phases instead of snapping the
+  // world to a new lighting state. Used by the terminal time command.
+  transitionTo: function (targetCycle, durationMs = 12000) {
+    const target = ((Number(targetCycle) % 1) + 1) % 1;
+    const distance = (target - this.cycle + 1) % 1;
+    if (distance < 0.0001) return;
+    this.timeTransition = {
+      start: this.cycle,
+      distance,
+      elapsed: 0,
+      duration: Math.max(1000, Number(durationMs) || 12000),
+    };
+  },
+
+  /** Returns the named phase used by gameplay events and transition UI. */
+  getPhase: function () {
+    const t = this.cycle;
+    if (t < CYCLE_NIGHT_END || t >= CYCLE_NIGHT_START) return 'night';
+    if (t < CYCLE_DAY_START) return 'dawn';
+    if (t < CYCLE_DAY_END) return 'day';
+    return 'dusk';
   },
 
   /** Resets the cycle to the start of day and clears the light map. */
   reset: function () {
     this.cycle = CYCLE_DAY_START;
+    this.timeTransition = null;
     this.starTime = 0;
     this.calculateColor();
     if (this.lightMap) this.lightMap.clear();

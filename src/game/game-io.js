@@ -10,6 +10,27 @@ const SERVER_MAP_URL_ABSOLUTE   = 'http://localhost:3000/maps/active_map.json';
 const SERVER_MAP_URL_RELATIVE   = '/maps/active_map.json';
 const SERVER_SAVE_URL           = 'http://localhost:3000/save-map';
 
+// Map-server access is opt-in under normal Wrangler/Cloudflare development.
+// Port 3000 is the bundled map server; useServer=1 enables reads and writes;
+// activeMapFetch=1 remains a read-only compatibility switch.
+function getMapServerMode() {
+  if (typeof window === 'undefined' || !window.location) {
+    return { read: false, write: false };
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const isMapServerOrigin = window.location.port === '3000';
+    const useServer = params.get('useServer') === '1';
+    const fetchOnly = params.get('activeMapFetch') === '1';
+    return {
+      read: !!ALLOW_ACTIVE_MAP_FETCH || isMapServerOrigin || useServer || fetchOnly,
+      write: isMapServerOrigin || useServer,
+    };
+  } catch (e) {
+    return { read: !!ALLOW_ACTIVE_MAP_FETCH, write: false };
+  }
+}
+
 // Serialises the current map state into a JSON-safe object for save/network transfer.
 function buildActiveMapPayload() {
   try {
@@ -150,13 +171,8 @@ function autosaveMap() {
 // Returns true if the active-map server fetch should be attempted.
 function shouldAttemptMapFetch() {
   if (typeof window === 'undefined' || !window.location) return false;
-  if (ALLOW_ACTIVE_MAP_FETCH) return true;
   if (window.location.protocol === 'file:') return false;
-  try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('activeMapFetch') === '1') return true;
-  } catch (e) {}
-  return false;
+  return getMapServerMode().read;
 }
 
 // Fetches the active map from the local map server and applies it if valid.
@@ -496,7 +512,7 @@ function persistActiveMapToServer(reason = 'unspecified') {
     try {
       if (typeof window !== 'undefined' && window.location) {
         const params = new URLSearchParams(window.location.search);
-        allowServer = window.location.hostname === 'localhost' || params.get('useServer') === '1';
+        allowServer = getMapServerMode().write;
         saveKey = params.get('saveKey') || '';
       }
     } catch (e) { allowServer = false; }

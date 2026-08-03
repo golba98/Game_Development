@@ -25,12 +25,68 @@ const PLAYER_ATTACK_SHAKE_DUR    = 120;   // screen-shake duration on normal hit
 const PLAYER_ATTACK_SHAKE_NORMAL = 5;     // screen-shake intensity on normal hit
 const PLAYER_ATTACK_SHAKE_CRIT   = 8;     // screen-shake intensity on critical hit
 const KNOCKBACK_DIST             = 0.6;   // tile distance enemies are knocked back per hit
-const LOOT_DROP_CHANCE           = 0.3;   // probability a defeated enemy drops an item
-const LOOT_HEALTH_WEIGHT         = 0.8;   // fraction of drops that are HEALTH (rest are POWERUP)
+const LOOT_DROP_CHANCE           = 0.4;   // probability a defeated enemy drops an item
+const LOOT_HEALTH_WEIGHT         = 0.6;   // fraction of drops that are HEALTH (rest are POWERUP)
 const ENV_CUT_RANGE              = 1.2;   // tile distance ahead of player that attack cuts grass
 const CUT_COIN_CHANCE            = 0.1;   // chance cutting a flower drops a coin
 const CUT_HEALTH_CHANCE          = 0.15;  // chance cutting a flower drops a health pickup
 const JUMP_HEIGHT_SCALE          = 1.5;   // jump arc height as a multiple of cellSize
+const MOVE_BUFFER_PROGRESS       = 0.45;  // accept the next held direction before a tile finishes
+const DIAGONAL_MOVE_TIME_FACTOR  = 1.22;  // consistent perceived world speed on diagonal tiles
+
+// Applies player-caused enemy knockback without allowing large beetle bosses
+// (including the training dummy) to enter terrain or trigger crush execution.
+// Returns a small result object so melee and skills can share the same rule.
+function applyPlayerKnockback(enemy, knockDX, knockDY, opts = {}) {
+  if (!enemy) return { moved: false, blocked: true, crushed: false, resisted: false };
+  if (enemy.type === 'beetle') {
+    return { moved: false, blocked: false, crushed: false, resisted: true };
+  }
+
+  const targetX = enemy.x + knockDX;
+  const targetY = enemy.y + knockDY;
+  if (targetX < 0 || targetX >= logicalW || targetY < 0 || targetY >= logicalH) {
+    return { moved: false, blocked: true, crushed: false, resisted: false };
+  }
+
+  const targetTile = getTileState(Math.floor(targetX), Math.floor(targetY));
+  if (isSolid(targetTile)) {
+    if (opts.crushOnSolid !== false) {
+      enemy.health = 0;
+      spawnDamageText(t('splat'), enemy.x, enemy.y, [255, 50, 50]);
+      return { moved: false, blocked: true, crushed: true, resisted: false };
+    }
+    return { moved: false, blocked: true, crushed: false, resisted: false };
+  }
+  if (targetTile === TILE_TYPES.RIVER) {
+    return { moved: false, blocked: true, crushed: false, resisted: false };
+  }
+
+  enemy.x = targetX;
+  enemy.y = targetY;
+  return { moved: true, blocked: false, crushed: false, resisted: false };
+}
+
+// Places loot on the closest visible walkable tile instead of silently losing
+// the drop when an enemy dies over a prop, path edge, or fractional position.
+function placePotionDropNear(worldX, worldY, dropType) {
+  const originX = Math.max(0, Math.min(logicalW - 1, Math.floor(worldX)));
+  const originY = Math.max(0, Math.min(logicalH - 1, Math.floor(worldY)));
+  for (let radius = 0; radius <= 2; radius++) {
+    for (let y = originY - radius; y <= originY + radius; y++) {
+      for (let x = originX - radius; x <= originX + radius; x++) {
+        if (x < 0 || y < 0 || x >= logicalW || y >= logicalH) continue;
+        const idx = y * logicalW + x;
+        const tile = mapStates[idx];
+        if (tile !== TILE_TYPES.GRASS && tile !== TILE_TYPES.FLOWERS) continue;
+        mapStates[idx] = dropType;
+        drawTileToMap(x, y);
+        return { x, y };
+      }
+    }
+  }
+  return null;
+}
 
 // Triggers the visual and logical move, applying progress-based queuing if a move is active.
 function startMove(dx, dy) {
@@ -38,6 +94,7 @@ function startMove(dx, dy) {
 
   const targetX = Math.max(0, Math.min(playerPosition.x + dx, (logicalW || 0) - 1));
   const targetY = Math.max(0, Math.min(playerPosition.y + dy, (logicalH || 0) - 1));
+  if (targetX === playerPosition.x && targetY === playerPosition.y) return;
 
   // Determine facing/looking direction immediately
   if (dx < 0) facing = 'left';
@@ -51,7 +108,7 @@ function startMove(dx, dy) {
     lastDirection = dy < 0 ? 'N' : 'S';
   }
 
-  // If not currently moving, start the step immediately
+  // If not currently moving, start the step immediately.
   if (!isMoving) {
     if (canMoveTo(playerPosition.x, playerPosition.y, targetX, targetY)) {
       handleItemInteraction(targetX, targetY);
@@ -64,14 +121,14 @@ function startMove(dx, dy) {
       startMoveVisual(prevX, prevY, targetX, targetY);
     }
   }
-  // If we are already moving, check if we can queue the next step
-  else if (!queuedMove) {
+  // While moving, continually keep the next requested direction buffered. This
+  // makes turns responsive instead of forcing the player to release/re-press.
+  else {
     const elapsed = millis() - moveStartMillis;
     const duration = Math.max(1, lastMoveDurationMs);
     const progress = elapsed / duration;
 
-    // Only queue if current move is at least 75% complete to prevent double-steps
-    if (progress >= 0.75) {
+    if (progress >= MOVE_BUFFER_PROGRESS) {
       if (canMoveTo(playerPosition.x, playerPosition.y, targetX, targetY)) {
         queuedMove = {
           dx: dx,
@@ -94,11 +151,11 @@ function handleMovement() {
 
   if (isJumping) return;
 
-  // Don't poll inputs for a new step if we are early in the current visual move
+  // Buffer the next direction early enough that held movement is continuous.
   if (isMoving) {
     const elapsed = millis() - moveStartMillis;
     const duration = Math.max(1, lastMoveDurationMs);
-    if (elapsed / duration < 0.75) {
+    if (elapsed / duration < MOVE_BUFFER_PROGRESS) {
       return;
     }
   }
@@ -167,18 +224,10 @@ function handleItemInteraction(targetX, targetY) {
       consumed = true;
       break;
     case TILE_TYPES.HEALTH:
-      if (playerHealth < maxHealth) {
-          playerHealth = Math.min(maxHealth, playerHealth + 1);
-          lastHealthChange = millis(); // Trigger UI pulse
-          spawnDamageText("+1 HP", targetX, targetY, [0, 255, 0]);
-          consumed = true;
-      } else {
-          // Inventory
-          if (!playerInventory) playerInventory = { 'potion': 0, 'speed': 0 };
-          playerInventory['potion'] = (playerInventory['potion'] || 0) + 1;
-          spawnDamageText(t('got_potion'), targetX, targetY, [100, 255, 255]);
-          consumed = true;
-      }
+      if (!playerInventory) playerInventory = { 'potion': 0, 'speed': 0 };
+      playerInventory['potion'] = (playerInventory['potion'] || 0) + 1;
+      spawnDamageText(t('got_potion'), targetX, targetY, [255, 90, 90]);
+      consumed = true;
       screenShakeTimer = 100; screenShakeAmount = 3;
       break;
     case TILE_TYPES.POWERUP:
@@ -312,7 +361,10 @@ function directionToDelta(dir) {
 
 // Records interpolation start/target and marks the player as in motion.
 function startMoveVisual(prevX, prevY, newX, newY) {
-  lastMoveDurationMs = getActiveMoveDurationMs();
+  const isDiagonal = prevX !== newX && prevY !== newY;
+  lastMoveDurationMs = Math.round(
+    getActiveMoveDurationMs() * (isDiagonal ? DIAGONAL_MOVE_TIME_FACTOR : 1),
+  );
   renderStartX = isNaN(renderX) ? prevX : renderX;
   renderStartY = isNaN(renderY) ? prevY : renderY;
   renderTargetX = newX;
@@ -327,8 +379,11 @@ function updateMovementInterpolation() {
   const elapsed = millis() - moveStartMillis;
   const duration = Math.max(1, lastMoveDurationMs);
   const progress = constrain(elapsed / duration, 0, 1);
-  renderX = lerp(renderStartX, renderTargetX, progress);
-  renderY = lerp(renderStartY, renderTargetY, progress);
+  // Ease each grid step without a pause at the boundary; the next step is
+  // already buffered before this one completes.
+  const easedProgress = progress * (2 - progress);
+  renderX = lerp(renderStartX, renderTargetX, easedProgress);
+  renderY = lerp(renderStartY, renderTargetY, easedProgress);
 
   // Debug verification logging behind the debug flag
   if (typeof PerfOverlay !== 'undefined' && PerfOverlay.enabled) {
@@ -374,12 +429,16 @@ function updateMovementInterpolation() {
 function updateSprintState() {
   const now = millis();
   const shiftHeld = keyIsDown(playerKeybinds.sprint);
+  const potionBoostActive = speedPotionBoostUntil > now;
 
   if (typeof sprintLastUpdate !== 'number' || sprintLastUpdate <= 0) sprintLastUpdate = now;
   const dt = Math.max(0, now - sprintLastUpdate);
   sprintLastUpdate = now;
 
-  if (sprintActive) {
+  if (potionBoostActive) {
+    sprintActive = true;
+    sprintCooldownUntil = 0;
+  } else if (sprintActive) {
 
     sprintRemainingMs = Math.max(0, sprintRemainingMs - dt);
     if (!shiftHeld || sprintRemainingMs <= 0) {
@@ -417,7 +476,8 @@ function updateSprintState() {
 // Returns ms this move takes, factoring in dash, sprint, river tiles, and sensitivity.
 function getActiveMoveDurationMs() {
   if (isDashing) return 50; // Very fast dash
-  const base = sprintActive ? SPRINT_MOVE_DURATION_MS : BASE_MOVE_DURATION_MS;
+  const potionBoostActive = speedPotionBoostUntil > millis();
+  const base = (sprintActive || potionBoostActive) ? SPRINT_MOVE_DURATION_MS : BASE_MOVE_DURATION_MS;
   let multiplier = 1.0;
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
     multiplier = RIVER_SPEED_MULTIPLIER;
@@ -428,7 +488,8 @@ function getActiveMoveDurationMs() {
 
 // Returns ms before the next move is allowed (same factors as duration).
 function getActiveMoveCooldownMs() {
-  const base = sprintActive ? SPRINT_MOVE_COOLDOWN_MS : BASE_MOVE_COOLDOWN_MS;
+  const potionBoostActive = speedPotionBoostUntil > millis();
+  const base = (sprintActive || potionBoostActive) ? SPRINT_MOVE_COOLDOWN_MS : BASE_MOVE_COOLDOWN_MS;
   let multiplier = 1.0;
   if (playerPosition && getTileState(playerPosition.x, playerPosition.y) === TILE_TYPES.RIVER) {
     multiplier = RIVER_SPEED_MULTIPLIER;
@@ -531,20 +592,22 @@ function _drawPlayerInternal() {
 
                     if (angleMatches) {
                         // Combo Damage (3rd hit deals double)
+                        const isCriticalHit = playerComboCount === 2;
                         let damage = playerBaseDamage;
                         if (equipment && equipment.weapon) damage += equipment.weapon.damage;
-                        if (playerComboCount === 2) {
+                        if (isCriticalHit) {
                             damage = Math.floor(damage * 1.5) + 1; // Critical hit scaling
                             verboseLog('[game] CRITICAL HIT! Combo step 3');
                         }
 
-                        e.health = (e.health || 1) - damage;
+                        const currentEnemyHealth = Number.isFinite(e.health) ? e.health : (e.maxHealth || 1);
+                        e.health = currentEnemyHealth - damage;
                         e.hurtTimer = PLAYER_ATTACK_HURT_MS;
                         screenShakeTimer = PLAYER_ATTACK_SHAKE_DUR;
-                        screenShakeAmount = playerComboCount === 2 ? PLAYER_ATTACK_SHAKE_CRIT : PLAYER_ATTACK_SHAKE_NORMAL;
+                        screenShakeAmount = isCriticalHit ? PLAYER_ATTACK_SHAKE_CRIT : PLAYER_ATTACK_SHAKE_NORMAL;
 
                         // VFX: Damage Text
-                        spawnDamageText(`-${damage}`, e.x, e.y, damage === ATTACK_DAMAGE_CRITICAL ? [255, 200, 0] : [255, 255, 255]);
+                        spawnDamageText(`-${damage}`, e.x, e.y, isCriticalHit ? [255, 200, 0] : [255, 255, 255]);
 
                         // Knockback logic
                         const knockbackDist = KNOCKBACK_DIST;
@@ -554,20 +617,7 @@ function _drawPlayerInternal() {
                         if (dir.includes('W')) knockDX = -knockbackDist;
                         if (dir.includes('E')) knockDX =  knockbackDist;
 
-                        const targetX = e.x + knockDX;
-                        const targetY = e.y + knockDY;
-
-                        if (targetX >= 0 && targetX < logicalW && targetY >= 0 && targetY < logicalH) {
-                            const knockTileState = getTileState(Math.floor(targetX), Math.floor(targetY));
-                            if (isSolid(knockTileState)) {
-                                // Knocked into wall -> Instant Death
-                                e.health = 0;
-                                spawnDamageText(t('splat'), e.x, e.y, [255, 50, 50]);
-                            } else if (knockTileState !== TILE_TYPES.RIVER) {
-                                e.x = targetX;
-                                e.y = targetY;
-                            }
-                        }
+                        applyPlayerKnockback(e, knockDX, knockDY, { crushOnSolid: true });
 
                         if (e.health <= 0) {
                             spawnSplat(e.x, e.y, e.type === 'mantis' ? 'acid' : 'egg');
@@ -589,13 +639,11 @@ function _drawPlayerInternal() {
                             // Loot Drop Logic
                             if (random() < LOOT_DROP_CHANCE) {
                                 const dropType = random() < LOOT_HEALTH_WEIGHT ? TILE_TYPES.HEALTH : TILE_TYPES.POWERUP;
-                                const idx = Math.floor(e.y) * logicalW + Math.floor(e.x);
-                                // Only drop if on grass or similar
-                                const currentTile = mapStates[idx];
-                                if (currentTile === TILE_TYPES.GRASS || currentTile === TILE_TYPES.FLOWERS) {
-                                    mapStates[idx] = dropType;
-                                    spawnDamageText("★", e.x, e.y, [255, 255, 0]);
-                                    drawTileToMap(Math.floor(e.x), Math.floor(e.y)); // Optimized update
+                                const dropped = placePotionDropNear(e.x, e.y, dropType);
+                                if (dropped) {
+                                    const label = dropType === TILE_TYPES.HEALTH ? "HEALTH POTION" : "SPEED POTION";
+                                    const color = dropType === TILE_TYPES.HEALTH ? [255, 80, 80] : [60, 225, 255];
+                                    spawnDamageText(label, dropped.x, dropped.y, color);
                                 }
                             }
 
