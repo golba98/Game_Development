@@ -4,8 +4,7 @@
 // --- UI Layout Constants ---
 const MENU_PANEL_W          = 420;  // px width of standard in-game overlay panels
 const MENU_PANEL_H          = 320;  // px height of standard in-game overlay panels
-const MENU_TITLE_OFFSET_PX  = -100; // px above the panel top where the title is positioned
-const MENU_TITLE_FONT_SIZE  = '48px';
+const MENU_TITLE_FONT_SIZE  = '38px';
 const MENU_BTN_W            = 260;  // px width of menu buttons
 const MENU_BTN_H            = 48;   // px height of menu buttons
 const MENU_BTN_MARGIN_PX    = '20px';
@@ -14,19 +13,17 @@ const MENU_MSG_MARGIN_PX    = '30px';
 const TRANSITION_FADE_SPEED = 4;    // alpha units added per frame during level transition
 const TRANSITION_HOLD_MS    = 500;  // ms held at full black before resuming
 
-// Appends a styled title div above a panel. Shared by pause/victory/game-over screens.
+// Appends a readable title inside the themed panel.
 function _addPanelTitle(panel, text) {
   const title = createDiv(text);
   title.parent(panel);
-  title.style('position',    'absolute');
   title.style('width',       '100%');
   title.style('text-align',  'center');
-  title.style('top',         MENU_TITLE_OFFSET_PX + 'px');
-  title.style('left',        '0');
   title.style('font-size',   MENU_TITLE_FONT_SIZE);
   title.style('font-weight', 'bold');
-  title.style('color',       '#000');
-  title.style('text-shadow', 'none');
+  title.style('color',       'var(--gd-panel-text, #fff2cc)');
+  title.style('text-shadow', '0 2px 0 rgba(0,0,0,0.25)');
+  title.style('margin-bottom', '28px');
   return title;
 }
 
@@ -61,12 +58,16 @@ function openInGameMenu() {
     openInGameSettings({ masterVol, musicVol, sfxVol, difficulty: currentDifficulty });
   });
   _addMenuBtn(panel, t('exit'), () => {
-    try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'close-game-overlay' }, '*'); } catch (e) {}
+    exitToMenu();
   });
 }
 
 // Closes the pause menu overlay and restores focus.
 function closeInGameMenu() {
+  if (typeof characterMenuOverlay !== 'undefined' && characterMenuOverlay) {
+    characterMenuOverlay.close();
+    return;
+  }
   if (inGameMenuOverlay) {
     inGameMenuOverlay.close();
     inGameMenuOverlay = null;
@@ -222,12 +223,20 @@ function restartGame() {
 
 // Navigates back to the main menu (or closes the game overlay if embedded).
 function exitToMenu() {
-  try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'close-game-overlay' }, '*'); } catch (e) {}
-  window.location.href = 'menu.html';
+  if (window.parent && window.parent !== window) {
+    try {
+      if (window.parent.location.origin === window.location.origin && typeof window.parent.removeGameOverlay === 'function') {
+        window.parent.removeGameOverlay();
+        return;
+      }
+    } catch (e) {}
+    try {
+      window.parent.postMessage({ type: 'close-game-overlay' }, window.location.origin);
+      return;
+    } catch (e) {}
+  }
+  window.location.replace('menu.html');
 }
-
-// No-op stub: in-game menu is now rendered via DOM overlay (drawInGameMenu_OLD removed).
-function drawInGameMenu() { return; }
 
 let characterMenuOverlay = null;
 
@@ -237,60 +246,64 @@ function openCharacterMenu() {
     return;
   }
   if (inGameMenuVisible || isGameOver) return;
-  
+
   inGameMenuVisible = true;
-  const { panel, close } = createZoomStablePanel(500, 420, 'gd-character-menu');
+  const { panel, close } = createZoomStablePanel(450, 440, 'gd-character-menu');
   characterMenuOverlay = { close: () => { close(); characterMenuOverlay = null; inGameMenuVisible = false; } };
-  
-  _addPanelTitle(panel, "Character & Stats");
+  _addPanelTitle(panel, 'CHARACTER STATS');
 
   const content = createDiv('');
   content.parent(panel);
-  content.style('color', '#fff');
-  content.style('font-size', '16px');
-  content.style('padding', '20px');
-  content.style('text-align', 'left');
-  content.style('font-family', 'sans-serif');
-  
-  const updateContent = () => {
-      content.html(`
-        <div style="display:flex; justify-content:space-between; margin-bottom: 20px; background:rgba(0,0,0,0.5); padding:10px; border-radius:5px;">
-            <div>
-                <strong>Level:</strong> ${playerLevel}<br/><br/>
-                <strong>XP:</strong> ${Math.floor(playerXP)} / ${xpToNextLevel}<br/>
-                <strong>Stat Points:</strong> <span style="color:gold">${statPoints}</span>
-            </div>
-            <div style="text-align:right;">
-                <strong>Health:</strong> ${playerHealth} / ${maxHealth}<br/><br/>
-                <strong>Stamina:</strong> ${playerMaxStamina}<br/>
-                <strong>Base Damage:</strong> ${playerBaseDamage}
-            </div>
-        </div>
-        <div style="margin-top:10px; text-align:center;">
-            <strong style="font-size:18px; color:gold;">Allocate Stats</strong><br/>
-            <div style="display:flex; justify-content:space-around; margin-top:15px;">
-                <button id="btn-up-hp" style="padding:10px; cursor:${statPoints>0?'pointer':'not-allowed'}; background:#2c3e50; color:white; border:2px solid ${statPoints>0?'#27ae60':'#555'}; border-radius:4px;" ${statPoints>0?'':'disabled'}>+1 Max Health</button>
-                <button id="btn-up-dmg" style="padding:10px; cursor:${statPoints>0?'pointer':'not-allowed'}; background:#2c3e50; color:white; border:2px solid ${statPoints>0?'#c0392b':'#555'}; border-radius:4px;" ${statPoints>0?'':'disabled'}>+1 Damage</button>
-                <button id="btn-up-sta" style="padding:10px; cursor:${statPoints>0?'pointer':'not-allowed'}; background:#2c3e50; color:white; border:2px solid ${statPoints>0?'#2980b9':'#555'}; border-radius:4px;" ${statPoints>0?'':'disabled'}>+20 Stamina</button>
-            </div>
-        </div>
-      `);
-      
-      const hpBtn = document.getElementById('btn-up-hp');
-      const dmgBtn = document.getElementById('btn-up-dmg');
-      const staBtn = document.getElementById('btn-up-sta');
-      
-      if (hpBtn) hpBtn.onclick = () => { if(statPoints>0){ maxHealth++; playerHealth++; statPoints--; updateContent(); try { playClickSFX(); } catch(e){} } };
-      if (dmgBtn) dmgBtn.onclick = () => { if(statPoints>0){ playerBaseDamage++; statPoints--; updateContent(); try { playClickSFX(); } catch(e){} } };
-      if (staBtn) staBtn.onclick = () => { if(statPoints>0){ playerMaxStamina += 20; statPoints--; updateContent(); try { playClickSFX(); } catch(e){} } };
-  };
-  
-  updateContent();
+  content.style('width', '80%');
+  content.style('color', 'var(--gd-panel-text, #fff2cc)');
+  content.style('font-family', 'Arial, sans-serif');
 
-  const closeBtn = _addMenuBtn(panel, "Close", () => {
+  const addStatRow = (label, value, onUpgrade) => {
+    const row = createDiv('');
+    row.parent(content);
+    row.style('width', '100%');
+    row.style('display', 'flex');
+    row.style('justify-content', 'space-between');
+    row.style('align-items', 'center');
+    row.style('margin-bottom', '10px');
+    createSpan(label).parent(row);
+    const valueGroup = createDiv('');
+    valueGroup.parent(row);
+    valueGroup.style('display', 'flex');
+    valueGroup.style('gap', '10px');
+    valueGroup.style('align-items', 'center');
+    createSpan(String(value)).parent(valueGroup);
+    if (statPoints <= 0 || !onUpgrade) return;
+    const button = createButton('+');
+    button.parent(valueGroup);
+    button.style('padding', '2px 8px');
+    button.style('cursor', 'pointer');
+    button.style('background', '#2a2a2a');
+    button.style('color', '#ffd700');
+    button.style('border', '1px solid #ffd700');
+    button.mousePressed(() => {
+      onUpgrade();
+      try { playClickSFX(); } catch (e) {}
+      characterMenuOverlay.close();
+      openCharacterMenu();
+    });
+  };
+
+  addStatRow('LEVEL', playerLevel);
+  addStatRow('XP', `${Math.floor(playerXP)} / ${xpToNextLevel}`);
+  addStatRow('STATS AVAILABLE', statPoints);
+  addStatRow('MAX HEALTH', maxHealth, () => {
+    if (maxHealth >= 20) { showToast('Maximum Health Reached (20)!', 'warn'); return; }
+    maxHealth++; playerHealth++; statPoints--;
+  });
+  addStatRow('BASE DAMAGE', playerBaseDamage, () => { playerBaseDamage++; statPoints--; });
+  addStatRow('MAX MANA', maxMana, () => { maxMana += 25; playerMana += 25; statPoints--; });
+  addStatRow('STAMINA', playerMaxStamina, () => { playerMaxStamina += 20; statPoints--; });
+
+  const closeBtn = _addMenuBtn(panel, 'CLOSE', () => {
     characterMenuOverlay.close();
   });
-  closeBtn.style('margin-top', '20px');
+  closeBtn.style('margin-top', '18px');
 }
 
 // Starts game music playback once the AudioContext is unlocked.
@@ -513,91 +526,12 @@ function showTimeTransition(title, subtitle, phase = 'day') {
 }
 
 
-// ── Error display helper ──
-(function () {
-  function ensureError1El() {
-    let el = document.getElementById('error1');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'error1';
-      Object.assign(el.style, {
-        position: 'fixed', right: '12px', bottom: '12px',
-        background: 'rgba(220,20,60,0.95)', color: '#fff',
-        padding: '10px 14px', borderRadius: '6px',
-        zIndex: 9999, fontFamily: 'sans-serif', fontSize: '14px',
-        display: 'none', boxShadow: '0 2px 10px rgba(0,0,0,0.4)'
-      });
-      if (document.body) document.body.appendChild(el);
-      else document.addEventListener('DOMContentLoaded', () => { try { document.body.appendChild(el); } catch (e) {} });
-    }
-    return el;
-  }
-
-  function showError1(name) {
-    const el = ensureError1El();
-    let msg = 'Error 1: Has no functionality yet will be added later';
-    try { if (name) { const s = String(name).trim(); if (s) msg += ' (' + s + ')'; } } catch (e) {}
-    el.textContent = msg;
-    el.style.display = 'block';
-    try { clearTimeout(el.__hideTimeout); } catch (e) {}
-    el.__hideTimeout = setTimeout(() => { try { el.style.display = 'none'; } catch (e) {} }, 5000);
-    console.warn(msg);
-  }
-
-  const combinedSelector = '#showTutorials, input[name="showTutorials"], .show-tutorials, #ShowTutorials, #enabledHub, input[name="enabledHub"], .enabled-hub, #EnabledHub, #enabledHUB';
-  const delegatedHandler = (e) => {
-    try {
-      const t = e.target;
-      if (!t) return;
-      if (typeof t.matches === 'function' && t.matches(combinedSelector)) { showError1(); return; }
-      if (t.closest?.(combinedSelector)) showError1();
-    } catch (e) {}
-  };
-  document.addEventListener('change', delegatedHandler, true);
-  document.addEventListener('input',  delegatedHandler, true);
-  try { window.showError1 = showError1; } catch (e) {}
-})();
-
-
 // ── Audio unlock on first interaction ──
 ['pointerdown', 'keydown'].forEach((evt) => {
   window.addEventListener(evt, () => {
     if (pendingGameMusicStart && !gameMusicStarted) attemptStartGameMusic(`user-${evt}`);
   });
 });
-
-
-// Opens a settings sub-panel for the given category label.
-function showSubSettings(label) {
-  clearSubSettings();
-
-  const cx = width / 2, cy = height / 2;
-  const panelW = 0.7 * width, panelH = 0.7 * height;
-  const panelLeft = cx - panelW / 2, panelRight = cx + panelW / 2;
-  const paddingX = panelW * 0.08;
-  const labelX   = panelLeft + paddingX;
-  const controlX = panelLeft + panelW * 0.42;
-  const controlWidth = panelRight - paddingX - controlX;
-  const spacingY = panelH * 0.14;
-
-  const ctx = createSettingsContext({
-    labelX, controlX, controlWidth, panelH,
-    startY: cy - panelH / 2 + panelH * 0.18,
-    spacingY
-  });
-
-  const builder = CATEGORY_BUILDERS[label];
-  if (builder) builder(ctx);
-
-  const backY     = cy + panelH / 2 - panelH * 0.12;
-  const backWidth = panelW * 0.3;
-  const backBG  = createBgImg('assets/3-GUI/Button_BG.png', cx - backWidth / 2, backY - BACK_BUTTON_VERTICAL_OFFSET, backWidth, panelH * 0.08, '3');
-  const backBtn = makeSmallBtn('← Back', cx - backWidth / 2, backY - BACK_BUTTON_VERTICAL_OFFSET, backWidth, panelH * 0.08, () => {
-    playClickSFX(); clearSubSettings(); showSettingsMenu();
-  });
-  activeSettingElements.push(backBG, backBtn);
-  applyCurrentTextSize();
-}
 
 
 try {

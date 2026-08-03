@@ -35,3 +35,11 @@ Include as much of the following as possible:
 
 - Public issues used to report vulnerabilities may be closed without discussion and moved to a private channel if possible
 - I appreciate responsible disclosure and good-faith reports
+
+## Local map server
+
+`scripts/map_server.js` is intended for trusted local development. Before
+making it reachable from another device, set both `MAP_SERVER_KEY` and an exact
+`ALLOWED_ORIGIN`. The empty key and wildcard origin defaults must not be used on
+a public network. Saved JSON maps are untrusted input and remain subject to the
+5 MiB request limit and fixed maps-directory containment.

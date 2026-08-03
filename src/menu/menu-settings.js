@@ -183,21 +183,21 @@ function buildDisplaySettings(section) {
   addMenuSelectRow(
     section,
     'FPS Mode',
-    ['60 FPS (STABLE)'],
-    '60 FPS (STABLE)',
+    ['60', '120', 'Unlimited'],
+    getFpsModeLabel(targetFps),
     value => {
-      targetFps = 60;
+      targetFps = getFpsTargetForMode(value);
       saveAllSettings();
       if (typeof applyFPS === 'function') applyFPS();
     },
-    'The game uses a fixed 60 FPS target for stable frame pacing.'
+    '60 FPS is the stable default. Higher modes may use more power.'
   );
   addMenuToggleRow(section, 'Performance Overlay', performanceOverlayEnabled, value => {
     performanceOverlayEnabled = value;
     saveAllSettings();
   });
   addMenuToggleRow(section, 'Show Stars', showStars, value => { showStars = value; saveAllSettings(); });
-  addMenuToggleRow(section, 'Screen Shake', screenShakeEnabled, value => { screenShakeEnabled = value; saveAllSettings(); });
+  addMenuToggleRow(section, 'Camera Shake', screenShakeEnabled, value => { screenShakeEnabled = value; saveAllSettings(); });
   addMenuToggleRow(section, 'Ambient Particles', showParticles, value => { showParticles = value; saveAllSettings(); });
   addMenuToggleRow(section, 'Firefly Lighting', showFireflyLighting, value => { showFireflyLighting = value; saveAllSettings(); });
 }

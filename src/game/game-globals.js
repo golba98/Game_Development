@@ -91,10 +91,8 @@ let victoryOverlay = null;
 let gameOverTimer = 0;
 let minimapImage = null;
 
-// --- VFX & Screen Effects ---
+// --- VFX & Camera Effects ---
 let gameDelta = 0;
-let screenShakeTimer = 0;
-let screenShakeAmount = 0;
 let rippleTimer = 0;
 let transitionAlpha = 0;
 let isTransitioning = false;
@@ -129,15 +127,15 @@ let _lastLoggedFpsTarget = null;
 let _lastLoggedFpsCanvas = null;
 
 function applyGameFpsMode(rawModeOrTarget, reason) {
-  const fpsMode = '60';
-  const requestedTargetFps = 60;
+  const fpsMode = normalizeFpsMode(rawModeOrTarget, DEFAULT_SETTINGS.fpsMode);
+  const requestedTargetFps = getFpsTargetForMode(fpsMode);
   targetFps = requestedTargetFps;
   let appliedP5Target = requestedTargetFps;
 
   if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi') {
     // Pixi backend: control via ticker.maxFPS; p5.frameRate() must not gate frames.
     if (typeof PixiApp !== 'undefined' && PixiApp.app && PixiApp.app.ticker) {
-      PixiApp.app.ticker.maxFPS = requestedTargetFps;
+      PixiApp.app.ticker.maxFPS = fpsMode === "unlimited" ? 0 : requestedTargetFps;
     }
     if (typeof frameRate === 'function') frameRate(Number.POSITIVE_INFINITY);
   } else {
@@ -194,7 +192,6 @@ let inGameMenuHovered = null;
 let inGameMenuHoverScales = {};
 let inGameMenuPrevHovered = null;
 
-let activeSettingElements = [];
 let textSizeSetting = 75;
 let difficultySetting = "normal";
 let sensitivitySetting = 5;
@@ -205,8 +202,6 @@ let settingsOverlayDiv = null;
 let settingsOverlayPanel = null;
 
 const MENU_BUTTON_TEXTURE_PATH = "assets/3-GUI/Button_BG.png";
-const SETTINGS_PANEL_TEXTURE_PATH =
-  "assets/1-Background/1-Menu/Settings_Background.png";
 const MENU_GOLD_COLOR = "#b8860b";
 const MENU_GOLD_BORDER = "rgba(184,134,11,0.65)";
 const MENU_GOLD_GLOW = "rgba(184,134,11,0.35)";
@@ -811,7 +806,6 @@ let drawablePool = [];
 let drawablePoolIdx = 0;
 let currentDrawables = [];
 let spritesheet = null;
-const SPRITESHEET_PATH = "assets/1-Background/test3.png";
 const TILE_TYPES = Object.freeze({
   GRASS: 1,
   FOREST: 2,
@@ -910,10 +904,6 @@ const SPRITES = {
   [TILE_TYPES.RAMP]: { x: 400, y: 224, w: 64, h: 64 },
   [TILE_TYPES.COIN]: { isImage: true, asset: "coin_sprite" },
   [TILE_TYPES.HEALTH]: { isImage: true, asset: "heart" },
-};
-
-const TILE_IMAGE_PATHS = {
-  [TILE_TYPES.FOREST]: "assets/1-Background/2-Game/tree_1.png",
 };
 
 const TREE_OVERLAY_PATH = "assets/1-Background/2-Game/1-Forest/tree_1.png";

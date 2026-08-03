@@ -17,9 +17,6 @@ const PixiApp = {
   worldContainer: null,     // Camera transform: scale(gameScale) + translate(-cam)
   terrainContainer: null,   // child of world — the terrain sprite
   entityContainer: null,    // child of world — overlay/decor/coin/portal sprites
-  overlayContainer: null,   // screen-space — reserved for future weather migration
-  hudContainer: null,       // screen-space — reserved for future HUD migration
-  minimapContainer: null,   // screen-space — reserved for future minimap migration
 
   _initialized: false,
 
@@ -79,19 +76,12 @@ const PixiApp = {
     this.terrainContainer  = new PIXI.Container();
     this.entityContainer   = new PIXI.Container();
     this.entityContainer.sortableChildren = true;
-    this.overlayContainer  = new PIXI.Container();
-    this.hudContainer      = new PIXI.Container();
-    this.minimapContainer  = new PIXI.Container();
-
     this.worldContainer.addChild(this.terrainContainer);
     this.worldContainer.addChild(this.entityContainer);
 
     this._createForestBackdrop(width, height);
     if (this.forestBackdrop) this.app.stage.addChild(this.forestBackdrop);
     this.app.stage.addChild(this.worldContainer);
-    this.app.stage.addChild(this.overlayContainer);
-    this.app.stage.addChild(this.hudContainer);
-    this.app.stage.addChild(this.minimapContainer);
   },
 
   // Fill the area outside a small map with a deterministic, irregular forest.

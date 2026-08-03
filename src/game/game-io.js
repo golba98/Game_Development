@@ -471,15 +471,13 @@ function loadLocalSettings() {
     performanceOverlayEnabled = normalizePerformanceOverlaySetting(parsed, performanceOverlayEnabled);
     applyGameFpsMode(parsed.fpsMode ?? parsed.targetFps, "load-settings");
     if (typeof parsed.showStars          === 'boolean') showStars           = parsed.showStars;
-    if (typeof parsed.screenShakeEnabled === 'boolean') screenShakeEnabled  = parsed.screenShakeEnabled;
+    if (typeof parsed.screenShakeEnabled === 'boolean') {
+      screenShakeEnabled = parsed.screenShakeEnabled;
+      if (!screenShakeEnabled && typeof CameraShake !== 'undefined') CameraShake.reset();
+    }
     if (typeof parsed.showParticles      === 'boolean') {
-      const oldState = showParticles;
       showParticles = parsed.showParticles;
-      if (oldState && !showParticles && typeof vfx !== 'undefined') {
-        for (let i = vfx.length - 1; i >= 0; i--) {
-          if (vfx[i].type === 'firefly') vfx.splice(i, 1);
-        }
-      }
+      if (!showParticles && typeof WeatherSystem !== 'undefined') WeatherSystem.particles.length = 0;
     }
     if (typeof parsed.showFireflyLighting === 'boolean') showFireflyLighting = parsed.showFireflyLighting;
     if (typeof parsed.colorModeSetting   === 'string') { colorModeSetting = parsed.colorModeSetting; applyColorMode(colorModeSetting); }
@@ -537,6 +535,7 @@ function persistActiveMapToServer(reason = 'unspecified') {
 // ── Game message handler ──
 window.addEventListener('message', (ev) => {
   if (!ev || !ev.data) return;
+  if (window.parent !== window && (ev.origin !== window.location.origin || ev.source !== window.parent)) return;
   try {
     switch (ev.data.type) {
       case 'game-activated': {
@@ -564,7 +563,7 @@ window.addEventListener('message', (ev) => {
             verboseLog('[game] stopped gameMusic on request');
           }
         } catch (stopErr) { console.warn('[game] failed to stop gameMusic', stopErr); }
-        try { window.parent?.postMessage?.({ type: 'game-music-stopped' }, '*'); } catch (ackErr) {}
+        try { window.parent?.postMessage?.({ type: 'game-music-stopped' }, window.location.origin); } catch (ackErr) {}
         break;
       }
       case 'start-game-music': {
@@ -615,7 +614,10 @@ function applySettingsMessage(data) {
   performanceOverlayEnabled = normalizePerformanceOverlaySetting(data, performanceOverlayEnabled);
   textSizeSetting = normalizeUiScaleSetting(data.uiScale ?? data.textSizeSetting, textSizeSetting);
   if (typeof data.showStars === 'boolean') showStars = data.showStars;
-  if (typeof data.screenShakeEnabled === 'boolean') screenShakeEnabled = data.screenShakeEnabled;
+  if (typeof data.screenShakeEnabled === 'boolean') {
+    screenShakeEnabled = data.screenShakeEnabled;
+    if (!screenShakeEnabled && typeof CameraShake !== 'undefined') CameraShake.reset();
+  }
   if (typeof data.showParticles === 'boolean') showParticles = data.showParticles;
   if (typeof data.showFireflyLighting === 'boolean') showFireflyLighting = data.showFireflyLighting;
   if (typeof data.colorModeSetting === 'string') colorModeSetting = data.colorModeSetting;

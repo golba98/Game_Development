@@ -48,41 +48,6 @@ function preload() {
     );
   } catch (e) {}
 
-  try {
-    trackLoadImage(
-      "settings_overlay",
-      "assets/1-Background/1-Menu/Settings_Background.png",
-      (img) => {
-        SETTINGS_OVERLAY = img;
-        verboseLog(
-          "[game] loaded SETTINGS_OVERLAY",
-          img && img.width,
-          "x",
-          img && img.height,
-        );
-      },
-      (err) => {
-        console.warn("[game] failed to load SETTINGS_OVERLAY", err);
-        SETTINGS_OVERLAY = null;
-      },
-    );
-  } catch (e) {}
-
-  try {
-    trackLoadImage(
-      "esc_menu_background",
-      "assets/1-Background/1-Menu/Background.png",
-      (img) => {
-        ESC_MENU_BACKGROUND = img;
-        verboseLog("[game] loaded ESC_MENU_BACKGROUND");
-      },
-      (err) => {
-        console.warn("[game] failed to load ESC_MENU_BACKGROUND", err);
-        ESC_MENU_BACKGROUND = null;
-      },
-    );
-  } catch (e) {}
-
   TILE_IMAGES["forest"] = null;
   TILE_IMAGES["gentle_forest"] = null;
   TILE_IMAGES["gentle_trees"] = null;
@@ -770,28 +735,11 @@ function trackLoadSound(key, path, successCb, errorCb) {
 
 const UI_FONT_PATH = "assets/3-GUI/font.ttf";
 
-let spritesheetIdle = null;
-
-const IDLE_SHEET_PATH = "assets/2-Characters/1-Idle/idle_sheet.png";
 const IDLE_SHEET_COLS = 4;
-const IDLE_SHEET_ROWS = 6;
 
 const WALK_SHEET_COLS = 4;
 const RUN_SHEET_COLS = 6;
-const WALK_SHEET_ROWS = IDLE_SHEET_ROWS;
-const RUN_SHEET_ROWS = IDLE_SHEET_ROWS;
-
-let spritesheetWalk = null;
-let spritesheetRun = null;
-
 let BUTTON_BG = null;
-
-let SETTINGS_OVERLAY = null;
-let ESC_MENU_BACKGROUND = null;
-
-const WALK_SHEET_COMBINED =
-  "assets/2-Characters/2-Walking/16x16 Walk-Sheet.png";
-const RUN_SHEET_COMBINED = WALK_SHEET_COMBINED;
 
 let playerAnimFrame = 0;
 let playerAnimTimer = 0;
@@ -1019,13 +967,6 @@ function clearObjectValues(target) {
 // Releases all loaded images, sounds, and resets the AssetTracker.
 function releaseGameAssets() {
   clearPreviousGameState();
-  releaseImageReference(spritesheetIdle);
-  releaseImageReference(spritesheetWalk);
-  releaseImageReference(spritesheetRun);
-  spritesheetIdle = null;
-  spritesheetWalk = null;
-  spritesheetRun = null;
-
   releaseImageReference(BUTTON_BG);
   releaseImageReference(TREE_OVERLAY_IMG);
   releaseImageReference(uiFont);

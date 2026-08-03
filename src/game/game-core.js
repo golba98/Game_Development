@@ -392,7 +392,7 @@ function setup() {
   // Tell the parent menu that the game is fully initialised and ready for game-activated.
   try {
     if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: 'game-ready' }, '*');
+      window.parent.postMessage({ type: 'game-ready' }, window.location.origin);
       console.log('[game] posted game-ready to parent');
     }
   } catch (e) {}
@@ -678,17 +678,14 @@ function draw() {
 
   // START WORLD TRANSFORM
   push();
-  // Extract shake offset so it can be applied to both the p5 canvas and the Pixi
+  // Apply one damped directional offset to both p5 and Pixi so their layers stay aligned.
   // world container in sync (avoiding terrain/entity misalignment during shake).
   let _frameShakeX = 0, _frameShakeY = 0;
-  if (screenShakeTimer > 0 && screenShakeEnabled) {
-    _frameShakeX = random(-screenShakeAmount, screenShakeAmount);
-    _frameShakeY = random(-screenShakeAmount, screenShakeAmount);
+  if (typeof CameraShake !== "undefined") {
+    const shakeOffset = CameraShake.update(SceneManager.isSimulating() ? gameDelta : 0);
+    _frameShakeX = shakeOffset.x;
+    _frameShakeY = shakeOffset.y;
     translate(_frameShakeX, _frameShakeY);
-    screenShakeTimer -= gameDelta;
-  } else if (screenShakeTimer > 0) {
-    // Still decrement the timer even if visually disabled so logic completes
-    screenShakeTimer -= gameDelta;
   }
 
   // Update Pixi world camera (same shake offsets for terrain/entity alignment)
@@ -876,10 +873,6 @@ function draw() {
   }
   if (typeof FramePerf !== "undefined") FramePerf.end();
 
-  try {
-    if (typeof drawInGameMenu === "function") drawInGameMenu();
-  } catch (e) {}
-
   // Clouds keep drifting even on game-over (no isGameOver gate), only paused
   // by an open overlay.
   if (!SceneManager.isOverlayOpen()) updateClouds();
@@ -894,6 +887,7 @@ function draw() {
   // The vignette reads as darkness on the compact training map; reserve it for
   // the actual forest levels where the day/night system is active.
   if (!isTutorialMap) drawVignette();
+  if (typeof CameraShake !== "undefined") CameraShake.drawHitFlash();
 
   // Pixi entity sprites (overlay/decor/coin/portal) — update after Renderer.drawWorld()
   // has built currentDrawables. PIXI.Application's low-priority ticker callback

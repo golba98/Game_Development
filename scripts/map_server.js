@@ -1,236 +1,272 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const url = require('url');
 
-const PORT = process.env.PORT || 3000;
-const MAP_SERVER_KEY = process.env.MAP_SERVER_KEY || ''; // Set this in your environment for security
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*'; // Set to https://syncroedit.online in production
-const WORKSPACE_ROOT = path.join(__dirname, '..');
-const MAPS_DIR = path.join(WORKSPACE_ROOT, 'maps');
-const ACTIVE_PATH = path.join(MAPS_DIR, 'active_map.json');
+const DEFAULT_PORT = Number(process.env.PORT) || 3000;
+const DEFAULT_ROOT = path.resolve(__dirname, '..');
+const MAX_MAP_SIZE = 5 * 1024 * 1024;
+const PUBLIC_FILES = new Set(['index.html', 'menu.html', 'game.html', 'favicon.ico']);
+const PUBLIC_DIRECTORIES = new Set(['assets', 'src']);
 
 function defaultActiveMapPayload() {
   const logicalW = 8;
   const logicalH = 8;
   const cellSize = 32;
-  const grass = 1; // matches TILE_TYPES.GRASS in the client
-  const baseLayer = new Array(logicalW * logicalH).fill(grass);
+  const baseLayer = new Array(logicalW * logicalH).fill(1);
   return {
-    persistentGameId: 'server_default_' + Date.now(),
+    persistentGameId: `server_default_${Date.now()}`,
     timestamp: Date.now(),
     logicalW,
     logicalH,
     cellSize,
     mapStates: baseLayer,
     terrainLayer: baseLayer,
-    treeObjects: []
+    treeObjects: [],
   };
 }
 
-function writeDefaultActiveMap(reason) {
-  const payload = defaultActiveMapPayload();
+function isContained(base, candidate) {
+  const relative = path.relative(base, candidate);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+function decodeRequestPath(requestUrl) {
+  let encodedPath;
   try {
-    fs.writeFileSync(ACTIVE_PATH, JSON.stringify(payload, null, 2), 'utf8');
-    console.log(`[map_server] created default active_map.json (${reason || 'init'})`);
-  } catch (e) {
-    console.error('[map_server] failed to write default active_map.json', e);
+    encodedPath = new URL(requestUrl || '/', 'http://localhost').pathname;
+  } catch (error) {
+    return null;
   }
-  return payload;
-}
-
-function ensureActiveMapExists() {
-  ensureMapsDir();
-  if (!fs.existsSync(ACTIVE_PATH)) {
-    writeDefaultActiveMap('missing');
-    return true;
+  let pathname;
+  try {
+    pathname = decodeURIComponent(encodedPath);
+  } catch (error) {
+    return null;
   }
-  return false;
+  if (pathname.includes('\0') || pathname.includes('\\')) return null;
+  return pathname;
 }
 
-function ensureMapsDir() {
-  try { if (!fs.existsSync(MAPS_DIR)) fs.mkdirSync(MAPS_DIR); } catch (e) { console.error('Failed to create maps dir', e); }
-}
-
-ensureMapsDir();
-ensureActiveMapExists();
-
-function send404(res, msg) {
-  res.writeHead(404, { 'Content-Type': 'text/plain' });
-  res.end(msg || 'Not found');
-}
-
-function setCorsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Map-Key');
+function resolveContained(base, pathname) {
+  const candidate = path.resolve(base, `.${pathname}`);
+  return isContained(base, candidate) ? candidate : null;
 }
 
 function contentTypeFor(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.html') return 'text/html';
-  if (ext === '.js') return 'application/javascript';
-  if (ext === '.css') return 'text/css';
-  if (ext === '.json') return 'application/json';
-  if (ext === '.png') return 'image/png';
-  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
-  if (ext === '.wav') return 'audio/wav';
-  return 'application/octet-stream';
+  const types = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.mjs': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.ttf': 'font/ttf',
+    '.wav': 'audio/wav',
+    '.mp3': 'audio/mpeg',
+    '.mp4': 'video/mp4',
+  };
+  return types[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
 }
 
-const server = http.createServer((req, res) => {
-  setCorsHeaders(res);
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-  const parsed = url.parse(req.url || '/');
-  const pathname = parsed.pathname || '/';
+function sendJson(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(body));
+}
 
-  // Map endpoints
-  if (req.method === 'GET' && pathname === '/maps/active_map.json') {
-    if (!fs.existsSync(ACTIVE_PATH)) {
-      const payload = writeDefaultActiveMap('get-miss');
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(payload));
+function sendNotFound(res) {
+  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end('Not found');
+}
+
+function streamFile(res, filePath) {
+  const stream = fs.createReadStream(filePath);
+  stream.on('error', error => {
+    console.error('[map_server] static read failed', error);
+    if (!res.headersSent) sendNotFound(res);
+    else res.destroy();
+  });
+  res.writeHead(200, {
+    'Content-Type': contentTypeFor(filePath),
+    'X-Content-Type-Options': 'nosniff',
+  });
+  stream.pipe(res);
+}
+
+function createMapServer(options = {}) {
+  const root = path.resolve(options.root || DEFAULT_ROOT);
+  const mapsDir = path.resolve(options.mapsDir || path.join(root, 'maps'));
+  if (!isContained(root, mapsDir) && !options.allowExternalMapsDir) {
+    throw new Error('mapsDir must be contained within root');
+  }
+  const activePath = path.join(mapsDir, 'active_map.json');
+  const mapServerKey = options.key ?? process.env.MAP_SERVER_KEY ?? '';
+  const allowedOrigin = options.allowedOrigin ?? process.env.ALLOWED_ORIGIN ?? '*';
+
+  fs.mkdirSync(mapsDir, { recursive: true });
+  if (!fs.existsSync(activePath)) {
+    fs.writeFileSync(activePath, JSON.stringify(defaultActiveMapPayload(), null, 2), 'utf8');
+  }
+
+  function setCorsHeaders(req, res) {
+    const requestOrigin = req.headers.origin;
+    if (allowedOrigin === '*') res.setHeader('Access-Control-Allow-Origin', '*');
+    else if (!requestOrigin || requestOrigin === allowedOrigin) res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Map-Key');
+    res.setHeader('Vary', 'Origin');
+  }
+
+  function originAllowed(req) {
+    return allowedOrigin === '*' || !req.headers.origin || req.headers.origin === allowedOrigin;
+  }
+
+  function serveStatic(pathname, res) {
+    let relativePath = pathname === '/' ? 'index.html' : pathname.slice(1);
+    const firstPart = relativePath.split('/')[0];
+    if (!PUBLIC_FILES.has(relativePath) && !PUBLIC_DIRECTORIES.has(firstPart)) {
+      sendNotFound(res);
       return;
     }
-    fs.readFile(ACTIVE_PATH, 'utf8', (err, data) => {
-      if (err) { const payload = writeDefaultActiveMap('read-error'); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(payload)); return; }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(data);
-    });
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/save-map') {
-    // Basic Auth Check
-    if (MAP_SERVER_KEY) {
-      const clientKey = req.headers['x-map-key'];
-      if (clientKey !== MAP_SERVER_KEY) {
-        console.warn(`[security] unauthorized save-map attempt from ${req.socket.remoteAddress}`);
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: 'Unauthorized: Missing or invalid X-Map-Key' }));
+    const filePath = resolveContained(root, `/${relativePath}`);
+    if (!filePath) {
+      sendNotFound(res);
+      return;
+    }
+    fs.stat(filePath, (error, stats) => {
+      if (error || !stats.isFile()) {
+        sendNotFound(res);
         return;
       }
+      streamFile(res, filePath);
+    });
+  }
+
+  return http.createServer((req, res) => {
+    setCorsHeaders(req, res);
+    const pathname = decodeRequestPath(req.url);
+    if (!pathname) {
+      sendNotFound(res);
+      return;
     }
 
-    let body = '';
-    const MAX_SIZE = 5 * 1024 * 1024; // 5MB Limit
-
-    req.on('data', chunk => { 
-      body += chunk.toString(); 
-      if (body.length > MAX_SIZE) {
-        console.warn(`[security] payload too large for save-map from ${req.socket.remoteAddress}`);
-        res.writeHead(413, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: 'Payload Too Large: Max size is 5MB' }));
-        req.destroy(); // Close the connection
+    if (req.method === 'OPTIONS') {
+      if (!originAllowed(req)) {
+        sendJson(res, 403, { ok: false, error: 'Origin not allowed' });
+        return;
       }
-    });
-    req.on('end', () => {
-      if (res.writableEnded) return;
-      try {
-        const obj = JSON.parse(body);
-        // Replace the previous active map with the new payload
-        if (fs.existsSync(ACTIVE_PATH)) {
-          try { fs.unlinkSync(ACTIVE_PATH); } catch (unlinkErr) { console.warn('[map_server] failed to remove previous active_map.json', unlinkErr); }
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/maps/active_map.json') {
+      fs.readFile(activePath, 'utf8', (error, data) => {
+        if (error) {
+          console.error('[map_server] active map read failed', error);
+          sendJson(res, 500, { ok: false, error: 'Unable to load map' });
+          return;
         }
-        fs.writeFileSync(ACTIVE_PATH, JSON.stringify(obj, null, 2), 'utf8');
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, message: 'active_map.json replaced' }));
-      } catch (e) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: String(e) }));
-      }
-    });
-    return;
-  }
-
-  // list maps
-  if (req.method === 'GET' && pathname === '/maps') {
-    fs.readdir(MAPS_DIR, (err, files) => {
-      if (err) { res.writeHead(500); res.end('err'); return; }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(files));
-    });
-    return;
-  }
-
-  // Otherwise serve static files from workspace root
-  let filePath = path.join(WORKSPACE_ROOT, pathname);
-  
-  // 1. Path Normalization & Traversal Prevention
-  filePath = path.resolve(filePath);
-  if (!filePath.startsWith(WORKSPACE_ROOT)) {
-    console.warn(`[security] blocked path traversal attempt: ${pathname}`);
-    send404(res);
-    return;
-  }
-
-  // 2. Blacklist sensitive files and directories
-  const relativePath = path.relative(WORKSPACE_ROOT, filePath);
-  const pathParts = relativePath.split(path.sep);
-  const isForbidden = pathParts.some(part => 
-    part === '.git' || 
-    part === '.vscode' || 
-    part === 'scripts' || 
-    part.startsWith('.') ||
-    ['Dockerfile.txt', 'README.md', 'git_log.txt', 'package.json', 'package-lock.json'].includes(part)
-  );
-
-  if (isForbidden && pathname !== '/') {
-    console.warn(`[security] blocked access to forbidden path: ${pathname}`);
-    send404(res);
-    return;
-  }
-
-  fs.stat(filePath, (err, stats) => {
-    if (err) {
-      // if directory, try the game entry point
-      const alt = path.join(WORKSPACE_ROOT, pathname, 'game.html');
-      fs.stat(alt, (e2, s2) => {
-        if (!e2 && s2 && s2.isFile()) {
-          const ct = contentTypeFor(alt);
-          res.writeHead(200, { 'Content-Type': ct });
-          fs.createReadStream(alt).pipe(res);
-        } else {
-          // fallback to root game entry point
-          const rootIndex = path.join(WORKSPACE_ROOT, 'game.html');
-          fs.stat(rootIndex, (e3, s3) => {
-            if (!e3 && s3 && s3.isFile()) {
-              res.writeHead(200, { 'Content-Type': 'text/html' });
-              fs.createReadStream(rootIndex).pipe(res);
-            } else {
-              send404(res);
-            }
-          });
-        }
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        res.end(data);
       });
       return;
     }
-    if (stats.isDirectory()) {
-      // serve game.html in that directory if present
-      const idx = path.join(filePath, 'game.html');
-      fs.stat(idx, (e, s) => {
-        if (!e && s && s.isFile()) {
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          fs.createReadStream(idx).pipe(res);
-        } else {
-          send404(res);
+
+    if (req.method === 'GET' && pathname === '/maps') {
+      fs.readdir(mapsDir, (error, files) => {
+        if (error) {
+          console.error('[map_server] map list failed', error);
+          sendJson(res, 500, { ok: false, error: 'Unable to list maps' });
+          return;
         }
+        sendJson(res, 200, files.filter(file => file.endsWith('.json')).sort());
       });
       return;
     }
-    // file
-    const ct = contentTypeFor(filePath);
-    res.writeHead(200, { 'Content-Type': ct });
-    fs.createReadStream(filePath).pipe(res);
+
+    if (req.method === 'GET' && pathname.startsWith('/maps/') && pathname.endsWith('.json')) {
+      const mapPath = resolveContained(mapsDir, pathname.slice('/maps'.length));
+      if (!mapPath) {
+        sendNotFound(res);
+        return;
+      }
+      fs.stat(mapPath, (error, stats) => {
+        if (error || !stats.isFile()) sendNotFound(res);
+        else streamFile(res, mapPath);
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/save-map') {
+      if (!originAllowed(req)) {
+        sendJson(res, 403, { ok: false, error: 'Origin not allowed' });
+        return;
+      }
+      if (mapServerKey && req.headers['x-map-key'] !== mapServerKey) {
+        console.warn(`[security] unauthorized save-map attempt from ${req.socket.remoteAddress}`);
+        sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const chunks = [];
+      let received = 0;
+      let tooLarge = false;
+      req.on('data', chunk => {
+        if (tooLarge) return;
+        received += chunk.length;
+        if (received > MAX_MAP_SIZE) {
+          tooLarge = true;
+          sendJson(res, 413, { ok: false, error: 'Payload too large' });
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', () => {
+        if (tooLarge || res.writableEnded) return;
+        try {
+          const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Map payload must be an object');
+          const tempPath = path.join(mapsDir, `.active-map-${process.pid}-${Date.now()}.tmp`);
+          fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2), 'utf8');
+          fs.renameSync(tempPath, activePath);
+          sendJson(res, 200, { ok: true, message: 'active_map.json replaced' });
+        } catch (error) {
+          console.error('[map_server] invalid map payload', error);
+          sendJson(res, 400, { ok: false, error: 'Invalid map payload' });
+        }
+      });
+      req.on('error', error => console.error('[map_server] request failed', error));
+      return;
+    }
+
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+      return;
+    }
+    serveStatic(pathname, res);
   });
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`Map & static server listening on http://localhost:${PORT}`);
-  console.log(`Workspace root: ${WORKSPACE_ROOT}`);
-  console.log(`Serving maps from ${MAPS_DIR}`);
-});
+if (require.main === module) {
+  const server = createMapServer();
+  server.listen(DEFAULT_PORT, () => {
+    console.log(`Map & static server listening on http://localhost:${DEFAULT_PORT}`);
+    console.log(`Workspace root: ${DEFAULT_ROOT}`);
+    console.log(`Serving maps from ${path.join(DEFAULT_ROOT, 'maps')}`);
+  });
+}
+
+module.exports = {
+  MAX_MAP_SIZE,
+  createMapServer,
+  decodeRequestPath,
+  isContained,
+};

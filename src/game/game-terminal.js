@@ -176,16 +176,22 @@ function createTerminalUI() {
 // Parses and executes a terminal command string; appends output to terminal history.
 function processTerminalCommand(cmd) {
   const history = document.getElementById("terminal-history");
-  const log = (msg, type = "", isHTML = false) => {
+  const log = (msg, type = "") => {
     const div = document.createElement("div");
     div.className = "terminal-log " + type;
-    if (isHTML) {
-      div.innerHTML = msg;
-    } else {
-      div.textContent = msg;
-    }
+    div.textContent = String(msg);
     history.appendChild(div);
     history.scrollTop = history.scrollHeight;
+  };
+
+  const help = (command, description) => {
+    const div = document.createElement("div");
+    div.className = "terminal-log";
+    const commandSpan = document.createElement("span");
+    commandSpan.style.color = "#fff";
+    commandSpan.textContent = command;
+    div.append("  ", commandSpan, ` - ${description}`);
+    history.appendChild(div);
   };
 
   // Safely log the command by using textContent on a prefix span
@@ -413,78 +419,23 @@ function processTerminalCommand(cmd) {
     }
   } else if (base === "/help") {
     log("SYSTEM COMMANDS:");
-    log(
-      '  <span style="color:#fff">/kill all</span>       - Wipe all enemies.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/collect all</span>    - Collect all coins on the map.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/scan boss</span>      - Check for active boss signatures.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/locate boss</span>    - Get precise boss coordinates.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/kill boss</span>      - Instantly kill the boss beetle.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/spawn boss</span>     - Force a boss beetle to spawn near you.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/spawn ghost</span>    - Force a ghost to spawn near you.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/give potion</span>    - Give 1 health potion.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/give speed</span>     - Give 1 speed potion.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/time [dawn|day|dusk|night]</span> - Change the time of day.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/health [n]</span>     - Set max health to n.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/tutorial reset</span> - Reset tutorial (shows on next reload).',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/clear</span>          - Wipe terminal log history.',
-      "",
-      true,
-    );
-    log(
-      '  <span style="color:#fff">/exit</span>           - Disconnect from console.',
-      "",
-      true,
-    );
+    help('/kill all', 'Wipe all enemies.');
+    help('/collect all', 'Collect all coins on the map.');
+    help('/scan boss', 'Check for active boss signatures.');
+    help('/locate boss', 'Get precise boss coordinates.');
+    help('/kill boss', 'Instantly kill the boss beetle.');
+    help('/spawn boss', 'Force a boss beetle to spawn near you.');
+    help('/spawn ghost', 'Force a ghost to spawn near you.');
+    help('/give potion', 'Give 1 health potion.');
+    help('/give speed', 'Give 1 speed potion.');
+    help('/time [dawn|day|dusk|night]', 'Change the time of day.');
+    help('/health [n]', 'Set max health to n.');
+    help('/tutorial reset', 'Reset tutorial on next reload.');
+    help('/clear', 'Wipe terminal log history.');
+    help('/exit', 'Disconnect from console.');
   } else if (base === "/clear") {
-    history.innerHTML = '<div class="terminal-log">History cleared.</div>';
+    history.replaceChildren();
+    log('History cleared.');
   } else if (base === "/exit") {
     toggleTerminal();
   } else {

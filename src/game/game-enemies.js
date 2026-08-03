@@ -108,8 +108,6 @@ const BEETLE_ATTACK_FRAMES    = 6;     // total frames in the attack animation
 const BEETLE_ATTACK_DAMAGE_FRAME = 4;  // frame index on which the hit is checked
 const BEETLE_HIT_RANGE        = 1.8;   // tile radius for the melee hit check
 const BEETLE_IFRAMES_MS       = 800;   // longer i-frame window after boss hit
-const BEETLE_SHAKE_TIMER      = 400;   // screen-shake duration (ms) after boss hit
-const BEETLE_SHAKE_AMOUNT     = 20;    // screen-shake intensity after boss hit
 const BEETLE_KNOCKBACK        = 1.5;   // tiles pushed on a boss hit
 const BEETLE_KNOCKBACK_FALLBACK = 0.5; // shorter knockback used if primary target is blocked
 const BEETLE_ATTACK_COOLDOWN_MS = 1200;// ms between beetle melee attacks
@@ -201,13 +199,6 @@ const RIPPLE_LIFE_MS          = 800;
 const RIPPLE_INITIAL_SIZE     = 5;
 const RIPPLE_GROWTH_SPEED     = 0.8;   // pixels grown per frame
 const RIPPLE_ALPHA            = 150;
-const FIREFLY_MIN_LIFE_MS     = 4000;
-const FIREFLY_MAX_LIFE_MS     = 8000;
-const FIREFLY_MAX_VEL         = 0.02;  // tiles/frame drift speed
-const FIREFLY_VEL_DRIFT       = 0.002; // per-frame random velocity change
-const FIREFLY_PULSE_SPEED     = 600;   // ms per alpha pulse cycle
-const FIREFLY_LIGHT_RADIUS    = 40;    // px radius for the WeatherSystem light source
-const FIREFLY_INTENSITY       = 0.15;  // light intensity fed to WeatherSystem.drawOverlay
 
 // Spawns an enemy of the given type at (x, y) and adds it to the enemies array.
 function spawnEnemy(type, x, y) {
@@ -363,21 +354,16 @@ function createBeetle(startX, startY) {
           if (this.attackFrame === BEETLE_ATTACK_DAMAGE_FRAME) {
             const hitDist = dist(this.renderX, this.renderY, playerPosition.x, playerPosition.y);
             if (hitDist < BEETLE_HIT_RANGE && playerHurtTimer <= 0) {
-                let actualDmg = STANDARD_DAMAGE + Math.floor(playerLevel / 3);
-                if (typeof equipment !== 'undefined' && equipment.armor) actualDmg = Math.max(1, actualDmg - equipment.armor.defense);
-                playerHealth = Math.max(0, playerHealth - actualDmg);
-                spawnDamageText(`-${actualDmg}`, playerPosition.x, playerPosition.y, [255, 0, 0]);
-                playerHurtTimer = BEETLE_IFRAMES_MS;
-                screenShakeTimer = BEETLE_SHAKE_TIMER;
-                screenShakeAmount = BEETLE_SHAKE_AMOUNT;
-
-                // Knockback: snap player to nearest valid tile
-                _knockbackPlayer(
-                  playerPosition.x - this.x,
-                  playerPosition.y - this.y,
-                  BEETLE_KNOCKBACK,
-                  BEETLE_KNOCKBACK_FALLBACK
-                );
+                GameCombat.applyPlayerDamage({
+                  amount: STANDARD_DAMAGE + Math.floor(playerLevel / 3),
+                  sourceX: this.x,
+                  sourceY: this.y,
+                  invulnerabilityMs: BEETLE_IFRAMES_MS,
+                  knockback: BEETLE_KNOCKBACK,
+                  knockbackFallback: BEETLE_KNOCKBACK_FALLBACK,
+                  shakeMagnitude: 6,
+                  shakeDuration: 150,
+                });
             }
           }
 
@@ -481,18 +467,15 @@ function createMantis(startX, startY) {
                  if (playerPosition) {
                      const d = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
                      if (d < MANTIS_HIT_RANGE && playerHurtTimer <= 0) {
-                         let actualDmg = STANDARD_DAMAGE;
-                         if (typeof equipment !== 'undefined' && equipment.armor) actualDmg = Math.max(1, actualDmg - equipment.armor.defense);
-                         playerHealth = Math.max(0, playerHealth - actualDmg);
-                         this.hasDealtDamage = true;
-                         playerHurtTimer = STANDARD_IFRAMES_MS;
-                         spawnDamageText(`-${actualDmg}`, playerPosition.x, playerPosition.y, [255, 0, 0]);
-
-                         _knockbackPlayer(
-                           playerPosition.x - this.x,
-                           playerPosition.y - this.y,
-                           MANTIS_KNOCKBACK
-                         );
+                         const result = GameCombat.applyPlayerDamage({
+                           amount: STANDARD_DAMAGE,
+                           sourceX: this.x,
+                           sourceY: this.y,
+                           invulnerabilityMs: STANDARD_IFRAMES_MS,
+                           knockback: MANTIS_KNOCKBACK,
+                           shakeMagnitude: 4,
+                         });
+                         this.hasDealtDamage = result.applied;
                      }
                  }
              }
@@ -988,17 +971,16 @@ function createGhost(startX, startY) {
             if (playerPosition) {
               const d = Math.hypot(playerPosition.x - this.x, playerPosition.y - this.y);
               if (d < GHOST_HIT_RANGE && playerHurtTimer <= 0) {
-                let actualDmg = STANDARD_DAMAGE;
-                if (typeof equipment !== 'undefined' && equipment.armor) actualDmg = Math.max(1, actualDmg - equipment.armor.defense);
-                playerHealth = Math.max(0, playerHealth - actualDmg);
-                this.hasDealtDamage = true;
-                playerHurtTimer = GHOST_IFRAMES_MS;
-                spawnDamageText(`-${actualDmg}`, playerPosition.x, playerPosition.y, [180, 200, 255]);
-                _knockbackPlayer(
-                  playerPosition.x - this.x,
-                  playerPosition.y - this.y,
-                  GHOST_KNOCKBACK
-                );
+                const result = GameCombat.applyPlayerDamage({
+                  amount: STANDARD_DAMAGE,
+                  sourceX: this.x,
+                  sourceY: this.y,
+                  invulnerabilityMs: GHOST_IFRAMES_MS,
+                  knockback: GHOST_KNOCKBACK,
+                  shakeMagnitude: 4,
+                  color: [180, 200, 255],
+                });
+                this.hasDealtDamage = result.applied;
               }
             }
           }
@@ -1221,12 +1203,13 @@ function spawnAcidBlob(startX, startY, targetX, targetY, initialDir) {
                 const d = Math.hypot(this.x - playerPosition.x, this.y - playerPosition.y);
                 if (d < ACID_BLOB_HIT_RADIUS) {
                     if (playerHurtTimer <= 0) {
-                         let actualDmg = STANDARD_DAMAGE;
-                         if (typeof equipment !== 'undefined' && equipment.armor) actualDmg = Math.max(1, actualDmg - equipment.armor.defense);
-                         playerHealth = Math.max(0, playerHealth - actualDmg);
-                         spawnDamageText(`-${actualDmg}`, playerPosition.x, playerPosition.y, [255, 0, 0]);
-
-                        _knockbackPlayer(this.vx, this.vy, ACID_BLOB_KNOCKBACK);
+                         GameCombat.applyPlayerDamage({
+                           amount: STANDARD_DAMAGE,
+                           directionX: this.vx,
+                           directionY: this.vy,
+                           knockback: ACID_BLOB_KNOCKBACK,
+                           shakeMagnitude: 4,
+                         });
                     }
                     return true; // remove regardless of i-frames
                 }
@@ -1345,56 +1328,6 @@ function spawnRipple(x, y) {
             const py = this.y * cellSize + cellSize / 2;
             ellipse(px, py, this.size, this.size * 0.6); // perspective oval
             pop();
-        }
-    });
-}
-
-// Spawns a glowing firefly VFX that drifts randomly and pulses, providing a light source.
-function spawnFirefly() {
-    const camX = smoothCamX || 0;
-    const camY = smoothCamY || 0;
-    const spawnRX = (random(virtualW) - virtualW / 2) + camX;
-    const spawnRY = (random(virtualH) - virtualH / 2) + camY;
-    const life = random(FIREFLY_MIN_LIFE_MS, FIREFLY_MAX_LIFE_MS);
-
-    vfx.push({
-        type: 'firefly',
-        x: spawnRX / cellSize,
-        y: spawnRY / cellSize,
-        vx: random(-FIREFLY_MAX_VEL, FIREFLY_MAX_VEL),
-        vy: random(-FIREFLY_MAX_VEL, FIREFLY_MAX_VEL),
-        alpha: 0,
-        targetAlpha: random(100, 255),
-        life,
-        maxLife: life,
-        phase: random(Math.PI * 2),
-        update: function(dt) {
-            this.life -= dt;
-            const step = dt / FRAME_TIME_MS;
-            this.x += this.vx * step;
-            this.y += this.vy * step;
-            this.vx += random(-FIREFLY_VEL_DRIFT, FIREFLY_VEL_DRIFT);
-            this.vy += random(-FIREFLY_VEL_DRIFT, FIREFLY_VEL_DRIFT);
-            this.alpha = map(Math.sin(millis() / FIREFLY_PULSE_SPEED + this.phase), -1, 1, 20, this.targetAlpha);
-            return this.life <= 0;
-        },
-        draw: function() {
-            const px = this.x * cellSize;
-            const py = this.y * cellSize;
-            noStroke();
-            fill(200, 255, 100, this.alpha);
-            circle(px, py, 2);
-            fill(200, 255, 100, this.alpha * 0.2);
-            circle(px, py, 6);
-        },
-        getLight: function() {
-            return {
-                worldX: this.x * cellSize,
-                worldY: this.y * cellSize,
-                radius: FIREFLY_LIGHT_RADIUS,
-                color: [180, 255, 80],
-                intensity: (this.alpha / 255) * FIREFLY_INTENSITY
-            };
         }
     });
 }

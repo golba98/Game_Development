@@ -88,6 +88,8 @@ function setup() {
 
   window.addEventListener('message', (ev) => {
     if (!ev || !ev.data) return;
+    const gameIframe = document.getElementById('game-iframe');
+    if (ev.origin !== window.location.origin || !gameIframe || ev.source !== gameIframe.contentWindow) return;
     try {
 
       if (ev.data.type === 'close-game-overlay') {
