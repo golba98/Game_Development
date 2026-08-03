@@ -90,13 +90,17 @@ uploaded as a static asset.
 2. Build the static output:
    npm run build
 
-3. Deploy:
+3. Run the Cloudflare-compatible local server:
+   npm run dev
+
+4. Deploy:
    npm run deploy
 
 ### Cloudflare Settings
 
 | Setting                 | Value                |
 |-------------------------|----------------------|
+| Build command           | npm run build        |
 | Deploy command          | npx wrangler deploy  |
 | Static assets directory | dist                 |
 

@@ -95,6 +95,10 @@ function createMainMenu() {
           difficulty: difficultySetting,
           fpsMode,
         });
+        // A game iframe can stay alive while static assets are redeployed. Give
+        // every launch a fresh document URL so it cannot keep an older HUD,
+        // weather, or renderer runtime from the browser cache.
+        params.set('runtime', Date.now().toString());
         iframe.src = `game.html?${params.toString()}`;
         Object.assign(iframe.style, {
           flex: '1 1 auto', minHeight: '0',

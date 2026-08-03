@@ -33,8 +33,11 @@ let _mmCacheDrawH = -1;
 function getHudUiScale() {
   const vW = virtualW || (width / gameScale);
   const vH = virtualH || (height / gameScale);
-  const viewportScale = Math.max(0.9, Math.min(1.1, Math.min(vW / 1280, vH / 720) || 1));
-  return Math.max(0.85, Math.min(1.3, getUiScaleMultiplier(textSizeSetting) * viewportScale));
+  // The old 1.10 cap made the HUD undersized on normal desktop viewports.
+  // 1.25 is roughly 14% larger while the user-facing Compact/Default/Large
+  // setting still controls the final result.
+  const viewportScale = Math.max(0.9, Math.min(1.25, Math.min(vW / 1280, vH / 720) || 1));
+  return Math.max(0.85, Math.min(1.45, getUiScaleMultiplier(textSizeSetting) * viewportScale));
 }
 
 function getHudSafeArea(vW, vH, uiScaleFactor) {
@@ -96,7 +99,7 @@ function getHudLayout() {
   const HUD_GAP = Math.round(10 * uiScaleFactor);
   const HUD_GAP_SMALL = Math.round(4 * uiScaleFactor);
 
-  const statBarW = Math.round(Math.max(1, Math.min(184 * uiScaleFactor, safeArea.width - 56 * uiScaleFactor)));
+  const statBarW = Math.round(Math.max(1, Math.min(184 * uiScaleFactor, safeArea.width - 72 * uiScaleFactor)));
   const perfPad = Math.round(10 * uiScaleFactor);
   const perfSize = getPerformanceOverlaySize(uiScaleFactor, safeArea.width - perfPad * 2);
   const perfRect = clampHudRect(
@@ -108,29 +111,21 @@ function getHudLayout() {
     perfPad,
   );
 
-  // --- Top-Left Player Stats (Height-Based Stack) ---
-  // Health Shell Y calculations
+  // --- Top-Left Player Status Card ---
   const healthBarH = Math.round(Math.max(16, 18 * uiScaleFactor));
-  const healthPadY = Math.round(10 * uiScaleFactor);
-  const healthShellHeight = healthBarH + healthPadY * 2;
-  const healthShellY = HUD_MARGIN;
-  const healthY = Math.round(healthShellY + healthPadY);
-
-  // Mana Shell Y calculations
   const manaBarH = Math.round(Math.max(12, 14 * uiScaleFactor));
-  const manaPadY = Math.round(8 * uiScaleFactor);
-  const manaShellHeight = manaBarH + manaPadY * 2;
-  const manaShellY = Math.round(healthShellY + healthShellHeight + HUD_GAP_SMALL);
-  const manaY = Math.round(manaShellY + manaPadY);
-
-  // Gold Shell Y calculations
-  const goldShellHeight = Math.round(32 * uiScaleFactor);
-  const goldShellY = Math.round(manaShellY + manaShellHeight + HUD_GAP_SMALL);
-  const scoreY = Math.round(goldShellY + 20 * uiScaleFactor);
-
-  // Inventory Shell Y calculations
-  const inventoryShellY = Math.round(goldShellY + goldShellHeight + HUD_GAP);
-  const inventoryY = Math.round(inventoryShellY + 8 * uiScaleFactor);
+  const playerPanelPad = Math.round(8 * uiScaleFactor);
+  const playerPanelX = Math.round(HUD_MARGIN + playerPanelPad);
+  const playerPanelY = Math.round(HUD_MARGIN + playerPanelPad);
+  const statX = Math.round(playerPanelX + 28 * uiScaleFactor);
+  const healthY = playerPanelY;
+  const manaY = Math.round(healthY + healthBarH + 8 * uiScaleFactor);
+  const goldRowY = Math.round(manaY + manaBarH + 8 * uiScaleFactor);
+  const goldRowH = Math.round(26 * uiScaleFactor);
+  const playerPanelW = Math.round((statX - playerPanelX) + statBarW + 10 * uiScaleFactor);
+  const playerPanelH = Math.round((goldRowY - playerPanelY) + goldRowH);
+  const scoreY = Math.round(goldRowY + goldRowH / 2);
+  const inventoryY = Math.round(playerPanelY + playerPanelH + playerPanelPad + HUD_GAP + 8 * uiScaleFactor);
 
   // --- Right-Side Layout (Vertical Column) ---
   const rightColumnRight = Math.round(vW - HUD_MARGIN);
@@ -155,25 +150,25 @@ function getHudLayout() {
 
   // --- Top-Center Boss Bar (Responsive Fallback) ---
   const bossPadX = Math.min(Math.round(14 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
-  const bossPadY = Math.round(11 * uiScaleFactor);
-  let bossBarW = Math.round(Math.max(1, Math.min(safeArea.width - bossPadX * 2, safeArea.width * 0.34, 360 * uiScaleFactor)));
-  const bossBarH = Math.round(Math.max(14, 16 * uiScaleFactor));
+  const bossPadY = Math.round(18 * uiScaleFactor);
+  let bossBarW = Math.round(Math.max(1, Math.min(safeArea.width - bossPadX * 2, safeArea.width * 0.38, 390 * uiScaleFactor)));
+  const bossBarH = Math.round(Math.max(18, 20 * uiScaleFactor));
 
   // Determine clear space between top-left cluster and right column
-  const leftStatsRight = Math.round(HUD_MARGIN + statBarW + 56 * uiScaleFactor);
+  const leftStatsRight = Math.round(playerPanelX + playerPanelW + playerPanelPad);
   const rightColumnLeft = Math.round(vW - HUD_MARGIN - minimapSize);
   const centerSpace = Math.round(rightColumnLeft - leftStatsRight);
   const safetyMargin = Math.round(20 * uiScaleFactor);
 
   // Responsive fallback logic
-  let bossYCoord = Math.round(48 * uiScaleFactor);
+  let bossYCoord = Math.round(54 * uiScaleFactor);
   if (bossBarW + bossPadX * 2 > centerSpace - safetyMargin) {
     const maxFittingWidth = centerSpace - safetyMargin - bossPadX * 2;
     bossBarW = Math.round(Math.max(180 * uiScaleFactor, maxFittingWidth));
   }
   // If screen is narrow or they still collide, push the boss bar below top-left stats
   if (vW < Math.round(850 * uiScaleFactor) || (bossBarW + bossPadX * 2 > centerSpace - safetyMargin)) {
-    bossYCoord = Math.round(HUD_MARGIN + 130 * uiScaleFactor);
+    bossYCoord = Math.round(HUD_MARGIN + playerPanelH + 42 * uiScaleFactor);
   }
 
   const bossShell = clampHudRect(
@@ -188,7 +183,7 @@ function getHudLayout() {
   const xpPadX = Math.min(Math.round(18 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
   const xpPadY = Math.round(12 * uiScaleFactor);
   const xpBarW = Math.max(1, Math.min(safeArea.width - xpPadX * 2, safeArea.width * 0.58, Math.round(440 * uiScaleFactor)));
-  const xpBarH = Math.max(12, Math.round(12 * uiScaleFactor));
+  const xpBarH = Math.max(16, Math.round(18 * uiScaleFactor));
   const xpPanelW = xpBarW + xpPadX * 2;
   const xpPanelH = xpBarH + xpPadY * 2;
   const xpPulsePad = Math.ceil(xpPanelH * 0.05);
@@ -213,8 +208,6 @@ function getHudLayout() {
     safeArea,
   );
 
-  const statX = Math.round(HUD_MARGIN + 28 * uiScaleFactor);
-
   cachedHudLayoutFrame = typeof frameCount === 'number' ? frameCount : -1;
   cachedHudLayoutKey = layoutKey;
   cachedHudLayout = {
@@ -227,10 +220,19 @@ function getHudLayout() {
     HUD_MARGIN,
     HUD_GAP,
     HUD_GAP_SMALL,
+    playerPanelX,
+    playerPanelY,
+    playerPanelW,
+    playerPanelH,
+    playerPanelPad,
     statBarW,
     statX,
+    healthBarH,
+    manaBarH,
     healthY: Math.round(healthY),
     manaY: Math.round(manaY),
+    goldRowY,
+    goldRowH,
     scoreY: Math.round(scoreY),
     inventoryY: Math.round(inventoryY),
     sprintY: Math.round(sprintShell.y + sprintPadY),
@@ -301,12 +303,30 @@ function drawBossHud() {
   drawBossHealthBar();
 }
 
+function drawPlayerStatusShell() {
+  const layout = getHudLayout();
+  push();
+  drawHudPanelShell(
+    layout.playerPanelX,
+    layout.playerPanelY,
+    layout.playerPanelW,
+    layout.playerPanelH,
+    {
+      padX: layout.playerPanelPad,
+      padY: layout.playerPanelPad,
+      alpha: 205,
+    },
+  );
+  pop();
+}
+
 function drawLeftHud() {
+  drawPlayerStatusShell();
   drawHealthBar();
   drawManaBar();
-  drawSprintMeter();
-  drawInventory();
   drawScore();
+  drawInventory();
+  drawSprintMeter();
 }
 
 function drawRightHud(opts = {}) {
@@ -360,19 +380,31 @@ function drawXPBar() {
     rect(startX, startY, barW * xpPct, barH / 2, 4);
   }
 
-  // Level Text
+  // Level and XP live inside the panel instead of floating above it.
   if (typeof uiFont !== 'undefined' && uiFont) textFont(uiFont);
   fill(255);
   noStroke();
   textAlign(CENTER, CENTER);
-  let sz = typeof gTextSize === 'function' ? 14 : 14;
+  let sz = Math.round(10 * layout.uiScaleFactor);
   if (typeof gTextSize === 'function') gTextSize(sz); else textSize(sz);
-  text(`Lv ${playerLevel} (${playerXP}/${xpToNextLevel})`, startX + barW/2, startY - Math.round(18 * layout.uiScaleFactor));
+  text(`LV ${playerLevel}  •  ${playerXP}/${xpToNextLevel} XP`, startX + barW/2, startY + barH/2 + 1);
 
-  // Stat points indicator
+  // Attached stat-point badge, kept inside the bottom safe area.
   if (statPoints > 0) {
-      fill(255, 215, 0); // Gold for available stat points
-      text(`+${statPoints} Stat Points (Press I)`, startX + barW/2, startY - Math.round(36 * layout.uiScaleFactor));
+      const badgeText = `+${statPoints} STAT  [I]`;
+      const badgeH = Math.round(18 * layout.uiScaleFactor);
+      const badgeW = Math.round(104 * layout.uiScaleFactor);
+      const badgeX = startX + barW - badgeW;
+      const badgeY = startY - layout.xpPadY - badgeH - Math.round(3 * layout.uiScaleFactor);
+      fill(12, 12, 14, 225);
+      stroke(255, 205, 40, 220);
+      strokeWeight(1);
+      rect(badgeX, badgeY, badgeW, badgeH, 3);
+      noStroke();
+      fill(255, 215, 0);
+      if (typeof gTextSize === 'function') gTextSize(Math.round(9 * layout.uiScaleFactor));
+      else textSize(Math.round(9 * layout.uiScaleFactor));
+      text(badgeText, badgeX + badgeW/2, badgeY + badgeH/2 + 1);
   }
 
   pop();
@@ -397,9 +429,6 @@ function drawHealthBar() {
   translate(startX + barW/2, startY + barH/2);
   scale(pulseScale);
   translate(-(startX + barW/2), -(startY + barH/2));
-
-  // Themed Background
-  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(28 * layout.uiScaleFactor), padY: Math.round(10 * layout.uiScaleFactor), alpha: 180 });
 
   // Background for the bar
   noStroke();
@@ -434,7 +463,7 @@ function drawHealthBar() {
   fill(255);
   textAlign(CENTER, CENTER);
   noStroke();
-  let sz = typeof gTextSize === 'function' ? 12 : 12;
+  let sz = Math.round(11 * layout.uiScaleFactor);
   if (typeof gTextSize === 'function') gTextSize(sz); else textSize(sz);
   text(`${Math.floor(playerHealth)}/${maxHealth}`, startX + barW / 2, startY + barH / 2 + 1);
 
@@ -449,9 +478,6 @@ function drawManaBar() {
   const barH = Math.max(12, Math.round(14 * layout.uiScaleFactor));
 
   push();
-
-  // Background Container
-  drawHudPanelShell(startX, startY, barW, barH, { padX: Math.round(28 * layout.uiScaleFactor), padY: Math.round(8 * layout.uiScaleFactor), alpha: 200 });
 
   // Background
   noStroke();
@@ -482,7 +508,7 @@ function drawManaBar() {
   fill(255);
   textAlign(CENTER, CENTER);
   noStroke();
-  let sz = typeof gTextSize === 'function' ? 10 : 10;
+  let sz = Math.round(9 * layout.uiScaleFactor);
   if (typeof gTextSize === 'function') gTextSize(sz); else textSize(sz);
   text(`${Math.floor(playerMana)}/${maxMana}`, startX + barW / 2, startY + barH / 2 + 1);
 
@@ -490,6 +516,8 @@ function drawManaBar() {
 }
 
 function drawBossHealthBar() {
+  // Do not present the training dummy as a boss before combat is introduced.
+  if (isTutorialMap && tutorialStep < TUTORIAL_STEP_COMBAT) return;
   const boss = (enemies || []).find(e => e.type === 'beetle');
   if (!boss) return;
 
@@ -511,7 +539,11 @@ function drawBossHealthBar() {
   noStroke();
   textAlign(CENTER, BOTTOM);
   gTextSize(Math.round(12 * layout.uiScaleFactor));
-  text(t('boss_name'), x + barW/2, y - Math.round(6 * layout.uiScaleFactor));
+  text(
+    isTutorialMap ? 'TRAINING DUMMY' : t('boss_name'),
+    x + barW/2,
+    y - Math.round(6 * layout.uiScaleFactor),
+  );
 
   noStroke();
   fill(36, 12, 14, 235);
@@ -529,6 +561,17 @@ function drawBossHealthBar() {
 
   fill(255, 255, 255, 34);
   rect(x + 2, y + 2, Math.max(0, (barW - 4) * hpPct), Math.max(2, (barH - 4) / 2), 1);
+
+  // Numeric HP makes every hit legible and exposes accidental burst damage.
+  const hpLabel = `${Math.max(0, Math.ceil(boss.health))} / ${Math.max(1, Math.ceil(boss.maxHealth))}`;
+  if (uiFont) textFont(uiFont);
+  textAlign(CENTER, CENTER);
+  gTextSize(Math.round(10 * layout.uiScaleFactor));
+  noStroke();
+  fill(0, 0, 0, 190);
+  text(hpLabel, x + barW/2 + 1, y + barH/2 + 2);
+  fill(255);
+  text(hpLabel, x + barW/2, y + barH/2 + 1);
 
   pop();
 }
@@ -589,9 +632,10 @@ function drawMinimap() {
 
 function drawScore() {
   const layout = getHudLayout();
-  const goldShellX = layout.HUD_MARGIN;
-  const goldShellW = Math.round(150 * layout.uiScaleFactor);
-  const y = layout.scoreY;
+  const rowX = layout.playerPanelX;
+  const rowY = layout.goldRowY;
+  const rowW = layout.playerPanelW;
+  const rowH = layout.goldRowH;
 
   push();
 
@@ -602,8 +646,8 @@ function drawScore() {
       pulseScale = map(now - lastScoreChange, 0, 200, 1.2, 1.0);
   }
 
-  const centerX = goldShellX + goldShellW / 2;
-  const centerY = y - Math.round(5 * layout.uiScaleFactor);
+  const centerX = rowX + rowW / 2;
+  const centerY = rowY + rowH / 2;
 
   translate(centerX, centerY);
   scale(pulseScale);
@@ -611,24 +655,16 @@ function drawScore() {
 
   if (uiFont) textFont(uiFont);
 
-  // Outer Border
-  stroke(0, 100);
-  strokeWeight(4);
-  fill(0, 150);
-  rect(goldShellX, y - Math.round(20 * layout.uiScaleFactor), goldShellW, Math.round(32 * layout.uiScaleFactor), 5);
+  fill(8, 8, 10, 150);
+  stroke(255, 215, 0, 150);
+  strokeWeight(1);
+  rect(rowX, rowY, rowW, rowH, 3);
 
-  // Inner Border
-  stroke(255, 215, 0); // GOLD
-  strokeWeight(2);
-  noFill();
-  rect(goldShellX + 2, y - Math.round(18 * layout.uiScaleFactor), goldShellW - 4, Math.round(28 * layout.uiScaleFactor), 3);
-
-  // Text
   noStroke();
-  fill(255, 255, 255);
-  textSize(Math.round(16 * layout.uiScaleFactor));
+  fill(255, 220, 80);
+  textSize(Math.round(13 * layout.uiScaleFactor));
   textAlign(LEFT, CENTER);
-  text(t('gold_hud', playerScore), goldShellX + Math.round(10 * layout.uiScaleFactor), y - Math.round(5 * layout.uiScaleFactor));
+  text(t('gold_hud', playerScore), rowX + Math.round(10 * layout.uiScaleFactor), centerY + 1);
   pop();
 }
 
@@ -648,8 +684,8 @@ function drawInventory() {
   const slotSpacing = Math.round(8 * layout.uiScaleFactor);
   const slots = [];
 
-  if (potions > 0) slots.push({ label: 'P', count: potions, col: [0, 200, 80] });
-  if (speeds > 0) slots.push({ label: 'S', count: speeds, col: [0, 210, 240] });
+  if (potions > 0) slots.push({ key: '1', name: 'HP', count: potions, sprite: healthPotionSprite, col: [255, 70, 70] });
+  if (speeds > 0) slots.push({ key: '2', name: 'SPD', count: speeds, sprite: powerupPotionSprite, col: [0, 210, 240] });
 
   const containerW = slots.length * (slotW + slotSpacing) + slotSpacing + Math.round(10 * layout.uiScaleFactor);
   const containerH = slotH + Math.round(20 * layout.uiScaleFactor);
@@ -667,10 +703,15 @@ function drawInventory() {
     fill(0, 0, 0, 120);
     rect(sx, sy, slotW, slotH, 3);
 
-    // Item indicator
-    fill(s.col[0], s.col[1], s.col[2]);
-    noStroke();
-    ellipse(sx + slotW / 2, sy + slotH / 2 - 4, 20, 20);
+    // Distinct potion artwork, matching the bottle that drops in the world.
+    if (s.sprite) {
+      const iconSize = Math.round(28 * layout.uiScaleFactor);
+      image(s.sprite, sx + (slotW - iconSize) / 2, sy + Math.round(8 * layout.uiScaleFactor), iconSize, iconSize);
+    } else {
+      fill(s.col[0], s.col[1], s.col[2]);
+      noStroke();
+      ellipse(sx + slotW / 2, sy + slotH / 2 - 4, 20, 20);
+    }
 
     // Count
     fill(255);
@@ -682,7 +723,7 @@ function drawInventory() {
     // Key hint
     fill(200, 200, 200, 180);
     if (typeof gTextSize === 'function') gTextSize(10); else textSize(10);
-    text('[' + s.label + ']', sx + slotW / 2, sy + 6);
+    text('[' + s.key + '] ' + s.name, sx + slotW / 2, sy + 6);
   }
   pop();
 }

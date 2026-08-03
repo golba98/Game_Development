@@ -3,8 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Game</title>
+    <link rel="icon" type="image/svg+xml" href="assets/6-Icons/forest-rpg-icon.svg?v=20260803-12" />
+    <title>Forest RPG — Play</title>
     <meta name="description" content="Fullscreen game iframe (no UI chrome)." />
+    <link rel="stylesheet" href="src/shared/settings-panel.css?v=20260803-5" />
     <style>
       html,
       body {
@@ -20,7 +22,10 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #000;
+        background-color: #0a1f04;
+        background-image: url('assets/1-Background/2-Game/1-Forest/tile_1.png');
+        background-repeat: repeat;
+        background-size: 64px 64px;
         -webkit-tap-highlight-color: transparent;
       }
 
@@ -29,7 +34,7 @@
         height: 100% !important;
         display: block;
         image-rendering: pixelated;
-        background: #000;
+        background: transparent;
       }
 
       ::-webkit-scrollbar {
@@ -87,44 +92,44 @@
     <script defer src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/addons/p5.sound.min.js"></script>
 
-    <script defer src="src/shared/shared-constants.js"></script>
-    <script defer src="src/shared/shared-ui.js"></script>
-    <script defer src="src/game/game-globals.js"></script>
+    <script defer src="src/shared/shared-constants.js?v=20260803-4"></script>
+    <script defer src="src/shared/shared-ui.js?v=20260803-4"></script>
+    <script defer src="src/game/game-globals.js?v=20260803-10"></script>
 
     <!-- Runtime layers (input / loop / scenes / render / assets / HUD / perf).
          Loaded after globals, before game-core.js which orchestrates them. -->
-    <script defer src="src/game/runtime/perf-overlay.js"></script>
-    <script defer src="src/game/runtime/game-loop.js"></script>
-    <script defer src="src/game/runtime/input-state.js"></script>
-    <script defer src="src/game/runtime/scene-manager.js"></script>
-    <script defer src="src/game/runtime/renderer.js"></script>
-    <script defer src="src/game/runtime/hud-cache.js"></script>
-    <script defer src="src/game/runtime/asset-cache.js"></script>
+    <script defer src="src/game/runtime/perf-overlay.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/game-loop.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/input-state.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/scene-manager.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/renderer.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/hud-cache.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/asset-cache.js?v=20260803-4"></script>
 
     <!-- Pixi render layer — loaded after globals, before game-core.js -->
-    <script defer src="src/game/runtime/pixi-app.js"></script>
-    <script defer src="src/game/runtime/pixi-world-renderer.js"></script>
-    <script defer src="src/game/runtime/pixi-entity-renderer.js"></script>
-    <script defer src="src/game/runtime/pixi-hud-renderer.js"></script>
-    <script defer src="src/game/runtime/pixi-minimap-renderer.js"></script>
-    <script defer src="src/game/runtime/pixi-weather-renderer.js"></script>
+    <script defer src="src/game/runtime/pixi-app.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/pixi-world-renderer.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/pixi-entity-renderer.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/pixi-hud-renderer.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/pixi-minimap-renderer.js?v=20260803-4"></script>
+    <script defer src="src/game/runtime/pixi-weather-renderer.js?v=20260803-4"></script>
 
-    <script defer src="src/game/game-assets.js"></script>
-    <script defer src="src/game/game-map.js"></script>
-    <script defer src="src/game/game-enemies.js"></script>
-    <script defer src="src/game/game-movement.js"></script>
-    <script defer src="src/game/game-hud.js"></script>
-    <script defer src="src/game/game-ui.js"></script>
-    <script defer src="src/game/game-ui-rpg.js"></script>
-    <script defer src="src/game/game-settings.js"></script>
-    <script defer src="src/game/game-io.js"></script>
-    <script defer src="src/game/game-terminal.js"></script>
-    <script defer src="src/game/game-tutorial.js"></script>
-    <script defer src="src/game/game-input.js"></script>
-    <script defer src="src/game/game-world.js"></script>
-    <script defer src="src/game/game-utils.js"></script>
-    <script defer src="src/game/game-weather.js"></script>
-    <script defer src="src/game/game-core.js"></script>
+    <script defer src="src/game/game-assets.js?v=20260803-18"></script>
+    <script defer src="src/game/game-map.js?v=20260803-4"></script>
+    <script defer src="src/game/game-enemies.js?v=20260803-4"></script>
+    <script defer src="src/game/game-movement.js?v=20260803-11"></script>
+    <script defer src="src/game/game-hud.js?v=20260803-6"></script>
+    <script defer src="src/game/game-ui.js?v=20260803-7"></script>
+    <script defer src="src/game/game-ui-rpg.js?v=20260803-4"></script>
+    <script defer src="src/game/game-settings.js?v=20260803-10"></script>
+    <script defer src="src/game/game-io.js?v=20260803-4"></script>
+    <script defer src="src/game/game-terminal.js?v=20260803-9"></script>
+    <script defer src="src/game/game-tutorial.js?v=20260803-4"></script>
+    <script defer src="src/game/game-input.js?v=20260803-11"></script>
+    <script defer src="src/game/game-world.js?v=20260803-18"></script>
+    <script defer src="src/game/game-utils.js?v=20260803-4"></script>
+    <script defer src="src/game/game-weather.js?v=20260803-9"></script>
+    <script defer src="src/game/game-core.js?v=20260803-9"></script>
 
     <script>
       (function () {

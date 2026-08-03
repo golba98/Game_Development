@@ -8,6 +8,8 @@ function preload() {
   HILL_DIRECTIONS.forEach((dir) => {
     const path = `assets/1-Background/2-Game/1-Forest/1-hill_${dir}.png`;
     trackLoadImage(`hill_${dir}`, path, (img) => {
+      // The authored hill tiles include a green-screen background. Remove it
+      // once on load so the grass below remains visible at every zoom level.
       try {
         if (typeof img.loadPixels === "function") img.loadPixels();
         if (img.pixels && img.pixels.length) {
@@ -15,27 +17,12 @@ function preload() {
             const r = img.pixels[i];
             const g = img.pixels[i + 1];
             const b = img.pixels[i + 2];
-            if (r > 240 && g > 240 && b > 240) {
-              img.pixels[i + 3] = 0;
-            } else if (g > 100 && r < 80 && b < 80) {
-              img.pixels[i + 3] = 0;
-            }
+            if (r > 240 && g > 240 && b > 240) img.pixels[i + 3] = 0;
+            else if (g > 100 && r < 80 && b < 80) img.pixels[i + 3] = 0;
           }
-          try {
-            img.updatePixels();
-          } catch (e) {}
+          try { img.updatePixels(); } catch (e) {}
         }
-
-        try {
-          const fixed = cleanImageBrown(img);
-          if (fixed)
-            verboseLog(
-              "[preload] cleaned brown pixels from hill asset",
-              dir,
-              "fixed=",
-              fixed,
-            );
-        } catch (e) {}
+        try { cleanImageBrown(img); } catch (e) {}
       } catch (e) {}
       HILL_ASSETS[dir] = img;
     });

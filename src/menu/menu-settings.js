@@ -183,14 +183,14 @@ function buildDisplaySettings(section) {
   addMenuSelectRow(
     section,
     'FPS Mode',
-    ['60', '120', 'Unlimited'],
-    getFpsModeLabel(normalizeFpsMode(targetFps)),
+    ['60 FPS (STABLE)'],
+    '60 FPS (STABLE)',
     value => {
-      targetFps = getFpsTargetForMode(value);
+      targetFps = 60;
       saveAllSettings();
       if (typeof applyFPS === 'function') applyFPS();
     },
-    'Unlimited removes the game-side FPS cap; browser requestAnimationFrame and VSync can still run near display refresh rate.'
+    'The game uses a fixed 60 FPS target for stable frame pacing.'
   );
   addMenuToggleRow(section, 'Performance Overlay', performanceOverlayEnabled, value => {
     performanceOverlayEnabled = value;

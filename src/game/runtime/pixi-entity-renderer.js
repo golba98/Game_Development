@@ -8,7 +8,8 @@
 // to the p5 canvas so they are not double-rendered.
 //
 // Reads currentDrawables[] (sorted by baseY) built by Renderer.drawWorld() each
-// frame. Call update() after Renderer.drawWorld() and before PixiApp.render().
+// frame. Call update() after Renderer.drawWorld(); PIXI.Application renders the
+// updated stage once its lower-priority ticker callback runs.
 
 const PixiEntityRenderer = {
   // Reusable sprite pool (grows as needed, never shrinks)

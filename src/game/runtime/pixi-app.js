@@ -5,14 +5,15 @@
 // entities/HUD/weather on a transparent front canvas; Pixi draws the terrain
 // on the rear WebGL canvas. Both canvases fill #game-root absolutely.
 //
-// Pixi's auto-ticker is stopped on init — p5's draw() drives all frame pacing
-// so FPS settings (60/120/Unlimited via applyGameFpsMode) apply to both.
-// A single PixiApp.render() call at the end of each draw() flushes the GPU.
+// Pixi's ticker drives the game callback and its built-in low-priority render
+// callback flushes the stage once after the game has updated it. FPS settings
+// (60/120/Unlimited via applyGameFpsMode) therefore apply to both layers.
 
 const PixiApp = {
   app: null,
 
   // Container hierarchy (stable for game lifetime after init)
+  forestBackdrop: null,    // screen-space forest fill behind small maps
   worldContainer: null,     // Camera transform: scale(gameScale) + translate(-cam)
   terrainContainer: null,   // child of world — the terrain sprite
   entityContainer: null,    // child of world — overlay/decor/coin/portal sprites
@@ -34,8 +35,12 @@ const PixiApp = {
       width,
       height,
       antialias: false,
-      backgroundColor: 0x228B22,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
+      backgroundColor: 0x0a1f04,
+      backgroundAlpha: 0,
+      resolution: Math.min(
+        window.devicePixelRatio || 1,
+        typeof MAX_PIXEL_DENSITY !== 'undefined' ? MAX_PIXEL_DENSITY : 1,
+      ),
       autoDensity: true,
       powerPreference: 'high-performance',
     });
@@ -81,10 +86,80 @@ const PixiApp = {
     this.worldContainer.addChild(this.terrainContainer);
     this.worldContainer.addChild(this.entityContainer);
 
+    this._createForestBackdrop(width, height);
+    if (this.forestBackdrop) this.app.stage.addChild(this.forestBackdrop);
     this.app.stage.addChild(this.worldContainer);
     this.app.stage.addChild(this.overlayContainer);
     this.app.stage.addChild(this.hudContainer);
     this.app.stage.addChild(this.minimapContainer);
+  },
+
+  // Fill the area outside a small map with a deterministic, irregular forest.
+  // Rendering this once to a canvas avoids the obvious wallpaper grid produced
+  // by a TilingSprite while remaining a single GPU sprite during gameplay.
+  _createForestBackdrop: function (width, height) {
+    try {
+      const treeImg = typeof TREE_OVERLAY_IMG !== 'undefined' ? TREE_OVERLAY_IMG : null;
+      const treeSource = treeImg && (treeImg.canvas || treeImg.elt ||
+        (treeImg.drawingContext && treeImg.drawingContext.canvas));
+      const grassImg = typeof TILE_IMAGES !== 'undefined' ? TILE_IMAGES['tile_1'] : null;
+      const grassSource = grassImg && (grassImg.canvas || grassImg.elt ||
+        (grassImg.drawingContext && grassImg.drawingContext.canvas));
+      if (!treeSource) return;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.ceil(width));
+      canvas.height = Math.max(1, Math.ceil(height));
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      if (grassSource) {
+        const grassPattern = ctx.createPattern(grassSource, 'repeat');
+        ctx.fillStyle = grassPattern;
+      } else {
+        ctx.fillStyle = '#173f12';
+      }
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Seeded random scatter: no rows or columns. A dense coverage target plus
+      // depth sorting produces overlapping canopy clusters with visible forest
+      // floor breaking them up naturally.
+      let seed = 0x5f3759df ^ canvas.width ^ (canvas.height << 11);
+      const random = () => {
+        seed = (Math.imul(seed, 1664525) + 1013904223) | 0;
+        return (seed >>> 0) / 4294967296;
+      };
+      // Match the map's forest overlay renderer, which draws this same asset at
+      // 64x64. Density is higher outside the glade, but scale/color stay equal.
+      const treeCount = Math.ceil((canvas.width * canvas.height) / 2300);
+      const trees = [];
+      for (let i = 0; i < treeCount; i++) {
+        const scale = 0.94 + random() * 0.12;
+        const treeW = Math.round(64 * scale);
+        const treeH = Math.round(64 * scale);
+        trees.push({
+          x: Math.round(-treeW * 0.5 + random() * (canvas.width + treeW)),
+          y: Math.round(-treeH * 0.65 + random() * (canvas.height + treeH * 0.65)),
+          w: treeW,
+          h: treeH,
+        });
+      }
+      trees.sort((a, b) => (a.y + a.h) - (b.y + b.h));
+      for (const tree of trees) {
+        ctx.drawImage(treeSource, tree.x, tree.y, tree.w, tree.h);
+      }
+
+      // Slight forest-floor shade keeps the outside subordinate to the glade.
+      ctx.fillStyle = 'rgba(5, 20, 4, 0.16)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const source = canvas;
+      const texture = PIXI.Texture.from(source);
+      const backdrop = new PIXI.Sprite(texture);
+      this.forestBackdrop = backdrop;
+    } catch (e) {
+      this.forestBackdrop = null;
+    }
   },
 
   // Set Pixi ticker FPS cap. 0 = uncapped (Unlimited mode). Call from applyGameFpsMode.
@@ -93,7 +168,8 @@ const PixiApp = {
     this.app.ticker.maxFPS = (fps > 0 && fps < 10000) ? fps : 0;
   },
 
-  // Flush the WebGL frame — called from inside draw() on both p5 and Pixi backends.
+  // Explicit flush helper for exceptional one-shot renders. Normal gameplay is
+  // rendered automatically by PIXI.Application's low-priority ticker callback.
   render: function () {
     if (this.app) this.app.renderer.render(this.app.stage);
   },
@@ -101,6 +177,15 @@ const PixiApp = {
   // Handle canvas resize (call from _confirmResize in game-core.js).
   resize: function (w, h) {
     if (this.app) this.app.renderer.resize(w, h);
+    if (this.app && this.forestBackdrop &&
+        (this.forestBackdrop.width !== w || this.forestBackdrop.height !== h)) {
+      const oldBackdrop = this.forestBackdrop;
+      this.app.stage.removeChild(oldBackdrop);
+      oldBackdrop.destroy({ texture: true, baseTexture: true });
+      this.forestBackdrop = null;
+      this._createForestBackdrop(w, h);
+      if (this.forestBackdrop) this.app.stage.addChildAt(this.forestBackdrop, 0);
+    }
   },
 
   // Apply camera + shake to worldContainer.

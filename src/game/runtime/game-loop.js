@@ -88,7 +88,9 @@ const GameLoop = {
 
 const FramePerf = {
   LOG_INTERVAL_MS: 1000,
-  enabled: true,
+  // Detailed stage timing is opt-in. Calling performance.now() between every
+  // render stage adds measurable overhead to the normal production loop.
+  enabled: false,
   _frameStart: 0,
   _stageStart: 0,
   _currentStage: null,
@@ -113,6 +115,9 @@ const FramePerf = {
   },
 
   beginFrame: function () {
+    this.enabled =
+      (typeof performanceOverlayEnabled !== "undefined" && performanceOverlayEnabled) ||
+      (typeof PerfOverlay !== "undefined" && PerfOverlay.enabled);
     if (!this.enabled) return;
     const now = this._now();
     this._frameStart = now;

@@ -625,8 +625,203 @@ function injectCustomStyles() {
   } catch (e) { console.warn('[game] injectCustomStyles failed', e); }
 }
 
-/** Opens the in-game settings overlay (category tabs + right-hand content column). */
+/** Opens the in-game settings overlay using the same layout as the main menu. */
 function openInGameSettings(currentVals) {
+  closeInGameSettings();
+
+  if (currentVals && typeof currentVals === 'object') {
+    if (typeof currentVals.masterVol === 'number') masterVol = currentVals.masterVol;
+    if (typeof currentVals.musicVol === 'number') musicVol = currentVals.musicVol;
+    if (typeof currentVals.sfxVol === 'number') sfxVol = currentVals.sfxVol;
+    if (typeof currentVals.difficulty === 'string') {
+      setDifficulty(currentVals.difficulty, { regenerate: false, reason: 'sync' });
+    }
+  }
+  try { loadLocalSettings(); } catch (e) {}
+
+  const overlay = createDiv('');
+  overlay.class('gd-menu-settings-overlay');
+  overlay.attribute('data-ui-scale', textSizeSetting <= 60 ? 'compact' : (textSizeSetting >= 90 ? 'large' : 'default'));
+  settingsOverlayDiv = overlay;
+
+  const panel = createDiv('');
+  panel.parent(overlay);
+  panel.class('gd-menu-settings-panel');
+  settingsOverlayPanel = panel;
+
+  const title = createDiv('SETTINGS');
+  title.parent(panel);
+  title.class('gd-menu-settings-title');
+
+  const body = createDiv('');
+  body.parent(panel);
+  body.class('gd-menu-settings-body');
+
+  const section = label => {
+    const node = createDiv('');
+    node.parent(body);
+    node.class('gd-menu-settings-section');
+    const heading = createDiv(label);
+    heading.parent(node);
+    heading.class('gd-menu-settings-section-title');
+    return node;
+  };
+  const row = (parent, label) => {
+    const node = createDiv('');
+    node.parent(parent);
+    node.class('gd-menu-settings-row');
+    const caption = createDiv(label);
+    caption.parent(node);
+    caption.class('gd-menu-settings-label');
+    const control = createDiv('');
+    control.parent(node);
+    control.class('gd-menu-settings-control');
+    return control;
+  };
+  const selectRow = (parent, label, options, value, changed) => {
+    const select = createSelect();
+    select.parent(row(parent, label));
+    select.class('gd-menu-select');
+    options.forEach(option => select.option(option));
+    select.selected(value);
+    select.changed(() => changed(select.value()));
+    return select;
+  };
+  const toggleRow = (parent, label, value, changed) => {
+    const button = createButton('');
+    button.parent(row(parent, label));
+    button.class('gd-menu-toggle');
+    let enabled = !!value;
+    const render = () => {
+      button.html(enabled ? 'ON' : 'OFF');
+      button.attribute('data-enabled', enabled ? 'true' : 'false');
+    };
+    button.mousePressed(() => { enabled = !enabled; render(); changed(enabled); });
+    render();
+    return button;
+  };
+  const sliderRow = (parent, label, min, max, value, changed, format = String) => {
+    const wrap = createDiv('');
+    wrap.parent(row(parent, label));
+    wrap.class('gd-menu-slider-wrap');
+    const slider = createSlider(min, max, value);
+    slider.parent(wrap);
+    slider.class('gd-menu-slider');
+    const output = createDiv(format(Number(slider.value())));
+    output.parent(wrap);
+    output.class('gd-menu-slider-value');
+    slider.input(() => {
+      const next = Number(slider.value());
+      output.html(format(next));
+      changed(next);
+    });
+    return slider;
+  };
+  const presetRow = (parent, label, presets, value, changed) => {
+    const group = createDiv('');
+    group.parent(row(parent, label));
+    group.class('gd-menu-segmented');
+    const buttons = [];
+    presets.forEach(preset => {
+      const button = createButton(preset.label);
+      button.parent(group);
+      button.class('gd-menu-segment');
+      button.attribute('data-active', preset.value === value ? 'true' : 'false');
+      button.mousePressed(() => {
+        buttons.forEach(item => item.button.attribute('data-active', item.value === preset.value ? 'true' : 'false'));
+        changed(preset.value);
+      });
+      buttons.push({ button, value: preset.value });
+    });
+  };
+  const keyRow = (parent, label, action) => {
+    const button = createButton(keyCodeToLabel(playerKeybinds[action]));
+    button.parent(row(parent, label));
+    button.class('gd-menu-key-button');
+    button.mousePressed(() => {
+      const previous = button.html();
+      button.html('PRESS KEY');
+      const capture = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        document.removeEventListener('keydown', capture, true);
+        if (event.key === 'Escape') { button.html(previous); return; }
+        playerKeybinds[action] = event.keyCode;
+        button.html(keyCodeToLabel(event.keyCode));
+        persistSavedSettings(true);
+      };
+      document.addEventListener('keydown', capture, true);
+    });
+  };
+
+  const display = section('DISPLAY');
+  selectRow(display, 'FPS Mode', ['60 FPS (STABLE)'], '60 FPS (STABLE)', value => {
+    applyGameFpsMode(value, 'in-game-settings'); persistSavedSettings();
+  });
+  toggleRow(display, 'Performance Overlay', performanceOverlayEnabled, value => { performanceOverlayEnabled = value; persistSavedSettings(); });
+  toggleRow(display, 'Show Stars', showStars, value => { showStars = value; persistSavedSettings(); });
+  toggleRow(display, 'Screen Shake', screenShakeEnabled, value => { screenShakeEnabled = value; persistSavedSettings(); });
+  toggleRow(display, 'Ambient Particles', showParticles, value => {
+    showParticles = value;
+    if (!value && typeof vfx !== 'undefined') {
+      for (let i = vfx.length - 1; i >= 0; i--) if (vfx[i].type === 'firefly') vfx.splice(i, 1);
+    }
+    persistSavedSettings();
+  });
+  toggleRow(display, 'Firefly Lighting', showFireflyLighting, value => { showFireflyLighting = value; persistSavedSettings(); });
+
+  const gameplay = section('GAMEPLAY');
+  toggleRow(gameplay, 'Show Tutorials', showTutorialsSetting, value => { showTutorialsSetting = value; persistSavedSettings(); });
+  toggleRow(gameplay, 'Show HUD', hudEnabled, value => { hudEnabled = value; persistSavedSettings(); });
+  selectRow(gameplay, 'Difficulty', ['Easy', 'Normal', 'Hard'], difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1), value => {
+    difficultySetting = value.toLowerCase();
+    setDifficulty(difficultySetting, { regenerate: false, reason: 'in-game-settings' });
+    persistSavedSettings();
+  });
+  sliderRow(gameplay, 'Sensitivity', 1, 10, sensitivitySetting, value => { sensitivitySetting = value; persistSavedSettings(); });
+  toggleRow(gameplay, 'Invert Y Axis', invertYAxis, value => { invertYAxis = value; persistSavedSettings(); });
+
+  const audio = section('AUDIO');
+  sliderRow(audio, 'Master Volume', 0, 100, Math.round(masterVol * 100), value => { masterVol = value / 100; applyVolumes(); persistSavedSettings(); }, value => `${value}%`);
+  sliderRow(audio, 'Music Volume', 0, 100, Math.round(musicVol * 100), value => { musicVol = value / 100; applyVolumes(); persistSavedSettings(); }, value => `${value}%`);
+  sliderRow(audio, 'SFX Volume', 0, 100, Math.round(sfxVol * 100), value => { sfxVol = value / 100; persistSavedSettings(); }, value => `${value}%`);
+
+  const accessibility = section('ACCESSIBILITY');
+  presetRow(accessibility, 'UI Scale', [{ label: 'Compact', value: 60 }, { label: 'Default', value: 75 }, { label: 'Large', value: 90 }], textSizeSetting, value => {
+    textSizeSetting = value;
+    overlay.attribute('data-ui-scale', value <= 60 ? 'compact' : (value >= 90 ? 'large' : 'default'));
+    applyCurrentTextSize();
+    persistSavedSettings(true);
+  });
+  selectRow(accessibility, 'Color Mode', ['None', 'Protanopia', 'Deuteranopia', 'Tritanopia', 'Grayscale', 'Sepia', 'Invert', 'High Contrast'], colorModeSetting, value => {
+    colorModeSetting = value; applyColorMode(value); persistSavedSettings();
+  });
+  selectRow(accessibility, 'Language', ['English', 'Spanish', 'French', 'German'], languageSetting, value => { languageSetting = value; persistSavedSettings(); });
+
+  const controls = section('CONTROLS');
+  keyRow(controls, 'Move Up', 'moveUp');
+  keyRow(controls, 'Move Down', 'moveDown');
+  keyRow(controls, 'Move Left', 'moveLeft');
+  keyRow(controls, 'Move Right', 'moveRight');
+  keyRow(controls, 'Jump', 'jump');
+  keyRow(controls, 'Dash', 'sprint');
+  keyRow(controls, 'Attack', 'cut');
+
+  const footer = createDiv('');
+  footer.parent(panel);
+  footer.class('gd-menu-settings-footer');
+  const reset = createButton('RESET SETTINGS');
+  reset.parent(footer);
+  reset.class('gd-menu-panel-button gd-menu-panel-button-secondary');
+  reset.mousePressed(() => { playClickSFX(); resetGameSettingsToDefaults(); openInGameSettings(); });
+  const close = createButton('CLOSE');
+  close.parent(footer);
+  close.class('gd-menu-panel-button');
+  close.mousePressed(() => { playClickSFX(); closeInGameSettings(); openInGameMenu(); });
+}
+
+/** Retained temporarily for comparison while the unified panel settles. */
+function openLegacyInGameSettings(currentVals) {
   if (settingsOverlayDiv) {
     settingsOverlayDiv.remove();
     settingsOverlayDiv = null;

@@ -149,6 +149,14 @@ function drawTileToMap(lx, ly) {
     img = TILE_IMAGES[tileState];
     imgDestW = img.width;
     imgDestH = img.height;
+  } else if (tileState >= TILE_TYPES.HILL_NORTH && tileState <= TILE_TYPES.HILL_NORTHWEST) {
+    const direction = Object.keys(TILE_TYPES).find(key => TILE_TYPES[key] === tileState)
+      .replace('HILL_', '').toLowerCase();
+    img = HILL_ASSETS[direction];
+    if (img) {
+      imgDestW = cellSize;
+      imgDestH = cellSize;
+    }
   }
 
   if (img) {
