@@ -6,8 +6,6 @@
   },
   "exclude": [
     "node_modules",
-    "vendor/p5.min.js",
-    "vendor/p5.sound.min.js",
-    "vendor/p5.sound.dummy.js"
+    "dist"
   ]
 }

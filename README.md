@@ -22,7 +22,7 @@ To fully utilize the Save/Load features, this game requires a local Node.js serv
 ## METHOD 1: LOCAL NODE SERVER
 
 1. PREREQUISITES:
-   - Install Node.js from https://nodejs.org/
+   - Install Node.js 22 or newer from https://nodejs.org/
 
 2. SETUP:
    - Open your command prompt or terminal.
@@ -90,10 +90,13 @@ uploaded as a static asset.
 2. Build the static output:
    npm run build
 
-3. Run the Cloudflare-compatible local server:
+3. Run the automated server tests:
+   npm test
+
+4. Run the Cloudflare-compatible local server:
    npm run dev
 
-4. Deploy:
+5. Deploy:
    npm run deploy
 
 ### Cloudflare Settings
@@ -117,6 +120,7 @@ Gameplay:
 [W, A, S, D] : Move Character
 [Shift] : Sprint (Consumes Stamina)
 [Esc] : Pause Menu / Back
+[C] : Character Stats
 
 System / Debug:
 [P] : Procedural Regeneration (Generate a fresh new world instantly)
@@ -188,7 +192,6 @@ _Open the console with `Ctrl + '` to execute these commands:_
 /src/game/ -> All game modules (map, enemies, movement, HUD, UI, weather, etc.).
 /src/game/runtime/ -> Runtime layers (game loop, input, scenes, renderer, asset/HUD caches).
 /src/menu/ -> All menu modules (audio, settings, UI, terminal, etc.).
-/vendor/ -> Local copies of p5.js and p5.sound (CDN used by default).
 menu.html -> Entry point for the menu.
 game.html -> Entry point for the game.
 index.html -> Redirects to menu.html (used as the deployed site root).
@@ -199,3 +202,13 @@ index.html -> Redirects to menu.html (used as the deployed site root).
 - "Audio not playing": Click anywhere on the screen to initialize the AudioContext.
 - "Blurry graphics": Ensure your browser zoom is set to 100%, though the engine
   attempts to auto-correct this.
+
+## DEVELOPMENT NOTES
+
+- `game.html` pins PixiJS 7.4.3 and p5.js 1.6.0 from the CDN. npm dependencies
+  are tooling-only and do not provide the browser renderer.
+- HTML script order is the dependency graph. Runtime infrastructure, including
+  camera shake, must load before the gameplay domains that consume it.
+- The local map server exposes only the public game tree and JSON map routes.
+  It never serves repository scripts, package metadata, editor settings, or
+  dependencies.

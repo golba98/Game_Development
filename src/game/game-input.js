@@ -329,8 +329,9 @@ function keyPressed() {
       lastManaChange = typeof millis === "function" ? millis() : Date.now();
       verboseLog("[game] Cast AoE Spin Attack!");
 
-      screenShakeTimer = 300;
-      screenShakeAmount = 6;
+      if (typeof CameraShake !== "undefined") {
+        CameraShake.kick({ x: 0, y: -1, magnitude: 2.5, duration: 140 });
+      }
 
       let hitCount = 0;
       for (let i = enemies.length - 1; i >= 0; i--) {

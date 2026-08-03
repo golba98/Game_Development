@@ -114,13 +114,15 @@ function getHudLayout() {
   // --- Top-Left Player Status Card ---
   const healthBarH = Math.round(Math.max(16, 18 * uiScaleFactor));
   const manaBarH = Math.round(Math.max(12, 14 * uiScaleFactor));
+  const staminaBarH = Math.round(Math.max(12, 14 * uiScaleFactor));
   const playerPanelPad = Math.round(8 * uiScaleFactor);
   const playerPanelX = Math.round(HUD_MARGIN + playerPanelPad);
   const playerPanelY = Math.round(HUD_MARGIN + playerPanelPad);
   const statX = Math.round(playerPanelX + 28 * uiScaleFactor);
   const healthY = playerPanelY;
   const manaY = Math.round(healthY + healthBarH + 8 * uiScaleFactor);
-  const goldRowY = Math.round(manaY + manaBarH + 8 * uiScaleFactor);
+  const staminaY = Math.round(manaY + manaBarH + 8 * uiScaleFactor);
+  const goldRowY = Math.round(staminaY + staminaBarH + 8 * uiScaleFactor);
   const goldRowH = Math.round(26 * uiScaleFactor);
   const playerPanelW = Math.round((statX - playerPanelX) + statBarW + 10 * uiScaleFactor);
   const playerPanelH = Math.round((goldRowY - playerPanelY) + goldRowH);
@@ -196,18 +198,6 @@ function getHudLayout() {
     xpPulsePad,
   );
 
-  // --- Stamina Meter (Bottom-Left) ---
-  const sprintPadY = Math.round(8 * uiScaleFactor);
-  const sprintContainerW = Math.max(1, Math.min(Math.round(200 * uiScaleFactor), safeArea.width - Math.round(20 * uiScaleFactor)));
-  const sprintContainerH = Math.round(32 * uiScaleFactor);
-  const sprintShell = clampHudRect(
-    HUD_MARGIN,
-    Math.round(vH - HUD_MARGIN - (sprintContainerH + sprintPadY * 2)),
-    Math.round(sprintContainerW + 20 * uiScaleFactor),
-    Math.round(sprintContainerH + sprintPadY * 2),
-    safeArea,
-  );
-
   cachedHudLayoutFrame = typeof frameCount === 'number' ? frameCount : -1;
   cachedHudLayoutKey = layoutKey;
   cachedHudLayout = {
@@ -229,14 +219,16 @@ function getHudLayout() {
     statX,
     healthBarH,
     manaBarH,
+    staminaBarH,
     healthY: Math.round(healthY),
     manaY: Math.round(manaY),
+    staminaY: Math.round(staminaY),
     goldRowY,
     goldRowH,
     scoreY: Math.round(scoreY),
     inventoryY: Math.round(inventoryY),
-    sprintY: Math.round(sprintShell.y + sprintPadY),
-    sprintContainerW,
+    sprintY: Math.round(staminaY),
+    sprintContainerW: statBarW,
     bossX: Math.round(bossShell.x + bossPadX),
     bossY: Math.round(bossShell.y + bossPadY),
     bossBarW,
@@ -845,94 +837,52 @@ function findGoalPosition() {
 function drawSprintMeter() {
   const layout = getHudLayout();
   const now = millis();
-
-  const pct = (typeof smoothSprintPct === 'number') ? smoothSprintPct : 0;
   const maxDur = typeof playerMaxStamina !== 'undefined' ? playerMaxStamina * 30 : 3000;
   const actualPct = (typeof sprintRemainingMs === 'number' && maxDur > 0) ? (sprintRemainingMs / maxDur) : 0;
-  lerpedSprintPct = lerp(lerpedSprintPct, smoothSprintPct, 0.2);
-  // Show the bar if active, or not full, or in cooldown
-  let targetAlpha = 0;
-  if (sprintActive || actualPct < 0.99 || (sprintCooldownUntil > now)) {
-    targetAlpha = 255;
-  }
-
-  if (targetAlpha === 0) return;
-
-  // Positioning: Bottom-Left
-  const padX = Math.round(10 * layout.uiScaleFactor);
-  const padY = Math.round(8 * layout.uiScaleFactor);
-  const startX = layout.HUD_MARGIN + padX;
-  const startY = layout.sprintY;
-  const containerW = layout.sprintContainerW;
-  const containerH = Math.round(32 * layout.uiScaleFactor);
-
-  const barW = containerW - Math.round(40 * layout.uiScaleFactor);
-  const barH = Math.max(10, Math.round(10 * layout.uiScaleFactor));
+  lerpedSprintPct = lerp(lerpedSprintPct, actualPct, 0.14);
+  const pct = constrain(lerpedSprintPct, 0, 1);
+  const exhausted = typeof sprintCooldownUntil === 'number' && now < sprintCooldownUntil;
+  const startX = layout.statX;
+  const startY = layout.staminaY;
+  const barW = layout.statBarW;
+  const barH = layout.staminaBarH;
 
   push();
-
-  // Themed Background Container
-  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) tint(255, targetAlpha);
-  drawHudPanelShell(startX, startY, containerW, containerH, { padX: padX, padY: padY, alpha: 200 * (targetAlpha / 255) });
-  if (typeof BUTTON_BG !== 'undefined' && BUTTON_BG) noTint();
-
-  // Bar Background (empty part)
   noStroke();
-  fill(30, 30, 40, targetAlpha);
-  rect(startX + Math.round(30 * layout.uiScaleFactor), startY + Math.round(11 * layout.uiScaleFactor), barW, barH, 2);
-
-  // Bar Fill
+  fill(33, 28, 18, 235);
+  rect(startX, startY, barW, barH, 2);
   if (pct > 0.005) {
-    // Stamina Gradient: Cyan to Deep Blue
-    let r = map(actualPct, 0, 1, 0, 100);
-    let g = map(actualPct, 0, 1, 150, 255);
-    let b = map(actualPct, 0, 1, 200, 255);
-
-    // Smooth pulse when sprinting
-    let alphaPulse = targetAlpha;
-    if (sprintActive) {
-      alphaPulse = targetAlpha * (0.7 + 0.3 * Math.sin(now * 0.015));
-    }
-
-    fill(r, g, b, alphaPulse);
-    rect(startX + Math.round(30 * layout.uiScaleFactor), startY + Math.round(11 * layout.uiScaleFactor), barW * pct, barH, 2);
-
-    // Glossy highlight
-    fill(255, 255, 255, 50 * (targetAlpha / 255));
-    rect(startX + Math.round(30 * layout.uiScaleFactor), startY + Math.round(11 * layout.uiScaleFactor), barW * pct, barH / 2, 2);
+    if (exhausted) fill(152, 46, 32);
+    else if (actualPct < 0.35) fill(205, 132, 36);
+    else fill(52, 132, 66);
+    rect(startX, startY, barW * pct, barH, 2);
+    fill(255, 239, 185, 42);
+    rect(startX, startY, barW * pct, barH / 2, 2);
   }
 
-  // Cooldown Overlay (stamina flashing red)
-  if (typeof sprintCooldownUntil === 'number' && now < sprintCooldownUntil) {
-    if (Math.floor(now / 150) % 2 === 0) {
-        fill(255, 50, 50, 120 * (targetAlpha / 255));
-        rect(startX + Math.round(30 * layout.uiScaleFactor), startY + Math.round(11 * layout.uiScaleFactor), barW, barH, 2);
-    }
-  }
+  stroke(184, 134, 11, 210);
+  strokeWeight(Math.max(1, layout.uiScaleFactor));
+  noFill();
+  rect(startX, startY, barW, barH, 2);
 
-  // Icon (Energy/Lightning)
-  const ix = startX + Math.round(12 * layout.uiScaleFactor);
-  const iy = startY + containerH / 2 + Math.round(3 * layout.uiScaleFactor);
+  // Small pixel boot icon, aligned with the health and mana icons.
+  const ix = startX - Math.round(15 * layout.uiScaleFactor);
+  const iy = startY + barH / 2;
   noStroke();
-
-  if (sprintActive) {
-    fill(100, 255, 255, targetAlpha); // Bright Cyan
-  } else if (now < sprintCooldownUntil) {
-    fill(255, 100, 100, targetAlpha); // Red
-  } else {
-    fill(180, 200, 255, targetAlpha); // Soft Blue
-  }
-
-  // Lightning Bolt Shape
+  fill(exhausted ? 190 : 222, exhausted ? 70 : 176, exhausted ? 48 : 72);
   beginShape();
-  vertex(ix, iy - Math.round(10 * layout.uiScaleFactor));
-  vertex(ix + Math.round(6 * layout.uiScaleFactor), iy - Math.round(10 * layout.uiScaleFactor));
-  vertex(ix - Math.round(2 * layout.uiScaleFactor), iy);
-  vertex(ix + Math.round(4 * layout.uiScaleFactor), iy);
-  vertex(ix - Math.round(4 * layout.uiScaleFactor), iy + Math.round(10 * layout.uiScaleFactor));
-  vertex(ix, iy);
-  vertex(ix - Math.round(6 * layout.uiScaleFactor), iy);
+  vertex(ix - 5, iy - 7); vertex(ix + 1, iy - 7);
+  vertex(ix + 1, iy + 1); vertex(ix + 7, iy + 4);
+  vertex(ix + 7, iy + 7); vertex(ix - 6, iy + 7);
+  vertex(ix - 6, iy + 2);
   endShape(CLOSE);
+
+  if (typeof uiFont !== 'undefined' && uiFont) textFont(uiFont);
+  fill(255, 244, 211);
+  textAlign(CENTER, CENTER);
+  noStroke();
+  if (typeof gTextSize === 'function') gTextSize(Math.round(8 * layout.uiScaleFactor));
+  text(exhausted ? 'STAMINA — REST' : 'STAMINA', startX + barW / 2, startY + barH / 2 + 1);
 
   pop();
 }

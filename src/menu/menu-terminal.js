@@ -63,7 +63,7 @@ function injectTerminal() {
     terminalLog('CORE OS [Version 1.0.42]', 'terminal-log');
     terminalLog('Initializing secure connection... OK.', 'terminal-log');
     terminalLog('SYSTEM INITIALIZED. WELCOME TO THE GRID COMMAND INTERFACE.', 'terminal-success');
-    terminalLog('Type <span style="color:#fff">/help</span> for available commands.', 'terminal-log');
+    terminalLog('Type /help for available commands.', 'terminal-log');
 }
 
 function toggleTerminal(state) {
@@ -80,7 +80,7 @@ function terminalLog(msg, className = 'terminal-log') {
     if (!history) return;
     const cmdLine = document.createElement('div');
     cmdLine.className = className;
-    cmdLine.innerHTML = msg;
+    cmdLine.textContent = String(msg);
     history.appendChild(cmdLine);
     history.scrollTop = history.scrollHeight;
 }
@@ -92,10 +92,10 @@ function processTerminalCommand(cmd) {
 
     if (base === '/help') {
         terminalLog('SYSTEM COMMANDS:');
-        terminalLog('  <span style="color:#fff">/tutorial welcome</span> - Reset welcome flag only.');
-        terminalLog('  <span style="color:#fff">/tutorial reset</span>   - Reset interactive tutorial map.');
-        terminalLog('  <span style="color:#fff">/clear</span>            - Wipe terminal log history.');
-        terminalLog('  <span style="color:#fff">/exit</span>             - Disconnect from console.');
+        terminalLog('  /tutorial welcome - Reset welcome flag only.');
+        terminalLog('  /tutorial reset   - Reset interactive tutorial map.');
+        terminalLog('  /clear            - Wipe terminal log history.');
+        terminalLog('  /exit             - Disconnect from console.');
     } else if (base === '/tutorial') {
         const sub = parts[1];
         if (sub === 'reset' || sub === 'welcome') {
@@ -110,7 +110,10 @@ function processTerminalCommand(cmd) {
         }
     } else if (base === '/clear') {
         const history = document.getElementById('terminal-history');
-        if (history) history.innerHTML = '<div class="terminal-log">History cleared.</div>';
+        if (history) {
+            history.replaceChildren();
+            terminalLog('History cleared.');
+        }
     } else if (base === '/exit') {
         toggleTerminal(false);
     } else {

@@ -21,9 +21,6 @@ const NORMAL_ATTACK_ANGLE_TOL    = 1.2;   // attack angle tolerance for regular 
 const ATTACK_DAMAGE_BASE         = 1;     // normal hit damage
 const ATTACK_DAMAGE_CRITICAL     = 2;     // 3rd-combo critical hit damage
 const PLAYER_ATTACK_HURT_MS      = 250;   // enemy hurt-flash duration after being hit
-const PLAYER_ATTACK_SHAKE_DUR    = 120;   // screen-shake duration on normal hit
-const PLAYER_ATTACK_SHAKE_NORMAL = 5;     // screen-shake intensity on normal hit
-const PLAYER_ATTACK_SHAKE_CRIT   = 8;     // screen-shake intensity on critical hit
 const KNOCKBACK_DIST             = 0.6;   // tile distance enemies are knocked back per hit
 const LOOT_DROP_CHANCE           = 0.4;   // probability a defeated enemy drops an item
 const LOOT_HEALTH_WEIGHT         = 0.6;   // fraction of drops that are HEALTH (rest are POWERUP)
@@ -228,7 +225,6 @@ function handleItemInteraction(targetX, targetY) {
       playerInventory['potion'] = (playerInventory['potion'] || 0) + 1;
       spawnDamageText(t('got_potion'), targetX, targetY, [255, 90, 90]);
       consumed = true;
-      screenShakeTimer = 100; screenShakeAmount = 3;
       break;
     case TILE_TYPES.POWERUP:
       // Inventory
@@ -236,7 +232,6 @@ function handleItemInteraction(targetX, targetY) {
       playerInventory['speed'] = (playerInventory['speed'] || 0) + 1;
       spawnDamageText(t('got_boost'), targetX, targetY, [255, 215, 0]);
       consumed = true;
-      screenShakeTimer = 150; screenShakeAmount = 5;
       break;
     case TILE_TYPES.COIN:
       playerScore += COIN_SCORE_VALUE;
@@ -603,8 +598,14 @@ function _drawPlayerInternal() {
                         const currentEnemyHealth = Number.isFinite(e.health) ? e.health : (e.maxHealth || 1);
                         e.health = currentEnemyHealth - damage;
                         e.hurtTimer = PLAYER_ATTACK_HURT_MS;
-                        screenShakeTimer = PLAYER_ATTACK_SHAKE_DUR;
-                        screenShakeAmount = isCriticalHit ? PLAYER_ATTACK_SHAKE_CRIT : PLAYER_ATTACK_SHAKE_NORMAL;
+                        if (typeof CameraShake !== 'undefined') {
+                          CameraShake.kick({
+                            x: e.x - playerPosition.x,
+                            y: e.y - playerPosition.y,
+                            magnitude: isCriticalHit ? 2.5 : 1.5,
+                            duration: 110,
+                          });
+                        }
 
                         // VFX: Damage Text
                         spawnDamageText(`-${damage}`, e.x, e.y, isCriticalHit ? [255, 200, 0] : [255, 255, 255]);
@@ -833,22 +834,6 @@ function _drawPlayerInternal() {
         pop();
         return;
       }
-      if (spritesheetWalk) {
-        const frameWidth  = spritesheetWalk.width / cols;
-        const frameHeight = spritesheetWalk.height;
-        const sourceX = colIndex * frameWidth;
-        const sourceY = 0;
-        const drawW = frameWidth  * SPRITE_SCALE;
-        const drawH = frameHeight * SPRITE_SCALE;
-        const finalDrawH = drawH * clipFactor;
-        const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - drawH;
-        push(); noSmooth();
-        if (facing === 'left') image(spritesheetWalk, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
-        else image(spritesheetWalk, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
-        pop();
-        return;
-      }
     // --- Run Animation ---
     } else if (action === 'run') {
       const frameImgRun = (runFrames[dir] && runFrames[dir][colIndex]) ? runFrames[dir][colIndex] : null;
@@ -881,22 +866,6 @@ function _drawPlayerInternal() {
         push(); noSmooth();
         if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
         else image(sheet, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
-        pop();
-        return;
-      }
-      if (spritesheetRun) {
-        const frameWidth  = spritesheetRun.width / cols;
-        const frameHeight = spritesheetRun.height;
-        const sourceX = colIndex * frameWidth;
-        const sourceY = 0;
-        const drawW = frameWidth  * SPRITE_SCALE;
-        const drawH = frameHeight * SPRITE_SCALE;
-        const finalDrawH = drawH * clipFactor;
-        const drawX = destX + (cellSize / 2) - (drawW / 2);
-        const drawY = destY + cellSize - drawH;
-        push(); noSmooth();
-        if (facing === 'left') image(spritesheetRun, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
-        else image(spritesheetRun, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
         pop();
         return;
       }
@@ -933,38 +902,6 @@ function _drawPlayerInternal() {
     push(); noSmooth();
     if (facing === 'left') image(sheet, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
     else image(sheet, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
-    pop();
-    return;
-  }
-  if (spritesheetIdle) {
-    const rows = IDLE_SHEET_ROWS;
-    const frameWidth  = spritesheetIdle.width / cols;
-    const frameHeight = spritesheetIdle.height / rows;
-    let rowIndex = 0;
-    let flip = false;
-    switch (dir) {
-      case 'S':  rowIndex = 0; break;
-      case 'SW': rowIndex = 1; break;
-      case 'W':  rowIndex = 2; break;
-      case 'NW': rowIndex = 3; break;
-      case 'N':  rowIndex = 4; break;
-      case 'SE': rowIndex = 1; flip = true; break;
-      case 'E':  rowIndex = 2; flip = true; break;
-      case 'NE': rowIndex = 3; flip = true; break;
-      default:   rowIndex = 0; break;
-    }
-    if (dir.includes('W')) facing = 'left';
-    else if (dir.includes('E')) facing = 'right';
-    const sourceX = colIndex * frameWidth;
-    const sourceY = rowIndex * frameHeight;
-    const drawW = frameWidth  * SPRITE_SCALE;
-    const drawH = frameHeight * SPRITE_SCALE;
-    const finalDrawH = drawH * clipFactor;
-    const drawX = destX + (cellSize / 2) - (drawW / 2);
-    const drawY = destY + cellSize - drawH;
-    push(); noSmooth();
-    if (flip || facing === 'left') image(spritesheetIdle, drawX + drawW, drawY, -drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
-    else image(spritesheetIdle, drawX, drawY, drawW, finalDrawH, sourceX, sourceY, frameWidth, frameHeight * clipFactor);
     pop();
     return;
   }

@@ -91,6 +91,25 @@ function makeElementZoomInvariant(el, origin = 'center center') {
 
 /** Creates a fullscreen overlay + centred panel that stays visually stable across browser zoom levels. */
 function createZoomStablePanel(w, h, id) {
+  const darkness = typeof WeatherSystem !== 'undefined' && WeatherSystem.currentColor
+    ? Number(WeatherSystem.currentColor[3]) || 0
+    : 0;
+  const darkScene = darkness >= 90;
+  const palette = darkScene
+    ? {
+        scrim: 'rgba(4, 8, 5, 0.38)',
+        panel: 'rgba(207, 172, 108, 0.94)',
+        text: '#2b1b0f',
+        border: 'rgba(255, 218, 135, 0.92)',
+        shadow: 'rgba(0, 0, 0, 0.72)',
+      }
+    : {
+        scrim: 'rgba(9, 20, 10, 0.34)',
+        panel: 'rgba(19, 35, 24, 0.94)',
+        text: '#fff2cc',
+        border: MENU_GOLD_BORDER,
+        shadow: 'rgba(0, 0, 0, 0.76)',
+      };
   let container = createDiv('');
   container.id(id);
   container.style('position', 'fixed');
@@ -102,7 +121,7 @@ function createZoomStablePanel(w, h, id) {
   container.style('display', 'flex');
   container.style('align-items', 'center');
   container.style('justify-content', 'center');
-  container.style('background-color', 'rgba(0, 0, 0, 0.5)');
+  container.style('background-color', palette.scrim);
   container.style('transform-origin', 'top left');
   container.style('will-change', 'transform');
   container.style('pointer-events', 'auto');
@@ -111,17 +130,19 @@ function createZoomStablePanel(w, h, id) {
   panel.parent(container);
   panel.style('width', `${w}px`);
   panel.style('height', `${h}px`);
-  panel.style('background-color', 'rgba(18, 18, 23, 0.95)');
-  panel.style('border', `2px solid ${MENU_GOLD_BORDER}`);
+  panel.style('background-color', palette.panel);
+  panel.style('border', `2px solid ${palette.border}`);
   panel.style('border-radius', '6px');
   panel.style('display', 'flex');
   panel.style('flex-direction', 'column');
   panel.style('align-items', 'center');
   panel.style('justify-content', 'center');
   panel.style('font-family', '"Courier New", monospace');
-  panel.style('color', 'white');
-  panel.style('box-shadow', `0 0 18px rgba(0,0,0,0.85), inset 0 0 0 2px ${MENU_GOLD_BORDER}`);
+  panel.style('color', palette.text);
+  panel.style('box-shadow', `0 0 18px ${palette.shadow}, inset 0 0 0 2px ${palette.border}`);
   panel.style('transform', 'none');
+  panel.elt.style.setProperty('--gd-panel-text', palette.text);
+  panel.elt.dataset.sceneTone = darkScene ? 'dark' : 'light';
 
   let zoomLoopId = null;
   const stopPanelZoom = makeElementZoomInvariant(panel.elt, 'center center');
@@ -149,24 +170,6 @@ function createZoomStablePanel(w, h, id) {
   };
 }
 
-/** Applies full-width pixel-button skin to a settings category tab. */
-function applySettingsTabSkin(btn) {
-  if (!btn || !btn.elt) return;
-  stylePixelButton(btn);
-  btn.style('width', '100%');
-  btn.style('height', '54px');
-  btn.style('padding', '0');
-  btn.style('font-size', '20px');
-  btn.style('letter-spacing', '0.2px');
-  btn.style('border-radius', '2px');
-  btn.style('box-shadow', '0 6px 14px rgba(0,0,0,0.6)');
-  btn.style('transition', 'filter 0.15s ease, transform 0.1s ease, box-shadow 0.2s ease');
-  if (btn.elt) {
-    btn.elt.dataset.settingsActive = 'false';
-    btn.elt.dataset.baseShadow = btn.style('box-shadow') || '';
-  }
-}
-
 /** Applies standard menu button styling (size, gold border, text shadow). */
 function applyMenuButtonUI(btn, w = 260, h = 48) {
   if (!btn || !btn.elt) return;
@@ -188,36 +191,14 @@ function applyMenuButtonUI(btn, w = 260, h = 48) {
   btn.style('box-shadow', '0 8px 28px rgba(0,0,0,0.75)');
 }
 
-/** Applies the dark textured background and gold border to the settings panel element. */
-function decorateSettingsPanel(panel) {
-  if (!panel || !panel.style) return;
-  panel.style('background-color', 'rgba(8, 8, 12, 0.9)');
-  panel.style('background-image', `url('${SETTINGS_PANEL_TEXTURE_PATH}')`);
-  panel.style('background-size', 'cover');
-  panel.style('background-position', 'center');
-  panel.style('border', `4px solid ${MENU_GOLD_BORDER}`);
-  panel.style('box-shadow', '0 0 50px rgba(0,0,0,0.95)');
-  panel.style('padding', '28px');
-  panel.style('box-sizing', 'border-box');
-  panel.style('justify-content', 'space-between');
-  panel.style('gap', '18px');
-  panel.style('border-radius', '12px');
-}
-
 /** Removes all settings DOM elements and the overlay, then persists current settings. */
 function closeInGameSettings() {
-  if (activeSettingElements && activeSettingElements.length) {
-    activeSettingElements.forEach(e => { if (e) e.remove(); });
-  }
-  activeSettingElements = [];
-
   if (settingsOverlayDiv) {
     settingsOverlayDiv.remove();
     settingsOverlayDiv = null;
     settingsOverlayPanel = null;
   }
 
-  clearSubSettings();
   try { applyCurrentTextSize(); } catch(e) {}
   try { persistSavedSettings(true); } catch(e) {}
 }
@@ -250,46 +231,6 @@ function resetGameSettingsToDefaults() {
   try { applyColorMode(colorModeSetting); } catch (e) {}
   try { applyCurrentTextSize(); } catch (e) {}
   try { persistSavedSettings(true); } catch (e) {}
-}
-
-/** Replaces the current settings panel contents with the builder for `label`. */
-function showSubSettings(label) {
-  clearSubSettings();
-
-  const cx = width / 2;
-  const cy = height / 2;
-  const panelW = 0.7 * width;
-  const panelH = 0.7 * height;
-  const panelLeft = cx - panelW / 2;
-  const panelRight = cx + panelW / 2;
-  const paddingX = panelW * 0.08;
-  const labelX = panelLeft + paddingX;
-  const controlX = panelLeft + panelW * 0.42;
-  const controlWidth = panelRight - paddingX - controlX;
-  const spacingY = panelH * 0.14;
-
-  const ctx = createSettingsContext({
-    labelX, controlX, controlWidth, panelH,
-    startY: cy - panelH / 2 + panelH * 0.18,
-    spacingY
-  });
-
-  const builder = CATEGORY_BUILDERS[label];
-  if (builder) {
-    builder(ctx);
-  }
-
-  const backY = cy + panelH / 2 - panelH * 0.12;
-  const backWidth = panelW * 0.3;
-  const backBG = createBgImg("assets/3-GUI/Button_BG.png", cx - backWidth / 2, backY - BACK_BUTTON_VERTICAL_OFFSET, backWidth, panelH * 0.08, '3');
-  const backBtn = makeSmallBtn("← Back", cx - backWidth / 2, backY - BACK_BUTTON_VERTICAL_OFFSET, backWidth, panelH * 0.08, () => {
-    playClickSFX();
-    clearSubSettings();
-    showSettingsMenu();
-  });
-
-  activeSettingElements.push(backBG, backBtn);
-  applyCurrentTextSize();
 }
 
 /** Returns the multiplier for the current text size setting (e.g. 1.0 at default, 1.2 at large). */
@@ -375,27 +316,6 @@ function applyCurrentTextSize() {
     } catch(e) {}
 
 
-    try {
-      if (Array.isArray(activeSettingElements)) {
-        activeSettingElements.forEach(item => {
-          try {
-            const node = item && (item.elt || item);
-            if (!node || !node.style) return;
-            const tag = (node.tagName || '').toLowerCase();
-            const controlSize = (tag === 'input' || tag === 'select' || tag === 'button' || tag === 'a') ? btnSize : label;
-            try { node.style.fontSize = controlSize + 'px'; } catch(e){}
-            try {
-              const children = node.querySelectorAll && node.querySelectorAll('*');
-              if (children && children.length) {
-                children.forEach(c => { try { c.style.fontSize = controlSize + 'px'; } catch(e){} });
-              }
-            } catch(e){}
-          } catch(e){}
-        });
-      }
-    } catch(e) {}
-
-    try { updateTextSizeButtonStyles(); } catch(e) {}
   } catch(e) {}
 }
 
@@ -755,17 +675,19 @@ function openInGameSettings(currentVals) {
   };
 
   const display = section('DISPLAY');
-  selectRow(display, 'FPS Mode', ['60 FPS (STABLE)'], '60 FPS (STABLE)', value => {
+  selectRow(display, 'FPS Mode', ['60', '120', 'Unlimited'], getFpsModeLabel(targetFps), value => {
     applyGameFpsMode(value, 'in-game-settings'); persistSavedSettings();
   });
   toggleRow(display, 'Performance Overlay', performanceOverlayEnabled, value => { performanceOverlayEnabled = value; persistSavedSettings(); });
   toggleRow(display, 'Show Stars', showStars, value => { showStars = value; persistSavedSettings(); });
-  toggleRow(display, 'Screen Shake', screenShakeEnabled, value => { screenShakeEnabled = value; persistSavedSettings(); });
+  toggleRow(display, 'Camera Shake', screenShakeEnabled, value => {
+    screenShakeEnabled = value;
+    if (!value && typeof CameraShake !== 'undefined') CameraShake.reset();
+    persistSavedSettings();
+  });
   toggleRow(display, 'Ambient Particles', showParticles, value => {
     showParticles = value;
-    if (!value && typeof vfx !== 'undefined') {
-      for (let i = vfx.length - 1; i >= 0; i--) if (vfx[i].type === 'firefly') vfx.splice(i, 1);
-    }
+    if (!value && typeof WeatherSystem !== 'undefined') WeatherSystem.particles.length = 0;
     persistSavedSettings();
   });
   toggleRow(display, 'Firefly Lighting', showFireflyLighting, value => { showFireflyLighting = value; persistSavedSettings(); });
@@ -820,325 +742,6 @@ function openInGameSettings(currentVals) {
   close.mousePressed(() => { playClickSFX(); closeInGameSettings(); openInGameMenu(); });
 }
 
-/** Retained temporarily for comparison while the unified panel settles. */
-function openLegacyInGameSettings(currentVals) {
-  if (settingsOverlayDiv) {
-    settingsOverlayDiv.remove();
-    settingsOverlayDiv = null;
-    settingsOverlayPanel = null;
-  }
-
-  if (currentVals && typeof currentVals === 'object') {
-    if (typeof currentVals.masterVol === 'number') masterVol = currentVals.masterVol;
-    if (typeof currentVals.musicVol === 'number') musicVol = currentVals.musicVol;
-    if (typeof currentVals.sfxVol === 'number') sfxVol = currentVals.sfxVol;
-    if (typeof currentVals.difficulty === 'string') {
-      setDifficulty(currentVals.difficulty, { regenerate: false, reason: 'sync' });
-    }
-  }
-  try {
-    loadLocalSettings();
-  } catch (e) {}
-  try { applyCurrentTextSize(); } catch (e) {}
-
-  const { container, panel, close } = createZoomStablePanel(SETTINGS_PANEL_W, SETTINGS_PANEL_H, 'gd-settings-overlay');
-  decorateSettingsPanel(panel);
-
-  settingsOverlayDiv = container;
-  settingsOverlayPanel = panel;
-  container.closeZoomPanel = close;
-
-  let title = createDiv('SETTINGS');
-  title.parent(panel);
-  title.style('position', 'absolute');
-  title.style('width', '100%');
-  title.style('text-align', 'center');
-  title.style('top', '-100px'); // Positioned above the box
-  title.style('left', '0');
-  title.style('font-size', '42px');
-  title.style('font-weight', 'bold');
-  title.style('color', '#000');
-  title.style('text-shadow', 'none');
-
-  const layoutRow = createDiv('');
-  layoutRow.parent(panel);
-  layoutRow.style('display', 'flex');
-  layoutRow.style('gap', '26px');
-  layoutRow.style('width', '100%');
-  layoutRow.style('flex', '1');
-  layoutRow.style('min-height', '340px');
-  layoutRow.style('align-items', 'stretch');
-  layoutRow.style('margin', '0 auto');
-  layoutRow.style('max-width', '980px');
-
-  const categoryColumn = createDiv('');
-  categoryColumn.parent(layoutRow);
-  categoryColumn.style('flex', '0 0 32%');
-  categoryColumn.style('display', 'flex');
-  categoryColumn.style('flex-direction', 'column');
-  categoryColumn.style('gap', '12px');
-  categoryColumn.style('padding', '6px 0');
-  categoryColumn.style('height', '100%');
-  categoryColumn.style('justify-content', 'center');
-  categoryColumn.style('align-items', 'stretch');
-  categoryColumn.style('box-sizing', 'border-box');
-
-  const settingsColumnWrapper = createDiv('');
-  settingsColumnWrapper.parent(layoutRow);
-  settingsColumnWrapper.style('flex', '1');
-  settingsColumnWrapper.style('display', 'flex');
-  settingsColumnWrapper.style('flex-direction', 'column');
-  settingsColumnWrapper.style('height', '100%');
-  settingsColumnWrapper.style('justify-content', 'center');
-  settingsColumnWrapper.style('align-items', 'stretch');
-  settingsColumnWrapper.style('box-sizing', 'border-box');
-
-  const settingsColumn = createDiv('');
-  settingsColumn.parent(settingsColumnWrapper);
-  settingsColumn.style('flex', '1');
-  settingsColumn.style('height', '100%');
-  settingsColumn.style('display', 'flex');
-  settingsColumn.style('flex-direction', 'column');
-  settingsColumn.style('gap', '12px');
-  settingsColumn.style('overflow', 'hidden');
-
-  const settingsBody = createDiv('');
-  settingsBody.parent(settingsColumn);
-  settingsBody.style('flex', '1');
-  settingsBody.style('display', 'flex');
-  settingsBody.style('flex-direction', 'column');
-  settingsBody.style('gap', '12px');
-  settingsBody.style('overflow-y', 'auto');
-  settingsBody.style('padding-right', '4px');
-  settingsBody.style('height', '100%');
-
-  const categoryButtons = [];
-  let activeCategoryBtn = null;
-
-  let placeholderMessage = createDiv('Select a category to reveal its settings.');
-  placeholderMessage.parent(settingsBody);
-  placeholderMessage.style('color', '#ccc');
-  placeholderMessage.style('font-size', '20px');
-  placeholderMessage.style('text-align', 'center');
-  placeholderMessage.style('margin-top', '8px');
-  let placeholderVisible = true;
-
-  const selectCategory = (label, btn) => {
-    if (placeholderVisible && placeholderMessage) {
-      placeholderMessage.remove();
-      placeholderVisible = false;
-    }
-    if (activeCategoryBtn) {
-      activeCategoryBtn.style('filter', 'none');
-      activeCategoryBtn.style('transform', 'scale(1)');
-      const baseShadow = activeCategoryBtn.elt?.dataset.baseShadow || '0 6px 14px rgba(0,0,0,0.6)';
-      activeCategoryBtn.style('box-shadow', baseShadow);
-      if (activeCategoryBtn.elt) activeCategoryBtn.elt.dataset.settingsActive = 'false';
-    }
-    activeCategoryBtn = btn;
-    btn.style('filter', 'brightness(1.08)');
-    btn.style('transform', 'scale(1.02)');
-    btn.style('box-shadow', '0 10px 26px rgba(255,215,160,0.45), inset 0 0 0 2px rgba(255,255,255,0.25)');
-    if (btn.elt) btn.elt.dataset.settingsActive = 'true';
-
-    clearSubSettings();
-    settingsBody.html('');
-
-    const ctx = createSettingsContext({ container: settingsBody });
-    const builder = CATEGORY_BUILDERS[label];
-    if (builder) builder(ctx);
-    syncSlidersToSettings();
-    try { applyCurrentTextSize(); } catch (e) {}
-  };
-
-  SETTINGS_CATEGORIES.forEach(label => {
-    const btn = createButton(label);
-    btn.parent(categoryColumn);
-    applySettingsTabSkin(btn);
-    btn.style('font-size', '18px');
-    btn.style('letter-spacing', '0.2px');
-    btn.mousePressed(() => selectCategory(label, btn));
-    categoryButtons.push(btn);
-  });
-
-
-  const footerRow = createDiv('');
-  footerRow.parent(panel);
-  footerRow.style('display', 'flex');
-  footerRow.style('gap', '14px');
-  footerRow.style('justify-content', 'center');
-  footerRow.style('align-items', 'center');
-  footerRow.style('margin-top', '12px');
-
-  const resetBtn = createButton('RESET SETTINGS');
-  resetBtn.parent(footerRow);
-  applyMenuButtonUI(resetBtn, 260, 52);
-  resetBtn.style('border-color', MENU_GOLD_COLOR);
-  resetBtn.style('box-shadow', '0 8px 20px rgba(0,0,0,0.7)');
-  resetBtn.mousePressed(() => {
-    playClickSFX();
-    resetGameSettingsToDefaults();
-    if (container.closeZoomPanel) container.closeZoomPanel();
-    else container.remove();
-    settingsOverlayDiv = null;
-    settingsOverlayPanel = null;
-    clearSubSettings();
-    openInGameSettings({ masterVol, musicVol, sfxVol, difficulty: difficultySetting });
-  });
-
-  let closeBtn = createButton('CLOSE');
-  closeBtn.parent(footerRow);
-  applyMenuButtonUI(closeBtn, 260, 52);
-  closeBtn.style('border-color', MENU_GOLD_COLOR);
-  closeBtn.style('box-shadow', '0 8px 20px rgba(0,0,0,0.7)');
-
-  closeBtn.mousePressed(() => {
-    if (container.closeZoomPanel) container.closeZoomPanel();
-    else container.remove();
-
-    settingsOverlayDiv = null;
-    settingsOverlayPanel = null;
-    clearSubSettings();
-
-    openInGameMenu();
-  });
-
-  if (categoryButtons.length) {
-    const defaultCategory = categoryButtons.find(btn => btn.html && btn.html() === "Graphics") || categoryButtons[0];
-    selectCategory(defaultCategory.html(), defaultCategory);
-  }
-}
-
-/** Hides all settings category tab buttons and their backgrounds. */
-function hideCategoryButtons() {
-  categoryBackgrounds.forEach(e => e && e.hide());
-  categoryButtons.forEach(e => e && e.hide());
-}
-
-/** Hides the Save and Back-to-Menu buttons at the bottom of the settings panel. */
-function hideBottomButtons() {
-  [saveBackground, btnSave, backMenuBackground, btnBackMenu].forEach(e => e && e.hide());
-}
-
-/** Creates a positioned, styled button via `styleButton`. */
-function makeBtn(label, x, y, w, h, cb) {
-  const b = createButton(label);
-  b.size(w, h).position(x, y);
-  styleButton(b);
-  b.mousePressed(cb);
-  return b;
-}
-
-/** Creates a non-interactive positioned image element (used as button backgrounds). */
-function createBgImg(path, x, y, w, h, zIndex = '9998') {
-  const img = createImg(path, '');
-  img.size(w, h).position(x, y);
-  img.style('pointer-events', 'none');
-  img.style('z-index', zIndex);
-  img.style('position', 'absolute');
-  return img;
-}
-
-/** Creates a positioned small-pixel-styled button. */
-function makeSmallBtn(label, x, y, w, h, cb) {
-  const b = createButton(label);
-  b.size(w, h).position(x, y);
-  styleSmallButton(b);
-  b.mousePressed(cb);
-  return b;
-}
-
-/** Creates a right-aligned, absolutely positioned label div for legacy canvas-based settings. */
-function createSettingLabel(txt, x, y, maxWidth = 200) {
-  const d = createDiv(txt);
-  d.position(x, y);
-  d.style("color", "white");
-  d.style("font-size", (0.035 * height) + "px");
-  d.style("text-align", "right");
-  d.style("width", maxWidth + "px");
-  d.style("z-index", "4");
-  d.style("position", "absolute");
-  d.style("pointer-events", "none");
-  if (d.elt && d.elt.classList) d.elt.classList.add('setting-label');
-  return d;
-}
-
-/** Highlights the currently active text-size preset button in gold. */
-function updateTextSizeButtonStyles() {
-  const buttons = selectAll('button[data-text-size-val]');
-  buttons.forEach(btn => {
-    const sizeVal = Number(btn.attribute('data-text-size-val'));
-    if (sizeVal === textSizeSetting) {
-      btn.style('color', '#ffcc00');
-      btn.style('text-shadow', '0 0 8px #ffcc0070');
-    } else {
-      btn.style('color', 'white');
-      btn.style('text-shadow', '0 0 8px #ffffff60');
-    }
-  });
-}
-
-/** Syncs all active audio sliders to the current in-memory volume values. */
-function syncSlidersToSettings() {
-  activeSettingElements.forEach(e => {
-    if (!e.elt || e.elt.tagName !== 'INPUT' || e.elt.type !== 'range') return;
-    const key = e.elt.getAttribute('data-setting');
-    if (!key) return;
-    let value;
-    switch (key) {
-      case 'masterVol': value = masterVol * 100; break;
-      case 'musicVol': value = musicVol * 100; break;
-      case 'sfxVol': value = sfxVol * 100; break;
-      default: return;
-    }
-    e.value(value);
-  });
-}
-
-/** Removes and clears all tracked active setting DOM elements. */
-function clearSubSettings() {
-  activeSettingElements.forEach(e => e && e.remove());
-  activeSettingElements = [];
-}
-
-/** Hides all main-menu buttons (Play, Settings, Exit). */
-function hideMainMenu() {
-  [playButtonBackground, btnPlay, settingsButtonBackground, btnSettings, exitButtonBackground, btnExit]
-    .forEach(e => e && e.hide());
-}
-
-/** Shows main-menu buttons, creating them if they don't exist yet. */
-function showMainMenu() {
-  if (!btnPlay || !btnSettings || !btnExit) {
-    createMainMenu();
-    return;
-  }
-  [playButtonBackground, btnPlay, settingsButtonBackground, btnSettings, exitButtonBackground, btnExit]
-    .forEach(e => e && e.show());
-}
-
-/** Destroys and clears all settings category + nav button elements. */
-function hideSettingsMenu() {
-  [...categoryBackgrounds, ...categoryButtons, saveBackground, btnSave, backMenuBackground, btnBackMenu]
-    .forEach(e => e && e.remove());
-  categoryBackgrounds = [];
-  categoryButtons = [];
-}
-
-/** Applies transparent, absolutely-positioned style to legacy canvas-overlay buttons. */
-function styleButton(btn) {
-  btn.style("background", "transparent");
-  btn.style("border", "none");
-  btn.style("cursor", "pointer");
-  btn.style("color", "white");
-  btn.style("text-shadow", "0 0 10px #ffffff60");
-  if (btn.elt) {
-    btn.elt.style.position = 'absolute';
-    btn.elt.style.pointerEvents = 'auto';
-    btn.elt.style.zIndex = '10001';
-  }
-}
-
 /** Applies the pixel-art button texture, hover/out animations, and font styling. */
 function stylePixelButton(btn) {
 
@@ -1170,149 +773,6 @@ function stylePixelButton(btn) {
 
 
   btn.style('z-index', '20005');
-}
-
-/** Populates `ctx` with Master Volume, Music Volume, and SFX Volume sliders. */
-function buildAudioSettings(ctx) {
-  ctx
-    .addSliderRow("Master Volume", 0, 100, masterVol * 100, v => {
-        masterVol = v / 100;
-        if(typeof applyVolumes === 'function') applyVolumes();
-        if(gameMusic) gameMusic.setVolume(musicVol * masterVol);
-        saveLocalSettingsDebounced();
-    }, { isAudio: true })
-    .addSliderRow("Music Volume", 0, 100, musicVol * 100, v => {
-        musicVol = v / 100;
-        if(typeof applyVolumes === 'function') applyVolumes();
-        if(gameMusic) gameMusic.setVolume(musicVol * masterVol);
-        saveLocalSettingsDebounced();
-    }, { isAudio: true })
-    .addSliderRow("SFX Volume", 0, 100, sfxVol * 100, v => {
-        sfxVol = v / 100;
-        saveLocalSettingsDebounced();
-    }, { isAudio: true });
-}
-
-/** Populates `ctx` with Tutorials, HUD, and Difficulty controls. */
-function buildGameplaySettings(ctx) {
-  ctx
-    .addCheckboxRow("Show Tutorials", showTutorialsSetting, { onChange: v => { showTutorialsSetting = v; persistSavedSettings(); } })
-    .addCheckboxRow("Show HUD", hudEnabled, { onChange: v => { hudEnabled = v; persistSavedSettings(); } })
-    .addSelectRow("Difficulty", ["Easy", "Normal", "Hard"], {
-      value: (difficultySetting.charAt(0).toUpperCase() + difficultySetting.slice(1)),
-      onChange: (val) => {
-        difficultySetting = val.toLowerCase();
-
-        if(typeof setDifficulty === 'function') setDifficulty(difficultySetting, { regenerate: false });
-
-        saveLocalSettings();
-      }
-    });
-}
-
-/** Populates `ctx` with Graphics toggles. */
-function buildGraphicsSettings(ctx) {
-  const fpsLabels = ["60", "120", "Unlimited"];
-  const currentFpsLabel = getFpsModeLabel(normalizeFpsMode(targetFps));
-
-  ctx
-    .addSelectRow("Render", ["PixiJS (WebGL)", "p5 (Canvas 2D)"], {
-      value: (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi')
-        ? "PixiJS (WebGL)" : "p5 (Canvas 2D)",
-      onChange: v => {
-        try {
-          localStorage.setItem('renderBackend', v.includes('Pixi') ? 'pixi' : 'p5');
-        } catch (e) {}
-        // Reload required for the backend switch to take effect
-        try {
-          showToast(
-            typeof t === 'function' ? t('restart_required', 'Restart required') : 'Restart required',
-            'info', 3000
-          );
-        } catch (e) {}
-      }
-    })
-    .addSelectRow("FPS Mode", fpsLabels, {
-      value: fpsLabels.includes(currentFpsLabel) ? currentFpsLabel : "Unlimited",
-      onChange: v => {
-        applyGameFpsMode(v, "graphics-settings-change");
-        persistSavedSettings();
-      }
-    })
-    .addCheckboxRow("Performance Overlay", performanceOverlayEnabled, {
-      onChange: v => { performanceOverlayEnabled = v; persistSavedSettings(); }
-    })
-    .addCheckboxRow("Show Stars", showStars, { onChange: v => { showStars = v; persistSavedSettings(); } })
-    .addCheckboxRow("Screen Shake", screenShakeEnabled, { onChange: v => { screenShakeEnabled = v; persistSavedSettings(); } })
-    .addCheckboxRow("Ambient Particles", showParticles, { onChange: v => {
-        showParticles = v;
-        if (!v && typeof vfx !== 'undefined') {
-          for (let i = vfx.length - 1; i >= 0; i--) {
-            if (vfx[i].type === 'firefly') vfx.splice(i, 1);
-          }
-        }
-        persistSavedSettings();
-    } })
-    .addCheckboxRow("Firefly Lighting", showFireflyLighting, { onChange: v => { showFireflyLighting = v; persistSavedSettings(); } });
-}
-
-/** Populates `ctx` with click-to-rebind keybind rows, a Sensitivity slider, and Invert Y toggle. */
-function buildControlsSettings(ctx) {
-  const KEYBIND_ACTIONS = [
-    { key: 'moveUp',    label: 'Move Up' },
-    { key: 'moveDown',  label: 'Move Down' },
-    { key: 'moveLeft',  label: 'Move Left' },
-    { key: 'moveRight', label: 'Move Right' },
-    { key: 'sprint',    label: 'Sprint' },
-    { key: 'jump',      label: 'Jump' },
-    { key: 'cut',       label: 'Cut / Attack' },
-  ];
-
-  KEYBIND_ACTIONS.forEach(({ key, label }) => {
-    const row = createDiv('');
-    row.parent(ctx.container);
-    row.style('display', 'flex');
-    row.style('align-items', 'center');
-    row.style('justify-content', 'space-between');
-    row.style('width', '100%');
-    row.style('margin-bottom', '10px');
-    activeSettingElements.push(row);
-
-    const lbl = createDiv(label);
-    lbl.parent(row);
-    lbl.class('setting-label');
-    lbl.style('color', 'white');
-    lbl.style('font-size', '20px');
-    lbl.style('text-align', 'right');
-    lbl.style('text-shadow', '1px 1px 0 #000');
-    lbl.style('margin-right', '10px');
-    lbl.style('flex', '1');
-
-    const btn = createButton(keyCodeToLabel(playerKeybinds[key]));
-    btn.parent(row);
-    btn.style('flex', '1');
-    btn.style('height', '30px');
-    stylePixelButton(btn);
-    btn.style('font-size', '14px');
-    btn.style('padding', '0');
-    activeSettingElements.push(btn);
-
-    btn.mousePressed(() => {
-      btn.html('Press a key...');
-      const capture = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        playerKeybinds[key] = e.keyCode;
-        btn.html(keyCodeToLabel(e.keyCode));
-        document.removeEventListener('keydown', capture, true);
-        try { saveLocalSettings(); } catch (err) {}
-      };
-      document.addEventListener('keydown', capture, true);
-    });
-  });
-
-  ctx.addSliderRow("Sensitivity", 1, 10, sensitivitySetting, v => { sensitivitySetting = Number(v); persistSavedSettings(); });
-  ctx.addCheckboxRow("Invert Y Axis", invertYAxis, { onChange: v => { invertYAxis = v; persistSavedSettings(); } });
 }
 
 /** Applies an SVG colour-blindness filter to the canvas, or clears it for "None". */
@@ -1349,276 +809,12 @@ function applyColorMode(mode) {
   if (canvas) canvas.style.filter = filterMap[mode] || '';
 }
 
-/** Populates `ctx` with Color Mode selector and UI scale preset buttons. */
-function buildAccessibilitySettings(ctx) {
-  ctx.addSelectRow("Color Mode", ["None", "Protanopia", "Deuteranopia", "Tritanopia", "Grayscale", "Sepia", "Invert", "High Contrast"], {
-    value: colorModeSetting,
-    onChange: v => { colorModeSetting = v; applyColorMode(v); persistSavedSettings(); }
-  });
-
-
-  const row = createDiv('');
-  row.parent(ctx.container);
-  row.style('display', 'flex');
-  row.style('align-items', 'center');
-  row.style('justify-content', 'space-between');
-  row.style('width', '100%');
-  row.style('margin-bottom', '10px');
-  activeSettingElements.push(row);
-
-  const lbl = createDiv("UI Scale");
-  lbl.parent(row);
-  lbl.class('setting-label');
-  lbl.style('color', 'white');
-  lbl.style('font-size', '20px');
-  lbl.style('text-align', 'right');
-  lbl.style('text-shadow', '1px 1px 0 #000');
-  lbl.style('margin-right', '10px');
-  lbl.style('flex', '1');
-
-  const btnGroup = createDiv('');
-  btnGroup.parent(row);
-  btnGroup.style('display', 'flex');
-  btnGroup.style('gap', '5px');
-  btnGroup.style('flex', '1');
-
-  const presetSource = (typeof window !== 'undefined' && Array.isArray(window.MENU_TEXT_SIZE_PRESETS)) ? window.MENU_TEXT_SIZE_PRESETS : null;
-  const presets = presetSource || [ { label: 'Compact', value: 60 }, { label: 'Default', value: 75 }, { label: 'Large', value: 90 } ];
-
-  presets.forEach(p => {
-      const label = p && p.label ? String(p.label) : String(p);
-      const val = p && typeof p.value === 'number' ? Number(p.value) : (label === 'Default' ? 75 : (label === 'Compact' ? 60 : 90));
-      const btn = createButton(label);
-      btn.parent(btnGroup);
-      btn.attribute('data-text-size-val', String(val));
-      btn.style('flex', '1');
-      btn.style('height', '30px');
-      stylePixelButton(btn);
-      btn.style('font-size', '14px');
-      btn.style('padding', '0');
-      btn.mousePressed(() => {
-        try { textSizeSetting = Number(val); } catch(e) { textSizeSetting = val; }
-        try { applyCurrentTextSize(); } catch(e) {}
-        try { updateTextSizeButtonStyles(); } catch(e) {}
-        try {
-          if (typeof persistSavedSettings === 'function') {
-            persistSavedSettings(true);
-          } else if (typeof saveLocalSettings === 'function') {
-            saveLocalSettings();
-          } else {
-            try {
-              localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
-                masterVol, musicVol, sfxVol,
-                textSizeSetting,
-                uiScale: textSizeSetting,
-                difficulty: difficultySetting,
-                fpsMode: normalizeFpsMode(targetFps),
-                performanceOverlay: performanceOverlayEnabled,
-              }));
-            } catch(e){}
-          }
-        } catch(e) {}
-      });
-  });
-}
-
 /** Looks up `key` in the active language table; falls back to English, then the key itself. */
 function t(key, ...args) {
   const code = (languageSetting || 'English').slice(0, 2).toLowerCase();
   const table = TRANSLATIONS[code] || TRANSLATIONS.en;
   const val = (table[key] !== undefined ? table[key] : TRANSLATIONS.en[key]) ?? key;
   return typeof val === 'function' ? val(...args) : val;
-}
-
-/** Populates `ctx` with the Language selector. */
-function buildLanguageSettings(ctx) {
-  ctx.addSelectRow("Language", ["English", "Spanish", "French", "German"], {
-    value: languageSetting,
-    onChange: v => { languageSetting = v; persistSavedSettings(); }
-  });
-}
-
-/**
- * Returns a builder object for populating a settings panel.
- * All created elements are pushed into `activeSettingElements` for later cleanup.
- * Methods: addSliderRow, addCheckboxRow, addSelectRow, pushElement
- */
-function createSettingsContext({ container }) {
-
-  const styleLabel = (el) => {
-      el.class('setting-label');
-      el.style('color', 'white');
-      el.style('font-size', '20px');
-      el.style('text-align', 'right');
-      el.style('text-shadow', '1px 1px 0 #000');
-      el.style('margin-right', '10px');
-      el.style('flex', '1');
-  };
-
-  const styleInput = (el) => {
-      el.style('cursor', 'pointer');
-      el.style('flex', '1');
-  };
-
-  const audioSettingKey = (label) => {
-    if (label === 'Master Volume') return 'masterVol';
-    if (label === 'Music Volume') return 'musicVol';
-    if (label === 'SFX Volume') return 'sfxVol';
-    return null;
-  };
-
-  const recordElement = (el) => {
-    if (el) activeSettingElements.push(el);
-  };
-
-  const createRow = () => {
-    const row = createDiv('');
-    row.parent(container);
-    row.style('display', 'flex');
-    row.style('align-items', 'center');
-    row.style('justify-content', 'space-between');
-    row.style('width', '100%');
-    row.style('margin-bottom', '10px');
-    recordElement(row);
-    return row;
-  };
-
-  const ctx = {
-    container,
-
-    pushElement(el) {
-      recordElement(el);
-      return ctx;
-    },
-
-    addSliderRow(name, min, max, val, callback, opts = {}) {
-      const row = createRow();
-
-      const lbl = createDiv(name);
-      lbl.parent(row);
-      styleLabel(lbl);
-      recordElement(lbl);
-
-      const slider = createSlider(min, max, val);
-      slider.parent(row);
-      slider.style('width', '100%');
-      styleInput(slider);
-      if (opts && opts.isAudio) {
-        const key = audioSettingKey(name);
-        if (key) slider.attribute('data-setting', key);
-      }
-      recordElement(slider);
-
-      slider.input(() => {
-        try { callback(slider.value()); } catch(e) {}
-        try {
-          if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
-            const keyName = String(name || '').toLowerCase();
-            if (/sensitivity/.test(keyName)) {
-              try { window.showError1(name); } catch(e){}
-            }
-          }
-        } catch(e) {}
-      });
-
-      return ctx;
-    },
-
-    addCheckboxRow(name, state = false, options = {}) {
-      const row = createRow();
-
-      const lbl = createDiv(name);
-      lbl.parent(row);
-      styleLabel(lbl);
-      recordElement(lbl);
-
-      const toggle = createDiv('');
-      toggle.parent(row);
-      toggle.style('width', '36px');
-      toggle.style('height', '36px');
-      toggle.style('display', 'flex');
-      toggle.style('align-items', 'center');
-      toggle.style('justify-content', 'center');
-      toggle.style('border', `2px solid ${MENU_GOLD_BORDER}`);
-      toggle.style('border-radius', '6px');
-      toggle.style('box-shadow', `inset 0 0 0 2px rgba(0,0,0,0.4)`);
-      toggle.style('cursor', 'pointer');
-      toggle.style('font-size', '24px');
-      toggle.style('font-family', 'MyFont, sans-serif');
-      toggle.style('color', MENU_GOLD_COLOR);
-      toggle.style('background', 'rgba(255,255,255,0.05)');
-      toggle.style('transition', 'background 0.2s ease, transform 0.2s ease');
-      recordElement(toggle);
-
-      let checked = !!state;
-      const updateVisual = (value) => {
-        toggle.html(value ? '✔' : '');
-        toggle.style('background', value ? `rgba(184,134,11,0.35)` : 'rgba(255,255,255,0.05)');
-        toggle.style('box-shadow', value ? `0 0 12px ${MENU_GOLD_GLOW}` : 'inset 0 0 0 2px rgba(0,0,0,0.4)');
-        toggle.style('transform', value ? 'scale(1.05)' : 'none');
-      };
-      updateVisual(checked);
-
-      const toggleHandler = () => {
-        checked = !checked;
-        updateVisual(checked);
-        if (typeof options.onChange === 'function') {
-          options.onChange(checked);
-        }
-        try {
-        if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
-          const keyName = String(name || '').toLowerCase();
-          if (/show\s*tutorials?/.test(keyName) || /enable\s*hud/.test(keyName) || /enabled\s*hub/.test(keyName) || /invert\s*y/.test(keyName) || /invert\s*y\s*axis/.test(keyName)) {
-            try { window.showError1(name); } catch(e){}
-          }
-        }
-        } catch(e) {}
-      };
-      toggle.mousePressed(toggleHandler);
-
-      return ctx;
-    },
-
-    addSelectRow(name, opts, options = {}) {
-      const row = createRow();
-
-      const lbl = createDiv(name);
-      lbl.parent(row);
-      styleLabel(lbl);
-      recordElement(lbl);
-
-      const sel = createSelect();
-      sel.parent(row);
-      sel.style('font-size', '16px');
-      sel.style('background', '#222');
-      sel.style('color', 'white');
-      sel.style('border', '1px solid #555');
-      sel.style('border-radius', '4px');
-      sel.style('padding', '5px');
-      styleInput(sel);
-
-      opts.forEach(opt => sel.option(opt));
-
-      if (options.value) sel.value(options.value);
-      sel.changed(() => {
-        try { if (typeof options.onChange === 'function') options.onChange(sel.value()); } catch(e) {}
-        try {
-          if (typeof window !== 'undefined' && typeof window.showError1 === 'function') {
-            const keyName = String(name || '').toLowerCase();
-            if (/color\s*mode/.test(keyName) || /difficulty/.test(keyName)) {
-              try { window.showError1(name); } catch(e){}
-            } else if (/language/.test(keyName)) {
-              try { window.showError1(name + ' — ONLY English is supported now'); } catch(e){}
-            }
-          }
-        } catch(e) {}
-      });
-      recordElement(sel);
-
-      return ctx;
-    }
-  };
-  return ctx;
 }
 
 /** Creates the loading overlay DOM (progress bar + percentage) if it doesn't exist yet. */
@@ -1842,17 +1038,6 @@ const TRANSLATIONS = {
     tut_portal_north:'Das Portal ist im Norden! Komm zurück!',
     tut_portal_east:'Das Portal ist im Osten!',
   },
-};
-
-
-// ── Category builders map ──
-const CATEGORY_BUILDERS = {
-  Audio: buildAudioSettings,
-  Gameplay: buildGameplaySettings,
-  Graphics: buildGraphicsSettings,
-  Controls: buildControlsSettings,
-  Accessibility: buildAccessibilitySettings,
-  Language: buildLanguageSettings
 };
 
 

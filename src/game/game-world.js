@@ -711,13 +711,6 @@ function clearObjectValues(target) {
 
 function releaseGameAssets() {
   clearPreviousGameState();
-  releaseImageReference(spritesheetIdle);
-  releaseImageReference(spritesheetWalk);
-  releaseImageReference(spritesheetRun);
-  spritesheetIdle = null;
-  spritesheetWalk = null;
-  spritesheetRun = null;
-
   releaseImageReference(BUTTON_BG);
   releaseImageReference(TREE_OVERLAY_IMG);
   releaseImageReference(uiFont);

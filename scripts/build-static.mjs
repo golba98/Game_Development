@@ -37,14 +37,30 @@ try {
   // stuck on empty 500 responses even after the copy finishes.
   await mkdir(outputDir, { recursive: true });
 
+  const expectedFiles = new Set();
+
+  async function collectExpected(source, relativeTarget) {
+    const sourceStat = await stat(source);
+    if (sourceStat.isFile()) {
+      expectedFiles.add(relativeTarget.split(path.sep).join('/'));
+      return;
+    }
+    const entries = await readdir(source, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() && !entry.isDirectory()) continue;
+      await collectExpected(path.join(source, entry.name), path.join(relativeTarget, entry.name));
+    }
+  }
+
   for (const entry of staticEntries) {
     const source = path.join(root, entry);
     const target = path.join(outputDir, entry);
 
     await cp(source, target, { recursive: true });
+    await collectExpected(source, entry);
   }
 
-const files = [];
+let files = [];
 
 async function collectFiles(dir) {
   const dirents = await readdir(dir, { withFileTypes: true });
@@ -60,6 +76,13 @@ async function collectFiles(dir) {
   }
 }
 
+  await collectFiles(outputDir);
+
+  for (const filePath of files) {
+    const relativePath = path.relative(outputDir, filePath).split(path.sep).join('/');
+    if (!expectedFiles.has(relativePath)) await rm(filePath, { force: true });
+  }
+  files = [];
   await collectFiles(outputDir);
 
 const oversized = [];

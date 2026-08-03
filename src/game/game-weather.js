@@ -42,6 +42,7 @@ const WeatherSystem = {
   starTime: 0,
 
   particles: [],
+  _warmLightStamps: Object.create(null),
 
   // --- Performance caches ---
   _nativeMapCtx: null,          // Cached 2D context for the darkness map (avoid getContext every frame)
@@ -265,8 +266,8 @@ const WeatherSystem = {
    * During dawn it smoothly grows back.
    */
   getLightRadius: function () {
-    const DAY_RADIUS = 900; // So large the circle edge is off-screen
-    const NIGHT_RADIUS = 350; // Tight torch glow
+    const DAY_RADIUS = 520;
+    const NIGHT_RADIUS = 230;
     const t = this.cycle;
 
     if (t < CYCLE_NIGHT_END) {
@@ -402,6 +403,25 @@ const WeatherSystem = {
     return c;
   },
 
+  _getWarmLightStamp: function (color) {
+    const rgb = Array.isArray(color) ? color.slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(v)))) : [255, 174, 76];
+    const key = rgb.join(',');
+    if (this._warmLightStamps[key]) return this._warmLightStamps[key];
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    gradient.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.55)`);
+    gradient.addColorStop(0.28, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.22)`);
+    gradient.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    this._warmLightStamps[key] = canvas;
+    return canvas;
+  },
+
   /**
    * Draws the darkness overlay and light halos onto the main canvas.
    * @param {number} w - Canvas width
@@ -465,8 +485,10 @@ const WeatherSystem = {
         const lx = l.x / DOWNSCALE;
         const ly = l.y / DOWNSCALE;
         const rad = (l.radius || 100) / DOWNSCALE;
+        ctx.globalAlpha = Math.max(0, Math.min(1, Number(l.eraseStrength) || 0.3));
         ctx.drawImage(stamp, lx - rad, ly - rad, rad * 2, rad * 2);
       }
+      ctx.globalAlpha = 1;
     }
 
     // Restore P5 transform and draw the native mask scaled up
@@ -485,6 +507,23 @@ const WeatherSystem = {
       w + overscan,
       h + overscan,
     );
+
+    // Warm colour is added after darkness, so the torch reads as firelight
+    // instead of a circular hole revealing daytime terrain.
+    if (lights && lights.length > 0) {
+      drawingContext.globalCompositeOperation = 'screen';
+      for (const light of lights) {
+        if (!light.color || (Number(light.intensity) || 0) <= 0) continue;
+        const radius = Number(light.radius) || 100;
+        drawingContext.globalAlpha = Math.max(0, Math.min(1, Number(light.intensity) || 0.35));
+        const warmStamp = this._getWarmLightStamp(light.color);
+        const drawX = (camX || 0) + light.x - radius;
+        const drawY = (camY || 0) + light.y - radius;
+        drawingContext.drawImage(warmStamp, drawX, drawY, radius * 2, radius * 2);
+      }
+      drawingContext.globalAlpha = 1;
+      drawingContext.globalCompositeOperation = 'source-over';
+    }
 
     // Draw stars OVER the darkness mask so they aren't masked out by the 90% opacity black
     if (showStars && this.currentColor[3] >= STAR_VISIBILITY_MIN_ALPHA) {
@@ -619,24 +658,33 @@ const WeatherSystem = {
     pop();
   },
 
-  /** Renders slow drifting ambient dust motes (Day) or glowing fireflies (Night) */
+  /** Renders a small, frame-rate-independent pool of dust or nighttime fireflies. */
   drawAmbientParticles: function (camX, camY, isNight) {
-    if (!showParticles || typeof width === "undefined") return;
+    if (!showParticles || typeof width === "undefined") {
+      this.particles.length = 0;
+      return;
+    }
 
     const vW = typeof virtualW !== "undefined" ? virtualW : width / gameScale;
     const vH = typeof virtualH !== "undefined" ? virtualH : height / gameScale;
 
-    // Initialize pool
-    if (this.particles.length === 0) {
-      for (let i = 0; i < 40; i++) {
+    const kind = isNight ? 'firefly' : 'dust';
+    const cap = isNight ? 12 : 18;
+    if (this.particles.length !== cap || this.particles.some(p => p.kind !== kind)) {
+      this.particles.length = 0;
+      for (let i = 0; i < cap; i++) {
+        const angle = Math.random() * TWO_PI;
+        const speed = isNight ? 3 + Math.random() * 5 : 2 + Math.random() * 4;
         this.particles.push({
+          kind,
           x: Math.random() * 2000,
           y: Math.random() * 2000,
-          vx: (Math.random() - 0.5) * 0.4,
-          vy: (Math.random() - 0.5) * 0.4,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
           size: Math.random() * 2.5 + 1,
           phase: Math.random() * TWO_PI,
-          speed: Math.random() * 0.02 + 0.01,
+          phaseSpeed: 0.8 + Math.random() * 1.2,
+          _visible: false,
         });
       }
     }
@@ -648,10 +696,11 @@ const WeatherSystem = {
     const offsetX = (camX || 0) * 0.8;
     const offsetY = (camY || 0) * 0.8;
 
+    const dtSeconds = Math.max(0, Math.min(0.05, (Number(gameDelta) || 0) / 1000));
     for (const p of this.particles) {
-      p.x += p.vx;
-      p.y += p.vy;
-      p.phase += p.speed;
+      p.x += p.vx * dtSeconds;
+      p.y += p.vy * dtSeconds;
+      p.phase += p.phaseSpeed * dtSeconds;
 
       const wrapScale = 2000;
       if (p.x < 0) p.x += wrapScale;
@@ -661,6 +710,9 @@ const WeatherSystem = {
 
       const screenX = (((p.x - offsetX) % wrapScale) + wrapScale) % wrapScale;
       const screenY = (((p.y - offsetY) % wrapScale) + wrapScale) % wrapScale;
+      p._screenX = screenX;
+      p._screenY = screenY;
+      p._visible = false;
 
       if (
         screenX > -10 &&
@@ -668,21 +720,43 @@ const WeatherSystem = {
         screenY > -10 &&
         screenY < vH + 10
       ) {
+        p._visible = true;
         const pulse = (Math.sin(p.phase) + 1) / 2;
+        const drawX = screenX + (camX || 0);
+        const drawY = screenY + (camY || 0);
 
         if (isNight) {
           const alpha = 50 + pulse * 150;
-          fill(150, 255, 50, alpha);
-          circle(screenX, screenY, p.size);
-          fill(150, 255, 50, alpha * 0.3);
-          circle(screenX, screenY, p.size * 3);
+          fill(214, 238, 112, alpha);
+          circle(drawX, drawY, p.size);
+          fill(190, 222, 92, alpha * 0.18);
+          circle(drawX, drawY, p.size * 2.4);
         } else {
           const alpha = 20 + pulse * 60;
           fill(255, 250, 220, alpha);
-          circle(screenX, screenY, p.size);
+          circle(drawX, drawY, p.size);
         }
       }
     }
     pop();
+  },
+
+  getAmbientLights: function () {
+    if (!showParticles || !showFireflyLighting || this.getPhase() !== 'night') return [];
+    const result = [];
+    for (const particle of this.particles) {
+      if (!particle._visible || particle.kind !== 'firefly') continue;
+      result.push({
+        type: 'firefly',
+        x: particle._screenX,
+        y: particle._screenY,
+        radius: 34,
+        color: [190, 220, 90],
+        intensity: 0.18,
+        eraseStrength: 0.12,
+      });
+      if (result.length === 3) break;
+    }
+    return result;
   },
 };

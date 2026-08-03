@@ -12,7 +12,7 @@
 //                                 batched ghost pass. Runs inside the world
 //                                 transform, after the static map blit.
 //
-//   drawNightOverlay(camX, camY)— ambient particles, firefly spawning and the
+//   drawNightOverlay(camX, camY)— ambient particles, torch/firefly lights and the
 //                                 day/night darkness+lights overlay. camX/camY
 //                                 are the floored camera offset (was drawCamX/Y).
 //
@@ -390,26 +390,17 @@ const Renderer = {
     const isNight = WeatherSystem.cycle > 0.8 || WeatherSystem.cycle < 0.2;
     WeatherSystem.drawAmbientParticles(smoothCamX, smoothCamY, isNight);
   }
-  // Night Ambience: Fireflies
-  if (
-    typeof WeatherSystem !== "undefined" &&
-    (WeatherSystem.cycle < 0.3 || WeatherSystem.cycle > 0.7)
-  ) {
-    if (showParticles && random(1) < 0.03) {
-      spawnFirefly();
-    }
-  }
-
   // --- Night overlay — drawn INSIDE the world transform so scale(gameScale) applies ---
   if (typeof WeatherSystem !== "undefined") {
     _lightsPool.length = 0;
     const viewportW = Math.ceil(virtualW || width / gameScale);
     const viewportH = Math.ceil(virtualH || height / gameScale);
-    const pushVisibleLight = (x, y, radius) => {
-      const r = radius || 40;
-      if (x + r < -cellSize || x - r > viewportW + cellSize) return;
-      if (y + r < -cellSize || y - r > viewportH + cellSize) return;
-      _lightsPool.push({ x, y, radius: r });
+    const pushVisibleLight = light => {
+      if (!light) return;
+      const r = light.radius || 40;
+      if (light.x + r < -cellSize || light.x - r > viewportW + cellSize) return;
+      if (light.y + r < -cellSize || light.y - r > viewportH + cellSize) return;
+      _lightsPool.push(light);
     };
 
     if (playerPosition) {
@@ -417,25 +408,31 @@ const Renderer = {
       const pY = isMoving ? renderY : playerPosition.y;
       const screenX = pX * cellSize + cellSize / 2 - camX;
       const screenY = pY * cellSize + cellSize / 2 - camY;
+      const facingOffsets = {
+        N: [0, -18], NE: [13, -13], E: [18, 0], SE: [13, 13],
+        S: [0, 18], SW: [-13, 13], W: [-18, 0], NW: [-13, -13],
+      };
+      const facing = facingOffsets[lastDirection] || facingOffsets.S;
 
       const baseRadius =
         typeof WeatherSystem !== "undefined" &&
         typeof WeatherSystem.getLightRadius === "function"
           ? WeatherSystem.getLightRadius()
           : 450;
-      pushVisibleLight(screenX, screenY, baseRadius + Math.sin(millis() / 200) * 10);
+      const flicker = 1 + Math.sin(WeatherSystem.starTime * 15.7) * 0.025 + Math.sin(WeatherSystem.starTime * 7.9) * 0.015;
+      pushVisibleLight({
+        type: 'torch',
+        x: screenX + facing[0],
+        y: screenY + facing[1],
+        radius: baseRadius * flicker,
+        color: [255, 174, 76],
+        intensity: 0.42,
+        eraseStrength: 0.72,
+      });
     }
-    // Add lights from VFX (like fireflies)
-    if (vfx && vfx.length) {
-      for (const effect of vfx) {
-        if (!showFireflyLighting && effect.type === "firefly") continue;
-        if (typeof effect.getLight === "function") {
-          const l = effect.getLight();
-          if (l) {
-            pushVisibleLight(l.worldX - camX, l.worldY - camY, l.radius || 40);
-          }
-        }
-      }
+    const ambientLights = WeatherSystem.getAmbientLights();
+    for (const light of ambientLights) {
+      pushVisibleLight(light);
     }
     // Add lights from enemies (ghost glow)
     if (enemies && enemies.length) {
@@ -443,7 +440,15 @@ const Renderer = {
         if (typeof e.getLight === "function") {
           const l = e.getLight();
           if (l) {
-            pushVisibleLight(l.worldX - camX, l.worldY - camY, l.radius || 40);
+            pushVisibleLight({
+              type: l.type || 'point',
+              x: l.worldX - camX,
+              y: l.worldY - camY,
+              radius: l.radius || 40,
+              color: l.color || [150, 180, 255],
+              intensity: Number(l.intensity) || 0.2,
+              eraseStrength: Number(l.eraseStrength) || 0.16,
+            });
           }
         }
       }
