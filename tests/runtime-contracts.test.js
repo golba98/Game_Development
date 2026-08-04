@@ -127,3 +127,29 @@ test('terminal command output never assigns user text through innerHTML', () => 
   assert.match(menuTerminal, /cmdLine\.textContent/);
   assert.match(gameTerminal, /div\.textContent/);
 });
+
+test('night lighting enters gradually on one shared darkness curve', () => {
+  const context = vm.createContext({ Math });
+  runScript('src/game/game-weather.js', context);
+
+  const samples = vm.runInContext(`(() => {
+    const alphas = [0, 24, 72, 140, WeatherSystem.colors.night[3]];
+    return alphas.map(alpha => {
+      WeatherSystem.currentColor = [0, 0, 0, alpha];
+      return [WeatherSystem.getDarknessProgress(), WeatherSystem.getLightRadius()];
+    });
+  })()`, context);
+
+  assert.equal(samples[0][0], 0);
+  assert.equal(samples.at(-1)[0], 1);
+  assert.equal(samples[0][1], 520);
+  assert.equal(samples.at(-1)[1], 230);
+  for (let i = 1; i < samples.length; i++) {
+    assert.ok(samples[i][0] > samples[i - 1][0], 'darkness should rise continuously');
+    assert.ok(samples[i][1] < samples[i - 1][1], 'torch radius should contract continuously');
+  }
+
+  const renderer = fs.readFileSync(path.join(root, 'src/game/runtime/renderer.js'), 'utf8');
+  assert.match(renderer, /intensity: 0\.42 \* darknessProgress/);
+  assert.match(renderer, /eraseStrength: 0\.72 \* darknessProgress/);
+});
