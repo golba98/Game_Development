@@ -5,6 +5,14 @@ const LEGACY_UNCAPPED_FPS = 999;
 const UNLIMITED_FPS_TARGET = 0;
 const SETTINGS_STORAGE_KEY = "game.settings";
 const LEGACY_SETTINGS_STORAGE_KEY = "menuSettings";
+const FPS_MODE_OPTIONS = Object.freeze([
+  Object.freeze({ value: "60", label: "60 FPS (Stable)" }),
+  Object.freeze({ value: "120", label: "120 FPS" }),
+  Object.freeze({ value: "144", label: "144 FPS" }),
+  Object.freeze({ value: "165", label: "165 FPS" }),
+  Object.freeze({ value: "240", label: "240 FPS" }),
+  Object.freeze({ value: "unlimited", label: "Unlimited (Max)" }),
+]);
 
 const DEFAULT_SETTINGS = Object.freeze({
   masterVol: 0.8,
@@ -52,13 +60,16 @@ function normalizeFpsMode(value, fallback = DEFAULT_SETTINGS.fpsMode) {
   if (value === null || value === undefined || value === "" || typeof value === "boolean") return fallback;
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
-    if (normalized === "unlimited" || normalized === "uncapped") return "unlimited";
-    if (normalized === "60" || normalized === "120") return normalized;
+    if (normalized === "unlimited" || normalized === "uncapped" || normalized === "max") return "unlimited";
   }
 
-  const target = normalizeTargetFps(value, getFpsTargetForMode(fallback));
+  const fallbackText = String(fallback).trim().toLowerCase();
+  const fallbackTarget = (fallbackText === "unlimited" || fallbackText === "uncapped" || fallbackText === "max")
+    ? UNLIMITED_FPS_TARGET
+    : normalizeTargetFps(fallback, DEFAULT_SETTINGS.targetFps);
+  const target = normalizeTargetFps(value, fallbackTarget);
   if (isUnlimitedFpsTarget(target)) return "unlimited";
-  return target <= 60 ? "60" : "120";
+  return String(target);
 }
 
 function getFpsTargetForMode(mode) {
@@ -76,7 +87,8 @@ function getTargetFpsLabel(value) {
 
 function getFpsModeLabel(value) {
   const normalized = normalizeFpsMode(value);
-  return normalized === "unlimited" ? "Unlimited" : normalized;
+  const option = FPS_MODE_OPTIONS.find(item => item.value === normalized);
+  return option ? option.label : normalized + " FPS";
 }
 
 function applyFpsModeToP5(value) {

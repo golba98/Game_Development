@@ -4,13 +4,13 @@ function injectTerminal() {
     terminalEl = createDiv(`
         <div id="game-terminal">
             <div id="terminal-header">
-                <span id="terminal-title">SYSTEM COMMAND INTERFACE</span>
-                <span id="terminal-close">ESC to Close</span>
+                <span id="terminal-title">Terminal</span>
+                <span id="terminal-close">Esc to close</span>
             </div>
             <div id="terminal-history"></div>
             <div id="terminal-input-row">
-                <span id="terminal-prompt">></span>
-                <input type="text" id="terminal-input" spellcheck="false" autocomplete="off" placeholder="Enter command...">
+                <span id="terminal-prompt">$</span>
+                <input type="text" id="terminal-input" spellcheck="false" autocomplete="off" aria-label="Terminal command">
             </div>
         </div>
     `);
@@ -60,10 +60,7 @@ function injectTerminal() {
         }
     });
 
-    terminalLog('CORE OS [Version 1.0.42]', 'terminal-log');
-    terminalLog('Initializing secure connection... OK.', 'terminal-log');
-    terminalLog('SYSTEM INITIALIZED. WELCOME TO THE GRID COMMAND INTERFACE.', 'terminal-success');
-    terminalLog('Type /help for available commands.', 'terminal-log');
+    terminalLog('Type /help for commands. Use Up/Down for history.', 'terminal-hint');
 }
 
 function toggleTerminal(state) {

@@ -718,81 +718,75 @@ function injectCustomStyles() {
     /* Terminal Styles */
     #game-terminal {
         position: fixed;
-        top: 50%;
+        top: 10vh;
         left: 50%;
-        transform: translate(-50%, -50%);
-        width: 700px;
-        height: 450px;
-        background: rgba(15, 15, 20, 0.98);
-        border: 3px solid #ffcc00;
-        box-shadow: 0 0 30px rgba(0,0,0,0.9), inset 0 0 15px rgba(255,204,0,0.1);
+        transform: translateX(-50%);
+        width: min(760px, calc(100vw - 32px));
+        height: min(480px, 72vh);
+        background: #101214;
+        border: 1px solid #343a40;
+        box-shadow: 0 16px 48px rgba(0,0,0,0.65);
         padding: 0;
         display: flex;
         flex-direction: column;
-        font-family: 'MyFont', Courier, monospace;
-        color: white;
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #d8dee9;
         z-index: 20000;
         pointer-events: auto;
-        border-radius: 8px;
+        border-radius: 6px;
         overflow: hidden;
     }
     #terminal-header {
-        background: #ffcc00;
-        color: #000;
-        padding: 8px 15px;
+        background: #1b1f23;
+        color: #aeb6bf;
+        padding: 7px 10px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        font-weight: bold;
-        letter-spacing: 1px;
-        font-size: 14px;
+        border-bottom: 1px solid #343a40;
+        font-size: 12px;
     }
     #terminal-close {
-        opacity: 0.7;
-        font-size: 12px;
+        color: #78838f;
     }
     #terminal-history {
         flex: 1;
         overflow-y: auto;
         margin: 0;
-        padding: 20px;
+        padding: 12px;
         scrollbar-width: thin;
-        scrollbar-color: #ffcc00 transparent;
-        font-size: 16px;
-        line-height: 1.4;
+        scrollbar-color: #4b5560 transparent;
     }
     #terminal-history::-webkit-scrollbar { width: 6px; }
-    #terminal-history::-webkit-scrollbar-thumb { background: #ffcc00; border-radius: 3px; }
+    #terminal-history::-webkit-scrollbar-thumb { background: #4b5560; }
 
     #terminal-input-row {
         display: flex;
         align-items: center;
-        border-top: 2px solid rgba(255,204,0,0.3);
-        padding: 15px 20px;
-        background: rgba(0,0,0,0.3);
+        border-top: 1px solid #2c3238;
+        padding: 9px 12px 11px;
+        background: #101214;
     }
     #terminal-prompt {
-        margin-right: 12px;
-        font-weight: bold;
-        color: #ffcc00;
-        font-size: 20px;
+        margin-right: 8px;
+        color: #7ee787;
     }
     #terminal-input {
         background: transparent;
         border: none;
-        color: white;
-        font-family: 'MyFont', monospace;
-        font-size: 18px;
+        color: #d8dee9;
+        font: inherit;
         width: 100%;
         outline: none;
     }
     #terminal-input::placeholder {
-        color: rgba(255,255,255,0.2);
+        color: #59636e;
     }
-    .terminal-log { margin-bottom: 6px; color: rgba(255,255,255,0.9); }
-    .terminal-success { margin-bottom: 6px; color: #ffff00; font-weight: bold; text-shadow: 0 0 5px rgba(255,255,0,0.3); }
-    .terminal-error { margin-bottom: 6px; color: #ff4444; font-weight: bold; }
-    .terminal-input-echo { margin-bottom: 6px; color: #ffcc00; opacity: 0.8; }
+    .terminal-log { margin: 0 0 2px; color: #d8dee9; white-space: pre-wrap; }
+    .terminal-success { color: #7ee787; }
+    .terminal-error { color: #ff7b72; }
+    .terminal-input-echo { color: #79c0ff; }
+    .terminal-hint { color: #8b949e; }
   `);
 
   style.id = 'custom-menu-styles';

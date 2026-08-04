@@ -133,10 +133,8 @@ function applyGameFpsMode(rawModeOrTarget, reason) {
   let appliedP5Target = requestedTargetFps;
 
   if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi') {
-    // Pixi backend: control via ticker.maxFPS; p5.frameRate() must not gate frames.
-    if (typeof PixiApp !== 'undefined' && PixiApp.app && PixiApp.app.ticker) {
-      PixiApp.app.ticker.maxFPS = fpsMode === "unlimited" ? 0 : requestedTargetFps;
-    }
+    // Pixi backend owns frame pacing; p5.frameRate() must not gate frames.
+    if (typeof PixiApp !== 'undefined') PixiApp.setTargetFps(requestedTargetFps);
     if (typeof frameRate === 'function') frameRate(Number.POSITIVE_INFINITY);
   } else {
     // p5 backend: use p5's built-in frame rate control.

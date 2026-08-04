@@ -602,7 +602,10 @@ function openInGameSettings(currentVals) {
     const select = createSelect();
     select.parent(row(parent, label));
     select.class('gd-menu-select');
-    options.forEach(option => select.option(option));
+    options.forEach(option => {
+      if (option && typeof option === 'object') select.option(option.label, option.value);
+      else select.option(option);
+    });
     select.selected(value);
     select.changed(() => changed(select.value()));
     return select;
@@ -675,7 +678,7 @@ function openInGameSettings(currentVals) {
   };
 
   const display = section('DISPLAY');
-  selectRow(display, 'FPS Mode', ['60', '120', 'Unlimited'], getFpsModeLabel(targetFps), value => {
+  selectRow(display, 'FPS Mode', FPS_MODE_OPTIONS, normalizeFpsMode(targetFps), value => {
     applyGameFpsMode(value, 'in-game-settings'); persistSavedSettings();
   });
   toggleRow(display, 'Performance Overlay', performanceOverlayEnabled, value => { performanceOverlayEnabled = value; persistSavedSettings(); });

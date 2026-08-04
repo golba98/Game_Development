@@ -57,7 +57,10 @@ function addMenuSelectRow(section, labelText, options, currentValue, onChange, h
   const select = createSelect();
   select.parent(control);
   select.class('gd-menu-select');
-  options.forEach(option => select.option(option));
+  options.forEach(option => {
+    if (option && typeof option === 'object') select.option(option.label, option.value);
+    else select.option(option);
+  });
   if (currentValue) select.selected(currentValue);
   select.changed(() => {
     if (typeof onChange === 'function') onChange(select.value());
@@ -183,14 +186,14 @@ function buildDisplaySettings(section) {
   addMenuSelectRow(
     section,
     'FPS Mode',
-    ['60', '120', 'Unlimited'],
-    getFpsModeLabel(targetFps),
+    FPS_MODE_OPTIONS,
+    normalizeFpsMode(targetFps),
     value => {
       targetFps = getFpsTargetForMode(value);
       saveAllSettings();
       if (typeof applyFPS === 'function') applyFPS();
     },
-    '60 FPS is the stable default. Higher modes may use more power.'
+    '60 FPS is the stable default. Pick a higher cap or Unlimited (Max).'
   );
   addMenuToggleRow(section, 'Performance Overlay', performanceOverlayEnabled, value => {
     performanceOverlayEnabled = value;
