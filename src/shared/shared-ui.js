@@ -61,10 +61,10 @@ function getViewportSize() {
 function getPerformanceOverlaySize(uiScaleFactor = 1, maxWidth = Infinity) {
   const safeUiScaleFactor = Math.max(0.85, Math.min(1.4, Number(uiScaleFactor) || 1));
   const widthCap = Number.isFinite(maxWidth) ? Math.max(1, Number(maxWidth)) : Infinity;
-  const scaleFactor = Math.min(safeUiScaleFactor, widthCap / 310);
+  const scaleFactor = Math.min(safeUiScaleFactor, widthCap / 220);
   return {
-    width: Math.round(310 * scaleFactor),
-    height: Math.round(30 * scaleFactor),
+    width: Math.round(220 * scaleFactor),
+    height: Math.round(24 * scaleFactor),
     uiScaleFactor: scaleFactor,
   };
 }
@@ -79,7 +79,7 @@ function drawPerformanceOverlayPanel(opts = {}) {
   const w = _sz.width;
   const h = _sz.height;
   const uiScaleFactor = _sz.uiScaleFactor;
-  const padX = Math.round(8 * uiScaleFactor);
+  const padX = Math.round(6 * uiScaleFactor);
   const centerY = y + h / 2;
 
   push();
@@ -87,12 +87,13 @@ function drawPerformanceOverlayPanel(opts = {}) {
   fill(0, 0, 0, 205);
   rect(x, y, w, h, Math.max(2, Math.round(3 * uiScaleFactor)));
 
-  const modeLabel = opts.modeLabel || getFpsModeLabel(normalizeFpsMode(opts.fpsMode ?? opts.targetFps));
+  const modeLabel = (opts.modeLabel || getFpsModeLabel(normalizeFpsMode(opts.fpsMode ?? opts.targetFps)))
+    .replace(' (Max)', '');
   const metrics = [
-    ["CURRENT", String(Math.round(tracker.measuredFps || 0)), 0.2],
-    ["AVERAGE", String(Math.round(tracker.averageFps || tracker.measuredFps || 0)), 0.21],
-    ["1% LOW", String(Math.round(tracker.low1Fps || tracker.measuredFps || 0)), 0.19],
-    ["MODE", modeLabel, 0.4],
+    ["CUR", String(Math.round(tracker.measuredFps || 0)), 0.2],
+    ["AVG", String(Math.round(tracker.averageFps || tracker.measuredFps || 0)), 0.21],
+    ["1%", String(Math.round(tracker.low1Fps || tracker.measuredFps || 0)), 0.17],
+    ["MODE", modeLabel, 0.42],
   ];
   let fieldX = x + padX;
   const usableW = w - padX * 2;
@@ -101,15 +102,15 @@ function drawPerformanceOverlayPanel(opts = {}) {
     textAlign(LEFT, CENTER);
     textStyle(NORMAL);
     fill(178, 178, 186);
-    if (typeof gTextSize === "function") gTextSize(Math.round(7 * uiScaleFactor));
-    else textSize(Math.round(7 * uiScaleFactor));
+    if (typeof gTextSize === "function") gTextSize(Math.round(6 * uiScaleFactor));
+    else textSize(Math.round(6 * uiScaleFactor));
     text(label, fieldX, centerY);
 
-    const labelW = textWidth(label) + Math.round(4 * uiScaleFactor);
+    const labelW = textWidth(label) + Math.round(3 * uiScaleFactor);
     textStyle(BOLD);
     fill(247, 247, 250);
-    if (typeof gTextSize === "function") gTextSize(Math.round(9 * uiScaleFactor));
-    else textSize(Math.round(9 * uiScaleFactor));
+    if (typeof gTextSize === "function") gTextSize(Math.round(8 * uiScaleFactor));
+    else textSize(Math.round(8 * uiScaleFactor));
     text(value, fieldX + labelW, centerY);
     fieldX += fieldW;
   });

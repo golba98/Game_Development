@@ -186,22 +186,8 @@ function getHudLayout() {
     safeArea,
   );
 
-  const perfOverlapsBoss = !(
-    perfRect.x + perfRect.w < bossShell.x ||
-    perfRect.x > bossShell.x + bossShell.w ||
-    perfRect.y + perfRect.h < bossShell.y ||
-    perfRect.y > bossShell.y + bossShell.h
-  );
-  if (perfOverlapsBoss) {
-    perfRect = clampHudRect(
-      perfRect.x,
-      bossShell.y + bossShell.h + gap,
-      perfSize.width,
-      perfSize.height,
-      safeArea,
-      perfPad,
-    );
-  }
+  // Keep telemetry beside the profile badge. Its compact width is designed to
+  // fit the top-row gap, so it must not fall back into the playfield.
 
   // --- XP & Level Bar (Raised Bottom-Center) ---
   const xpPadX = Math.min(Math.round(18 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
@@ -1049,7 +1035,6 @@ function drawCompass() {
             // Once close, pin the tracker to the actual target until it is resolved.
             markerX = constrain(tScreenX, leftLimit, rightLimit);
             markerY = constrain(tScreenY - cellSize * 0.7, topLimit, bottomLimit);
-            markerAngle = Math.PI / 2;
         } else {
             let tMin = Infinity;
             if (dx > 0) tMin = Math.min(tMin, (rightLimit - pScreenX) / dx);
