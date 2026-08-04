@@ -222,7 +222,6 @@ test('objective tracker independently selects the closest living mob and coin', 
   assert.match(hud, /type: 'enemy', label: 'MOB', lane: -1/);
   assert.doesNotMatch(hud, /If on screen, skip pointer/);
 });
-
 test('changed runtime scripts use the current cache version', () => {
   const gameHtml = fs.readFileSync(path.join(root, 'game.html'), 'utf8');
   const menuHtml = fs.readFileSync(path.join(root, 'menu.html'), 'utf8');
