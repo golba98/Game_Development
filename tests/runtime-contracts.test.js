@@ -173,11 +173,13 @@ test('pause panels keep readable text on day and night scenes', () => {
 
 test('performance panel is compact and only shows requested summary rows', () => {
   const sharedUi = fs.readFileSync(path.join(root, 'src/shared/shared-ui.js'), 'utf8');
-  assert.match(sharedUi, /height: Math\.round\(118 \* scaleFactor\)/);
+  assert.match(sharedUi, /width: Math\.round\(520 \* scaleFactor\)/);
+  assert.match(sharedUi, /height: Math\.round\(44 \* scaleFactor\)/);
   assert.match(sharedUi, /\["CURRENT"/);
   assert.match(sharedUi, /\["AVERAGE"/);
   assert.match(sharedUi, /\["1% LOW"/);
-  assert.match(sharedUi, /\["MODE"/);
+  assert.match(sharedUi, /\["FPS MODE"/);
+  assert.doesNotMatch(sharedUi, /text\("PERFORMANCE"/);
   assert.doesNotMatch(sharedUi, /\["rAF fps"/);
   assert.doesNotMatch(sharedUi, /\["backend"/);
 });
@@ -195,4 +197,28 @@ test('unlimited Pixi FPS uses the independent loop period, not stale ticker FPS'
   });
   runScript('src/game/runtime/game-loop.js', context);
   assert.equal(vm.runInContext('FramePerf.snapshot().fps', context), 200);
+});
+
+test('objective tracker independently selects the closest living mob and coin', () => {
+  const context = vm.createContext({
+    Math,
+    activeCoins: [{ x: 9, y: 9 }, { x: 2, y: 1 }],
+    enemies: [
+      { x: 1, y: 1, health: 0 },
+      { x: 8, y: 8, health: 4 },
+      { x: 3, y: 2, health: 2 },
+    ],
+  });
+  runScript('src/game/game-hud.js', context);
+  const targets = vm.runInContext(`({
+    coin: findNearestCoin(0, 0),
+    mob: findNearestLivingEnemy(0, 0)
+  })`, context);
+  assert.deepEqual({ ...targets.coin }, { x: 2, y: 1 });
+  assert.deepEqual({ ...targets.mob }, { x: 3, y: 2 });
+
+  const hud = fs.readFileSync(path.join(root, 'src/game/game-hud.js'), 'utf8');
+  assert.match(hud, /type: 'coin', label: 'COIN', lane: 1/);
+  assert.match(hud, /type: 'enemy', label: 'MOB', lane: -1/);
+  assert.doesNotMatch(hud, /If on screen, skip pointer/);
 });

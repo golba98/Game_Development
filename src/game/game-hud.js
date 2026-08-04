@@ -102,7 +102,7 @@ function getHudLayout() {
   const statBarW = Math.round(Math.max(1, Math.min(184 * uiScaleFactor, safeArea.width - 72 * uiScaleFactor)));
   const perfPad = Math.round(10 * uiScaleFactor);
   const perfSize = getPerformanceOverlaySize(uiScaleFactor, safeArea.width - perfPad * 2);
-  const perfRect = clampHudRect(
+  let perfRect = clampHudRect(
     safeArea.right - perfSize.width - perfPad,
     safeArea.top + perfPad,
     perfSize.width,
@@ -180,6 +180,23 @@ function getHudLayout() {
     Math.round(bossBarH + bossPadY * 2),
     safeArea,
   );
+
+  const perfOverlapsBoss = !(
+    perfRect.x + perfRect.w < bossShell.x ||
+    perfRect.x > bossShell.x + bossShell.w ||
+    perfRect.y + perfRect.h < bossShell.y ||
+    perfRect.y > bossShell.y + bossShell.h
+  );
+  if (perfOverlapsBoss) {
+    perfRect = clampHudRect(
+      safeArea.right - perfSize.width - perfPad,
+      bossShell.y + bossShell.h + gap,
+      perfSize.width,
+      perfSize.height,
+      safeArea,
+      perfPad,
+    );
+  }
 
   // --- XP & Level Bar (Raised Bottom-Center) ---
   const xpPadX = Math.min(Math.round(18 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
@@ -901,6 +918,41 @@ function findNearestCoin(px, py) {
     return nearest;
 }
 
+function findNearestLivingEnemy(px, py) {
+    if (typeof enemies === 'undefined' || !enemies || enemies.length === 0) return null;
+    let nearest = null;
+    let minDist = Infinity;
+    for (const enemy of enemies) {
+        if (!enemy || (typeof enemy.health === 'number' && enemy.health <= 0)) continue;
+        const enemyX = Number(enemy.x);
+        const enemyY = Number(enemy.y);
+        if (!Number.isFinite(enemyX) || !Number.isFinite(enemyY)) continue;
+        const d = Math.hypot(enemyX - px, enemyY - py);
+        if (d < minDist) {
+            minDist = d;
+            nearest = { x: enemyX, y: enemyY };
+        }
+    }
+    return nearest;
+}
+
+function getCompassTopLimit(layout, playerScreenY, markerMargin) {
+    const uiPad = Math.round(18 * layout.uiScaleFactor);
+    const playerBottom = layout.playerPanelY + layout.playerPanelH + layout.playerPanelPad;
+    const bossBottom = layout.bossY + layout.bossBarH + layout.bossPadY;
+    const performanceBottom = performanceOverlayEnabled
+        ? layout.perfY + layout.perfSize.height
+        : layout.safeArea.top;
+    const desiredTop = Math.max(
+        layout.safeArea.top + markerMargin,
+        playerBottom + uiPad,
+        bossBottom + uiPad,
+        performanceBottom + uiPad,
+    );
+    // Keep a usable upward lane on unusually short viewports.
+    return Math.min(desiredTop, Math.max(layout.safeArea.top + markerMargin, playerScreenY - markerMargin));
+}
+
 function drawCompass() {
     if (!playerPosition) return;
 
@@ -917,19 +969,12 @@ function drawCompass() {
 
     const activeMarkers = [];
 
-    // Find nearest coin
-    const nearestCoin = findNearestCoin(pX, pY);
-    if (nearestCoin) activeMarkers.push({ x: nearestCoin.x, y: nearestCoin.y, type: 'coin', label: 'COIN' });
+    // Track the closest remaining objective of each kind independently.
+    const nearestEnemy = findNearestLivingEnemy(pX, pY);
+    if (nearestEnemy) activeMarkers.push({ x: nearestEnemy.x, y: nearestEnemy.y, type: 'enemy', label: 'MOB', lane: -1 });
 
-    // Find nearest enemy
-    if (enemies && enemies.length > 0) {
-        let nearestE = null, minDistE = Infinity;
-        for (const e of enemies) {
-            const d = Math.hypot(e.x - pX, e.y - pY);
-            if (d < minDistE) { minDistE = d; nearestE = e; }
-        }
-        if (nearestE) activeMarkers.push({ x: nearestE.x, y: nearestE.y, type: 'enemy', label: 'ENEMY' });
-    }
+    const nearestCoin = findNearestCoin(pX, pY);
+    if (nearestCoin) activeMarkers.push({ x: nearestCoin.x, y: nearestCoin.y, type: 'coin', label: 'COIN', lane: 1 });
 
     // Portal
     if (isPortalActive && portalPos) {
@@ -939,20 +984,16 @@ function drawCompass() {
     activeMarkers.forEach((m, i) => {
         const tScreenX = (m.x * cellSize + cellSize / 2) - camX;
         const tScreenY = (m.y * cellSize + cellSize / 2) - camY;
-        const padding = 60;
-
-        // If on screen, skip pointer
-        if (tScreenX > padding && tScreenX < vW - padding && tScreenY > padding && tScreenY < vH - padding) return;
-
         const dx = tScreenX - pScreenX;
         const dy = tScreenY - pScreenY;
+        if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return;
         const distTiles = Math.hypot(dx, dy) / cellSize;
         const angle = atan2(dy, dx);
 
         const margin = Math.max(40, layout.margin + 12) + (i * 5);
         const leftLimit = Math.min(safeArea.right, safeArea.left + margin);
         const rightLimit = Math.max(leftLimit, safeArea.right - margin);
-        const topLimit = Math.min(safeArea.bottom, safeArea.top + margin);
+        const topLimit = Math.min(safeArea.bottom, getCompassTopLimit(layout, pScreenY, margin));
         const bottomLimit = Math.max(topLimit, safeArea.bottom - Math.max(margin, Math.round(48 * layout.uiScaleFactor)));
         let tMin = Infinity;
         if (dx > 0) tMin = Math.min(tMin, (rightLimit - pScreenX) / dx);
@@ -960,8 +1001,11 @@ function drawCompass() {
         if (dy > 0) tMin = Math.min(tMin, (bottomLimit - pScreenY) / dy);
         if (dy < 0) tMin = Math.min(tMin, (topLimit - pScreenY) / dy);
 
-        const edgeX = constrain(pScreenX + dx * tMin, leftLimit, rightLimit);
-        const edgeY = constrain(pScreenY + dy * tMin, topLimit, bottomLimit);
+        const laneOffset = (m.lane || 0) * Math.round(14 * layout.uiScaleFactor);
+        const perpendicularX = -Math.sin(angle) * laneOffset;
+        const perpendicularY = Math.cos(angle) * laneOffset;
+        const edgeX = constrain(pScreenX + dx * tMin + perpendicularX, leftLimit, rightLimit);
+        const edgeY = constrain(pScreenY + dy * tMin + perpendicularY, topLimit, bottomLimit);
 
         let markerColor;
         if (m.type === 'enemy') markerColor = color(255, 50, 50);
@@ -993,7 +1037,7 @@ function drawCompass() {
         noStroke();
         if (uiFont) textFont(uiFont);
 
-        // Label (COIN/ENEMY/PORTAL)
+        // Label (yellow COIN, red MOB, or purple PORTAL)
         textAlign(CENTER, BOTTOM);
         textSize(10);
         fill(0, 180);
