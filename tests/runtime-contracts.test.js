@@ -173,12 +173,12 @@ test('pause panels keep readable text on day and night scenes', () => {
 
 test('performance panel is compact and only shows requested summary rows', () => {
   const sharedUi = fs.readFileSync(path.join(root, 'src/shared/shared-ui.js'), 'utf8');
-  assert.match(sharedUi, /width: Math\.round\(520 \* scaleFactor\)/);
-  assert.match(sharedUi, /height: Math\.round\(44 \* scaleFactor\)/);
+  assert.match(sharedUi, /width: Math\.round\(310 \* scaleFactor\)/);
+  assert.match(sharedUi, /height: Math\.round\(30 \* scaleFactor\)/);
   assert.match(sharedUi, /\["CURRENT"/);
   assert.match(sharedUi, /\["AVERAGE"/);
   assert.match(sharedUi, /\["1% LOW"/);
-  assert.match(sharedUi, /\["FPS MODE"/);
+  assert.match(sharedUi, /\["MODE"/);
   assert.doesNotMatch(sharedUi, /text\("PERFORMANCE"/);
   assert.doesNotMatch(sharedUi, /\["rAF fps"/);
   assert.doesNotMatch(sharedUi, /\["backend"/);
@@ -225,8 +225,8 @@ test('objective tracker independently selects the closest living mob and coin', 
 test('changed runtime scripts use the current cache version', () => {
   const gameHtml = fs.readFileSync(path.join(root, 'game.html'), 'utf8');
   const menuHtml = fs.readFileSync(path.join(root, 'menu.html'), 'utf8');
-  assert.match(gameHtml, /src\/shared\/shared-ui\.js\?v=20260804-1/);
+  assert.match(gameHtml, /src\/shared\/shared-ui\.js\?v=20260804-2/);
   assert.match(gameHtml, /src\/game\/runtime\/game-loop\.js\?v=20260804-1/);
-  assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-1/);
-  assert.match(menuHtml, /src\/shared\/shared-ui\.js\?v=20260804-1/);
+  assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-2/);
+  assert.match(menuHtml, /src\/shared\/shared-ui\.js\?v=20260804-2/);
 });
