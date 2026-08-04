@@ -170,3 +170,29 @@ test('pause panels keep readable text on day and night scenes', () => {
   assert.equal(palettes.night.palette.text, '#eef4ff');
   assert.doesNotMatch(palettes.night.palette.panel, /207, 172, 108/);
 });
+
+test('performance panel is compact and only shows requested summary rows', () => {
+  const sharedUi = fs.readFileSync(path.join(root, 'src/shared/shared-ui.js'), 'utf8');
+  assert.match(sharedUi, /height: Math\.round\(118 \* scaleFactor\)/);
+  assert.match(sharedUi, /\["CURRENT"/);
+  assert.match(sharedUi, /\["AVERAGE"/);
+  assert.match(sharedUi, /\["1% LOW"/);
+  assert.match(sharedUi, /\["MODE"/);
+  assert.doesNotMatch(sharedUi, /\["rAF fps"/);
+  assert.doesNotMatch(sharedUi, /\["backend"/);
+});
+
+test('unlimited Pixi FPS uses the independent loop period, not stale ticker FPS', () => {
+  const context = vm.createContext({
+    Math,
+    Date,
+    console,
+    performance: { now: () => 1000 },
+    window: { _gameFramePeriodMs: 5 },
+    RENDER_BACKEND: 'pixi',
+    targetFps: 0,
+    PixiApp: { app: { ticker: { FPS: 60 } } },
+  });
+  runScript('src/game/runtime/game-loop.js', context);
+  assert.equal(vm.runInContext('FramePerf.snapshot().fps', context), 200);
+});
