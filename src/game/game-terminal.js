@@ -224,6 +224,9 @@ function processTerminalCommand(cmd) {
           collected++;
         }
       }
+      // Coins are rendered and tracked from this live list as well as mapStates.
+      // Clear both sources so collected sprites and compass markers disappear.
+      activeCoins = [];
       if (collected > 0) {
         lastScoreChange = millis();
         createMapImage(logicalW, logicalH); // Refresh the whole map image

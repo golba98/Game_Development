@@ -396,12 +396,12 @@ function drawXPBar() {
       const badgeW = Math.round(104 * layout.uiScaleFactor);
       const badgeX = startX + barW - badgeW;
       const badgeY = startY - layout.xpPadY - badgeH - Math.round(3 * layout.uiScaleFactor);
-      fill(12, 12, 14, 225);
-      stroke(255, 205, 40, 220);
+      fill(16, 28, 48, 235);
+      stroke(100, 200, 255, 230);
       strokeWeight(1);
       rect(badgeX, badgeY, badgeW, badgeH, 3);
       noStroke();
-      fill(255, 215, 0);
+      fill(160, 225, 255);
       if (typeof gTextSize === 'function') gTextSize(Math.round(9 * layout.uiScaleFactor));
       else textSize(Math.round(9 * layout.uiScaleFactor));
       text(badgeText, badgeX + badgeW/2, badgeY + badgeH/2 + 1);
