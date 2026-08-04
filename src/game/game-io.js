@@ -203,6 +203,18 @@ function tryFetchActiveMap() {
 }
 
 // Applies a deserialised map payload object to the live game state.
+function rebuildActiveCoinsFromMap() {
+  activeCoins = [];
+  if (!mapStates || !logicalW || !logicalH) return;
+  for (let index = 0; index < mapStates.length; index++) {
+    if (mapStates[index] !== TILE_TYPES.COIN) continue;
+    activeCoins.push({
+      x: index % logicalW,
+      y: Math.floor(index / logicalW),
+    });
+  }
+}
+
 function applyLoadedMap(obj) {
   try {
     if (!obj || typeof obj !== 'object' || !Array.isArray(obj.mapStates) || !obj.logicalW || !obj.logicalH) {
@@ -222,6 +234,7 @@ function applyLoadedMap(obj) {
     }
 
     try { mapStates = new Uint8Array(obj.mapStates); } catch (e) { mapStates = new Uint8Array(Array.from(obj.mapStates || [])); }
+    rebuildActiveCoinsFromMap();
     if (obj.terrainLayer && Array.isArray(obj.terrainLayer)) {
       try { terrainLayer = new Uint8Array(obj.terrainLayer); } catch (e) { terrainLayer = new Uint8Array(Array.from(obj.terrainLayer)); }
     } else {
@@ -299,6 +312,7 @@ function loadMapFromStorage() {
     }
 
     try { mapStates = new Uint8Array(obj.mapStates); } catch (e) { mapStates = new Uint8Array(Array.from(obj.mapStates || [])); }
+    rebuildActiveCoinsFromMap();
     if (obj.terrainLayer && Array.isArray(obj.terrainLayer)) {
       try { terrainLayer = new Uint8Array(obj.terrainLayer); } catch (e) { terrainLayer = new Uint8Array(Array.from(obj.terrainLayer)); }
     } else {

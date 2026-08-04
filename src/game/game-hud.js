@@ -21,6 +21,9 @@ let cachedHudLayout = null;
 let cachedHudLayoutKey = "";
 let cachedCloudImagesSourceCount = -1;
 let cachedUsableCloudImages = [];
+let lockedObjectiveEnemy = null;
+let lockedObjectiveCoinKey = null;
+const OBJECTIVE_LOCK_DISTANCE_TILES = 12;
 
 // Minimap enemy/coin marker cache — recomputed at ~10 Hz instead of every frame.
 const _MINIMAP_MARKER_INTERVAL = 6; // frames between recomputes
@@ -938,6 +941,44 @@ function findNearestLivingEnemy(px, py) {
     return nearest;
 }
 
+function getTrackedLivingEnemy(px, py) {
+    const lockedIsAlive = lockedObjectiveEnemy &&
+        enemies.includes(lockedObjectiveEnemy) &&
+        (typeof lockedObjectiveEnemy.health !== 'number' || lockedObjectiveEnemy.health > 0);
+    if (!lockedIsAlive) lockedObjectiveEnemy = null;
+
+    if (!lockedObjectiveEnemy) {
+        let nearest = null;
+        let minDist = Infinity;
+        for (const enemy of enemies || []) {
+            if (!enemy || (typeof enemy.health === 'number' && enemy.health <= 0)) continue;
+            const d = Math.hypot(Number(enemy.x) - px, Number(enemy.y) - py);
+            if (Number.isFinite(d) && d < minDist) {
+                minDist = d;
+                nearest = enemy;
+            }
+        }
+        if (nearest && minDist <= OBJECTIVE_LOCK_DISTANCE_TILES) lockedObjectiveEnemy = nearest;
+        return nearest ? { x: Number(nearest.x), y: Number(nearest.y) } : null;
+    }
+    return { x: Number(lockedObjectiveEnemy.x), y: Number(lockedObjectiveEnemy.y) };
+}
+
+function getTrackedCoin(px, py) {
+    const coinList = Array.isArray(activeCoins) ? activeCoins : [];
+    if (lockedObjectiveCoinKey) {
+        const lockedCoin = coinList.find(coin => `${coin.x},${coin.y}` === lockedObjectiveCoinKey);
+        if (lockedCoin) return { x: lockedCoin.x, y: lockedCoin.y };
+        lockedObjectiveCoinKey = null;
+    }
+
+    const nearest = findNearestCoin(px, py);
+    if (nearest && Math.hypot(nearest.x - px, nearest.y - py) <= OBJECTIVE_LOCK_DISTANCE_TILES) {
+        lockedObjectiveCoinKey = `${nearest.x},${nearest.y}`;
+    }
+    return nearest;
+}
+
 function getCompassTopLimit(layout, playerScreenY, markerMargin) {
     const uiPad = Math.round(18 * layout.uiScaleFactor);
     const playerBottom = layout.playerPanelY + layout.playerPanelH + layout.playerPanelPad;
@@ -972,10 +1013,10 @@ function drawCompass() {
     const activeMarkers = [];
 
     // Track the closest remaining objective of each kind independently.
-    const nearestEnemy = findNearestLivingEnemy(pX, pY);
+    const nearestEnemy = getTrackedLivingEnemy(pX, pY);
     if (nearestEnemy) activeMarkers.push({ x: nearestEnemy.x, y: nearestEnemy.y, type: 'enemy', label: 'MOB', lane: -1 });
 
-    const nearestCoin = findNearestCoin(pX, pY);
+    const nearestCoin = getTrackedCoin(pX, pY);
     if (nearestCoin) activeMarkers.push({ x: nearestCoin.x, y: nearestCoin.y, type: 'coin', label: 'COIN', lane: 1 });
 
     // Portal
@@ -997,17 +1038,31 @@ function drawCompass() {
         const rightLimit = Math.max(leftLimit, safeArea.right - margin);
         const topLimit = Math.min(safeArea.bottom, getCompassTopLimit(layout, pScreenY, margin));
         const bottomLimit = Math.max(topLimit, safeArea.bottom - Math.max(margin, Math.round(48 * layout.uiScaleFactor)));
-        let tMin = Infinity;
-        if (dx > 0) tMin = Math.min(tMin, (rightLimit - pScreenX) / dx);
-        if (dx < 0) tMin = Math.min(tMin, (leftLimit - pScreenX) / dx);
-        if (dy > 0) tMin = Math.min(tMin, (bottomLimit - pScreenY) / dy);
-        if (dy < 0) tMin = Math.min(tMin, (topLimit - pScreenY) / dy);
+        const targetIsNearbyAndVisible = distTiles <= OBJECTIVE_LOCK_DISTANCE_TILES &&
+            tScreenX >= leftLimit && tScreenX <= rightLimit &&
+            tScreenY >= topLimit && tScreenY <= bottomLimit;
 
-        const laneOffset = (m.lane || 0) * Math.round(14 * layout.uiScaleFactor);
-        const perpendicularX = -Math.sin(angle) * laneOffset;
-        const perpendicularY = Math.cos(angle) * laneOffset;
-        const edgeX = constrain(pScreenX + dx * tMin + perpendicularX, leftLimit, rightLimit);
-        const edgeY = constrain(pScreenY + dy * tMin + perpendicularY, topLimit, bottomLimit);
+        let markerX;
+        let markerY;
+        let markerAngle = angle;
+        if (targetIsNearbyAndVisible) {
+            // Once close, pin the tracker to the actual target until it is resolved.
+            markerX = constrain(tScreenX, leftLimit, rightLimit);
+            markerY = constrain(tScreenY - cellSize * 0.7, topLimit, bottomLimit);
+            markerAngle = Math.PI / 2;
+        } else {
+            let tMin = Infinity;
+            if (dx > 0) tMin = Math.min(tMin, (rightLimit - pScreenX) / dx);
+            if (dx < 0) tMin = Math.min(tMin, (leftLimit - pScreenX) / dx);
+            if (dy > 0) tMin = Math.min(tMin, (bottomLimit - pScreenY) / dy);
+            if (dy < 0) tMin = Math.min(tMin, (topLimit - pScreenY) / dy);
+
+            const laneOffset = (m.lane || 0) * Math.round(14 * layout.uiScaleFactor);
+            const perpendicularX = -Math.sin(angle) * laneOffset;
+            const perpendicularY = Math.cos(angle) * laneOffset;
+            markerX = constrain(pScreenX + dx * tMin + perpendicularX, leftLimit, rightLimit);
+            markerY = constrain(pScreenY + dy * tMin + perpendicularY, topLimit, bottomLimit);
+        }
 
         let markerColor;
         if (m.type === 'enemy') markerColor = color(255, 50, 50);
@@ -1017,8 +1072,8 @@ function drawCompass() {
         const alpha = map(sin(millis() / 200), -1, 1, 180, 255);
 
         push();
-        translate(edgeX, edgeY);
-        rotate(angle);
+        translate(markerX, markerY);
+        rotate(markerAngle);
 
         // Arrow Shadow
         fill(0, 100);
@@ -1035,7 +1090,7 @@ function drawCompass() {
         vertex(20, 0); vertex(-10, -14); vertex(0, 0); vertex(-10, 14);
         endShape(CLOSE);
 
-        rotate(-angle);
+        rotate(-markerAngle);
         noStroke();
         if (uiFont) textFont(uiFont);
 
