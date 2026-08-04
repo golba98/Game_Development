@@ -300,7 +300,7 @@ function drawBottomHud() {
 }
 
 function drawBossHud() {
-  drawBossHealthBar();
+  // Boss health is shown above the moving beetle in the world.
 }
 
 function drawPlayerStatusShell() {
@@ -968,14 +968,12 @@ function getTrackedCoin(px, py) {
 function getCompassTopLimit(layout, playerScreenY, markerMargin) {
     const uiPad = Math.round(18 * layout.uiScaleFactor);
     const playerBottom = layout.playerPanelY + layout.playerPanelH + layout.playerPanelPad;
-    const bossBottom = layout.bossY + layout.bossBarH + layout.bossPadY;
     const performanceBottom = performanceOverlayEnabled
         ? layout.perfY + layout.perfSize.height
         : layout.safeArea.top;
     const desiredTop = Math.max(
         layout.safeArea.top + markerMargin,
         playerBottom + uiPad,
-        bossBottom + uiPad,
         performanceBottom + uiPad,
     );
     // Keep a usable upward lane on unusually short viewports.
@@ -1032,9 +1030,10 @@ function drawCompass() {
         let markerY;
         let markerAngle = angle;
         if (targetIsNearbyAndVisible) {
-            // Once close, pin the tracker to the actual target until it is resolved.
-            markerX = constrain(tScreenX, leftLimit, rightLimit);
-            markerY = constrain(tScreenY - cellSize * 0.7, topLimit, bottomLimit);
+            // Keep the arrow outside the target sprite and aim its tip inward.
+            const targetClearance = Math.max(cellSize * 0.85, 34 * layout.uiScaleFactor);
+            markerX = constrain(tScreenX - Math.cos(angle) * targetClearance, leftLimit, rightLimit);
+            markerY = constrain(tScreenY - Math.sin(angle) * targetClearance, topLimit, bottomLimit);
         } else {
             let tMin = Infinity;
             if (dx > 0) tMin = Math.min(tMin, (rightLimit - pScreenX) / dx);

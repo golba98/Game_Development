@@ -253,9 +253,12 @@ test('loaded maps rebuild the live coin tracker from coin tiles', () => {
 test('changed runtime scripts use the current cache version', () => {
   const gameHtml = fs.readFileSync(path.join(root, 'game.html'), 'utf8');
   const menuHtml = fs.readFileSync(path.join(root, 'menu.html'), 'utf8');
-  assert.match(gameHtml, /src\/shared\/shared-ui\.js\?v=20260804-3/);
+  assert.match(gameHtml, /src\/shared\/shared-ui\.js\?v=20260804-4/);
   assert.match(gameHtml, /src\/game\/runtime\/game-loop\.js\?v=20260804-1/);
-  assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-5/);
+  assert.match(gameHtml, /src\/game\/game-globals\.js\?v=20260804-2/);
+  assert.match(gameHtml, /src\/game\/game-combat\.js\?v=20260804-1/);
+  assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-6/);
+  assert.match(gameHtml, /src\/game\/game-core\.js\?v=20260804-2/);
   assert.match(gameHtml, /src\/game\/game-io\.js\?v=20260804-1/);
-  assert.match(menuHtml, /src\/shared\/shared-ui\.js\?v=20260804-3/);
+  assert.match(menuHtml, /src\/shared\/shared-ui\.js\?v=20260804-4/);
 });

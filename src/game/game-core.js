@@ -732,6 +732,23 @@ function draw() {
         playerMana = Math.min(maxMana, playerMana + 0.05 * (gameDelta / 16.67));
       }
 
+      // Recover one health every four seconds after six seconds without damage.
+      // Whole-point ticks keep the small health pool readable and prevent regen
+      // from overpowering sustained enemy attacks.
+      const healthRegenNow = typeof millis === "function" ? millis() : Date.now();
+      if (playerHealth > 0 && playerHealth < maxHealth &&
+          healthRegenNow - lastPlayerDamageAt >= PLAYER_HEALTH_REGEN_DELAY_MS) {
+        playerHealthRegenAccumulator += gameDelta;
+        if (playerHealthRegenAccumulator >= PLAYER_HEALTH_REGEN_INTERVAL_MS) {
+          const recoveredHealth = Math.floor(playerHealthRegenAccumulator / PLAYER_HEALTH_REGEN_INTERVAL_MS);
+          playerHealth = Math.min(maxHealth, playerHealth + recoveredHealth);
+          playerHealthRegenAccumulator %= PLAYER_HEALTH_REGEN_INTERVAL_MS;
+          lastHealthChange = healthRegenNow;
+        }
+      } else if (playerHealth >= maxHealth) {
+        playerHealthRegenAccumulator = 0;
+      }
+
       updateEnemies();
       updateProjectiles();
       updateVFX();

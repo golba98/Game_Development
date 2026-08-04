@@ -5,6 +5,8 @@ function createPerformanceTracker(maxSamples = 120) {
     maxSamples: Math.max(10, maxSamples | 0),
     samples: [],
     measuredFps: 0,
+    displayedFps: 0,
+    lastFpsDisplayUpdateMs: 0,
     averageFps: 0,
     low1Fps: 0,
     totalMs: 0, updateMs: 0, worldMs: 0, entityMs: 0,
@@ -21,6 +23,13 @@ function recordPerformanceSample(tracker, measuredFps) {
   if (!Number.isFinite(fps) || fps <= 0) return tracker;
 
   tracker.measuredFps = fps;
+  const now = typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+  if (!tracker.displayedFps || now - tracker.lastFpsDisplayUpdateMs >= 750) {
+    tracker.displayedFps = fps;
+    tracker.lastFpsDisplayUpdateMs = now;
+  }
   tracker.samples.push(fps);
   if (tracker.samples.length > tracker.maxSamples) tracker.samples.shift();
 
@@ -36,7 +45,8 @@ function recordPerformanceSample(tracker, measuredFps) {
 function resetPerformanceTracker(tracker) {
   if (!tracker) return;
   tracker.samples = [];
-  tracker.measuredFps = tracker.averageFps = tracker.low1Fps = 0;
+  tracker.measuredFps = tracker.displayedFps = tracker.averageFps = tracker.low1Fps = 0;
+  tracker.lastFpsDisplayUpdateMs = 0;
   tracker.totalMs = tracker.updateMs = tracker.worldMs = tracker.entityMs = 0;
   tracker.weatherMs = tracker.hudMs = tracker.minimapMs = tracker.pixiFlushMs = 0;
   tracker.browserRafFps = 0;
@@ -90,7 +100,7 @@ function drawPerformanceOverlayPanel(opts = {}) {
   const modeLabel = (opts.modeLabel || getFpsModeLabel(normalizeFpsMode(opts.fpsMode ?? opts.targetFps)))
     .replace(' (Max)', '');
   const metrics = [
-    ["CUR", String(Math.round(tracker.measuredFps || 0)), 0.2],
+    ["CUR", String(Math.round(tracker.displayedFps || tracker.measuredFps || 0)), 0.2],
     ["AVG", String(Math.round(tracker.averageFps || tracker.measuredFps || 0)), 0.21],
     ["1%", String(Math.round(tracker.low1Fps || tracker.measuredFps || 0)), 0.17],
     ["MODE", modeLabel, 0.42],
