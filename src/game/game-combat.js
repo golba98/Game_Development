@@ -16,6 +16,8 @@ const GameCombat = {
 
     playerHealth = Math.max(0, playerHealth - damage);
     lastHealthChange = typeof millis === "function" ? millis() : Date.now();
+    lastPlayerDamageAt = lastHealthChange;
+    playerHealthRegenAccumulator = 0;
     const color = options.color || [255, 70, 55];
     if (typeof spawnDamageText === "function" && playerPosition) {
       spawnDamageText(`-${damage}`, playerPosition.x, playerPosition.y, color);
