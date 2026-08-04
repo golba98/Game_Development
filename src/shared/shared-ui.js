@@ -61,10 +61,10 @@ function getViewportSize() {
 function getPerformanceOverlaySize(uiScaleFactor = 1, maxWidth = Infinity) {
   const safeUiScaleFactor = Math.max(0.85, Math.min(1.4, Number(uiScaleFactor) || 1));
   const widthCap = Number.isFinite(maxWidth) ? Math.max(1, Number(maxWidth)) : Infinity;
-  const scaleFactor = Math.min(safeUiScaleFactor, widthCap / 188);
+  const scaleFactor = Math.min(safeUiScaleFactor, widthCap / 176);
   return {
-    width: Math.round(188 * scaleFactor),
-    height: Math.round(320 * scaleFactor),
+    width: Math.round(176 * scaleFactor),
+    height: Math.round(118 * scaleFactor),
     uiScaleFactor: scaleFactor,
   };
 }
@@ -123,36 +123,16 @@ function drawPerformanceOverlayPanel(opts = {}) {
     return;
   }
 
-  const fmtMs  = (v) => (v > 0 ? v.toFixed(1) + " ms" : "—");
-  const fmtFps = (v) => (v > 0 ? String(Math.round(v)) : "—");
   const modeLabel = opts.modeLabel || getFpsModeLabel(normalizeFpsMode(opts.fpsMode ?? opts.targetFps));
-  const targetLabel = (normalizeFpsMode(opts.fpsMode ?? opts.targetFps) === 'unlimited')
-    ? 'uncapped'
-    : (Math.round(opts.targetFps || 0) + ' fps');
-  const backendLabel = tracker.backend === "pixi" ? "pixi/webgl" : "p5/canvas";
 
   const rows = [
-    ["FPS",     String(Math.round(tracker.measuredFps || 0))],
-    ["AVG",     String(Math.round(tracker.averageFps  || tracker.measuredFps || 0))],
+    ["CURRENT", String(Math.round(tracker.measuredFps || 0))],
+    ["AVERAGE", String(Math.round(tracker.averageFps  || tracker.measuredFps || 0))],
     ["1% LOW",  String(Math.round(tracker.low1Fps     || tracker.measuredFps || 0))],
-    ["rAF fps", fmtFps(tracker.browserRafFps)],
-    [null, null],
-    ["mode",    modeLabel],
-    ["target",  targetLabel],
-    ["period",  fmtMs(tracker.periodMs)],
-    ["work",    fmtMs(tracker.workMs)],
-    ["wait",    fmtMs(tracker.waitMs)],
-    [null, null],
-    ["update",  fmtMs(tracker.updateMs)],
-    ["world",   fmtMs(tracker.worldMs)],
-    ["entity",  fmtMs(tracker.entityMs)],
-    ["weather", fmtMs(tracker.weatherMs)],
-    ["HUD",     fmtMs(tracker.hudMs)],
-    ["minimap", fmtMs(tracker.minimapMs)],
-    ["backend", backendLabel],
+    ["MODE",    modeLabel],
   ];
 
-  const goldLabels = new Set(["mode", "target", "backend"]);
+  const goldLabels = new Set(["MODE"]);
   rows.forEach(([label, value], index) => {
     const rowY = rowStartY + rowGap * index;
     if (label === null) {

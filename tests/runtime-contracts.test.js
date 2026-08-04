@@ -127,3 +127,72 @@ test('terminal command output never assigns user text through innerHTML', () => 
   assert.match(menuTerminal, /cmdLine\.textContent/);
   assert.match(gameTerminal, /div\.textContent/);
 });
+
+test('night lighting enters gradually on one shared darkness curve', () => {
+  const context = vm.createContext({ Math });
+  runScript('src/game/game-weather.js', context);
+
+  const samples = vm.runInContext(`(() => {
+    const alphas = [0, 24, 72, 140, WeatherSystem.colors.night[3]];
+    return alphas.map(alpha => {
+      WeatherSystem.currentColor = [0, 0, 0, alpha];
+      return [WeatherSystem.getDarknessProgress(), WeatherSystem.getLightRadius()];
+    });
+  })()`, context);
+
+  assert.equal(samples[0][0], 0);
+  assert.equal(samples.at(-1)[0], 1);
+  assert.equal(samples[0][1], 520);
+  assert.equal(samples.at(-1)[1], 230);
+  for (let i = 1; i < samples.length; i++) {
+    assert.ok(samples[i][0] > samples[i - 1][0], 'darkness should rise continuously');
+    assert.ok(samples[i][1] < samples[i - 1][1], 'torch radius should contract continuously');
+  }
+
+  const renderer = fs.readFileSync(path.join(root, 'src/game/runtime/renderer.js'), 'utf8');
+  assert.match(renderer, /intensity: 0\.42 \* darknessProgress/);
+  assert.match(renderer, /eraseStrength: 0\.72 \* darknessProgress/);
+});
+
+test('pause panels keep readable text on day and night scenes', () => {
+  const context = vm.createContext({ Math, MENU_GOLD_BORDER: '#b8860b' });
+  runScript('src/game/game-settings.js', context);
+
+  const palettes = vm.runInContext(`({
+    day: getScenePanelPalette(0),
+    night: getScenePanelPalette(218)
+  })`, context);
+
+  assert.equal(palettes.day.darkScene, false);
+  assert.equal(palettes.night.darkScene, true);
+  assert.equal(palettes.day.palette.panel, 'rgba(19, 35, 24, 0.94)');
+  assert.equal(palettes.night.palette.panel, 'rgba(9, 15, 29, 0.95)');
+  assert.equal(palettes.night.palette.text, '#eef4ff');
+  assert.doesNotMatch(palettes.night.palette.panel, /207, 172, 108/);
+});
+
+test('performance panel is compact and only shows requested summary rows', () => {
+  const sharedUi = fs.readFileSync(path.join(root, 'src/shared/shared-ui.js'), 'utf8');
+  assert.match(sharedUi, /height: Math\.round\(118 \* scaleFactor\)/);
+  assert.match(sharedUi, /\["CURRENT"/);
+  assert.match(sharedUi, /\["AVERAGE"/);
+  assert.match(sharedUi, /\["1% LOW"/);
+  assert.match(sharedUi, /\["MODE"/);
+  assert.doesNotMatch(sharedUi, /\["rAF fps"/);
+  assert.doesNotMatch(sharedUi, /\["backend"/);
+});
+
+test('unlimited Pixi FPS uses the independent loop period, not stale ticker FPS', () => {
+  const context = vm.createContext({
+    Math,
+    Date,
+    console,
+    performance: { now: () => 1000 },
+    window: { _gameFramePeriodMs: 5 },
+    RENDER_BACKEND: 'pixi',
+    targetFps: 0,
+    PixiApp: { app: { ticker: { FPS: 60 } } },
+  });
+  runScript('src/game/runtime/game-loop.js', context);
+  assert.equal(vm.runInContext('FramePerf.snapshot().fps', context), 200);
+});

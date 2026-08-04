@@ -16,17 +16,17 @@ const STAR_SEED = 54321;
 
 const WeatherSystem = {
   // Config
-  dayDurationSeconds: 240, // Long enough for dusk and dawn to feel natural
+  dayDurationSeconds: 480, // Gives the player time to perceive each lighting stage
   cycle: CYCLE_DAY_START, // Start at full day to avoid initial "orange" filter
   timeTransition: null,
 
-  // Colors (r, g, b, alpha) — standard dark-to-light transition
+  // Colors (r, g, b, alpha) — restrained ambient tints viewed at ground level
   colors: {
-    night: [5, 5, 12, 230], // Deep, almost black night (high contrast with torch)
-    dawn: [200, 220, 255, 40], // Soft blue/white dawn (removed orange)
+    night: [6, 10, 24, 218], // Moonlit blue-black; retains terrain detail
+    dawn: [118, 137, 166, 38], // Cool pre-dawn light
     day: [0, 0, 0, 0], // Clear (no overlay)
-    sunset: [30, 12, 8, 60], // Subtle warm evening tint
-    dusk: [15, 15, 40, 140], // Deep blue dusk
+    sunset: [72, 38, 24, 48], // Low, warm evening light without an orange wash
+    dusk: [24, 31, 58, 126], // Blue hour between sunset and full night
   },
 
   currentColor: [0, 0, 0, 0],
@@ -224,7 +224,7 @@ const WeatherSystem = {
 
   // Moves forward through the real dawn/dusk phases instead of snapping the
   // world to a new lighting state. Used by the terminal time command.
-  transitionTo: function (targetCycle, durationMs = 12000) {
+  transitionTo: function (targetCycle, durationMs = 24000) {
     const target = ((Number(targetCycle) % 1) + 1) % 1;
     const distance = (target - this.cycle + 1) % 1;
     if (distance < 0.0001) return;
@@ -232,7 +232,7 @@ const WeatherSystem = {
       start: this.cycle,
       distance,
       elapsed: 0,
-      duration: Math.max(1000, Number(durationMs) || 12000),
+      duration: Math.max(1000, Number(durationMs) || 24000),
     };
   },
 
@@ -259,6 +259,13 @@ const WeatherSystem = {
     return -(Math.cos(Math.PI * t) - 1) / 2;
   },
 
+  /** Shared 0–1 darkness curve used by the overlay, torch, and night effects. */
+  getDarknessProgress: function () {
+    const nightAlpha = Math.max(1, this.colors.night[3]);
+    const linear = Math.max(0, Math.min(1, this.currentColor[3] / nightAlpha));
+    return linear * linear * (3 - 2 * linear);
+  },
+
   /**
    * Returns the player torch light radius based on the current cycle.
    * During full day the radius is huge (effectively no visible circle).
@@ -268,25 +275,7 @@ const WeatherSystem = {
   getLightRadius: function () {
     const DAY_RADIUS = 520;
     const NIGHT_RADIUS = 230;
-    const t = this.cycle;
-
-    if (t < CYCLE_NIGHT_END) {
-      return NIGHT_RADIUS;
-    } else if (t < CYCLE_DAY_START) {
-      // Dawn: grow from night → day
-      let lerpT = (t - CYCLE_NIGHT_END) / (CYCLE_DAY_START - CYCLE_NIGHT_END);
-      lerpT = this.easeInOutSine(lerpT);
-      return NIGHT_RADIUS + (DAY_RADIUS - NIGHT_RADIUS) * lerpT;
-    } else if (t < CYCLE_DAY_END) {
-      return DAY_RADIUS;
-    } else if (t < CYCLE_NIGHT_START) {
-      // Dusk: shrink from day → night
-      let lerpT = (t - CYCLE_DAY_END) / (CYCLE_NIGHT_START - CYCLE_DAY_END);
-      lerpT = this.easeInOutSine(lerpT);
-      return DAY_RADIUS + (NIGHT_RADIUS - DAY_RADIUS) * lerpT;
-    } else {
-      return NIGHT_RADIUS;
-    }
+    return DAY_RADIUS + (NIGHT_RADIUS - DAY_RADIUS) * this.getDarknessProgress();
   },
 
   /**
@@ -659,7 +648,7 @@ const WeatherSystem = {
   },
 
   /** Renders a small, frame-rate-independent pool of dust or nighttime fireflies. */
-  drawAmbientParticles: function (camX, camY, isNight) {
+  drawAmbientParticles: function (camX, camY, darknessProgress) {
     if (!showParticles || typeof width === "undefined") {
       this.particles.length = 0;
       return;
@@ -668,6 +657,8 @@ const WeatherSystem = {
     const vW = typeof virtualW !== "undefined" ? virtualW : width / gameScale;
     const vH = typeof virtualH !== "undefined" ? virtualH : height / gameScale;
 
+    const nightMix = Math.max(0, Math.min(1, Number(darknessProgress) || 0));
+    const isNight = nightMix >= 0.55;
     const kind = isNight ? 'firefly' : 'dust';
     const cap = isNight ? 12 : 18;
     if (this.particles.length !== cap || this.particles.some(p => p.kind !== kind)) {
@@ -726,7 +717,8 @@ const WeatherSystem = {
         const drawY = screenY + (camY || 0);
 
         if (isNight) {
-          const alpha = 50 + pulse * 150;
+          const fadeIn = Math.max(0, Math.min(1, (nightMix - 0.55) / 0.45));
+          const alpha = (50 + pulse * 150) * fadeIn;
           fill(214, 238, 112, alpha);
           circle(drawX, drawY, p.size);
           fill(190, 222, 92, alpha * 0.18);
@@ -742,7 +734,9 @@ const WeatherSystem = {
   },
 
   getAmbientLights: function () {
-    if (!showParticles || !showFireflyLighting || this.getPhase() !== 'night') return [];
+    const darknessProgress = this.getDarknessProgress();
+    if (!showParticles || !showFireflyLighting || darknessProgress < 0.55) return [];
+    const fadeIn = Math.max(0, Math.min(1, (darknessProgress - 0.55) / 0.45));
     const result = [];
     for (const particle of this.particles) {
       if (!particle._visible || particle.kind !== 'firefly') continue;
@@ -752,8 +746,8 @@ const WeatherSystem = {
         y: particle._screenY,
         radius: 34,
         color: [190, 220, 90],
-        intensity: 0.18,
-        eraseStrength: 0.12,
+        intensity: 0.18 * fadeIn,
+        eraseStrength: 0.12 * fadeIn,
       });
       if (result.length === 3) break;
     }

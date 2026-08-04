@@ -202,11 +202,18 @@ const FramePerf = {
     const frames = Math.max(1, this._frames);
     const avg = (key) => (this._sums[key] ? this._sums[key] / frames : 0);
 
-    // For Pixi backend: use ticker.FPS (wall-clock rate) instead of p5.frameRate().
+    // Pixi's ticker is stopped in unlimited mode, so its FPS remains at a stale
+    // default. Derive the actual uncapped cadence from the independent loop's
+    // measured wall-clock period instead.
     let fps;
     if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi'
         && typeof PixiApp !== 'undefined' && PixiApp.app && PixiApp.app.ticker) {
-      fps = PixiApp.app.ticker.FPS;
+      const periodMs = typeof window._gameFramePeriodMs === 'number'
+        ? window._gameFramePeriodMs
+        : 0;
+      fps = typeof targetFps !== 'undefined' && targetFps === 0 && periodMs > 0
+        ? 1000 / periodMs
+        : PixiApp.app.ticker.FPS;
     } else if (typeof frameRate === 'function') {
       fps = frameRate();
     } else {

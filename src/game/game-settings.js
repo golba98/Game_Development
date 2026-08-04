@@ -89,19 +89,16 @@ function makeElementZoomInvariant(el, origin = 'center center') {
   return () => { if (zoomLoopId) cancelAnimationFrame(zoomLoopId); };
 }
 
-/** Creates a fullscreen overlay + centred panel that stays visually stable across browser zoom levels. */
-function createZoomStablePanel(w, h, id) {
-  const darkness = typeof WeatherSystem !== 'undefined' && WeatherSystem.currentColor
-    ? Number(WeatherSystem.currentColor[3]) || 0
-    : 0;
-  const darkScene = darkness >= 90;
+/** Returns a high-contrast menu palette that remains harmonious with the scene. */
+function getScenePanelPalette(darkness = 0) {
+  const darkScene = Math.max(0, Number(darkness) || 0) >= 90;
   const palette = darkScene
     ? {
-        scrim: 'rgba(4, 8, 5, 0.38)',
-        panel: 'rgba(207, 172, 108, 0.94)',
-        text: '#2b1b0f',
-        border: 'rgba(255, 218, 135, 0.92)',
-        shadow: 'rgba(0, 0, 0, 0.72)',
+        scrim: 'rgba(2, 5, 14, 0.32)',
+        panel: 'rgba(9, 15, 29, 0.95)',
+        text: '#eef4ff',
+        border: 'rgba(192, 210, 255, 0.72)',
+        shadow: 'rgba(0, 0, 0, 0.84)',
       }
     : {
         scrim: 'rgba(9, 20, 10, 0.34)',
@@ -110,6 +107,15 @@ function createZoomStablePanel(w, h, id) {
         border: MENU_GOLD_BORDER,
         shadow: 'rgba(0, 0, 0, 0.76)',
       };
+  return { darkScene, palette };
+}
+
+/** Creates a fullscreen overlay + centred panel that stays visually stable across browser zoom levels. */
+function createZoomStablePanel(w, h, id) {
+  const darkness = typeof WeatherSystem !== 'undefined' && WeatherSystem.currentColor
+    ? Number(WeatherSystem.currentColor[3]) || 0
+    : 0;
+  const { darkScene, palette } = getScenePanelPalette(darkness);
   let container = createDiv('');
   container.id(id);
   container.style('position', 'fixed');
