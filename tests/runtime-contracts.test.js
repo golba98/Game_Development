@@ -167,8 +167,20 @@ test('pause panels keep readable text on day and night scenes', () => {
   assert.equal(palettes.night.darkScene, true);
   assert.equal(palettes.day.palette.panel, 'rgba(19, 35, 24, 0.94)');
   assert.equal(palettes.night.palette.panel, 'rgba(9, 15, 29, 0.95)');
+  assert.equal(palettes.day.palette.title, '#080b09');
+  assert.equal(palettes.night.palette.title, '#ffffff');
   assert.equal(palettes.night.palette.text, '#eef4ff');
   assert.doesNotMatch(palettes.night.palette.panel, /207, 172, 108/);
+});
+
+test('night ghosts do not block victory and moving lights do not leave trails', () => {
+  const gameUi = fs.readFileSync(path.join(root, 'src/game/game-ui.js'), 'utf8');
+  const gameCore = fs.readFileSync(path.join(root, 'src/game/game-core.js'), 'utf8');
+  const weather = fs.readFileSync(path.join(root, 'src/game/game-weather.js'), 'utf8');
+  assert.match(gameUi, /enemy\.type !== 'ghost'/);
+  assert.match(gameCore, /!hasRemainingVictoryEnemies\(\)/);
+  assert.match(weather, /ctx\.clearRect\(0, 0, cw, ch\)/);
+  assert.match(weather, /result\.length === 2/);
 });
 
 test('performance panel is compact and only shows requested summary rows', () => {
@@ -257,8 +269,11 @@ test('changed runtime scripts use the current cache version', () => {
   assert.match(gameHtml, /src\/game\/runtime\/game-loop\.js\?v=20260804-1/);
   assert.match(gameHtml, /src\/game\/game-globals\.js\?v=20260804-2/);
   assert.match(gameHtml, /src\/game\/game-combat\.js\?v=20260804-1/);
-  assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-6/);
-  assert.match(gameHtml, /src\/game\/game-core\.js\?v=20260804-2/);
+  assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-7/);
+  assert.match(gameHtml, /src\/game\/game-ui\.js\?v=20260804-1/);
+  assert.match(gameHtml, /src\/game\/game-settings\.js\?v=20260804-2/);
+  assert.match(gameHtml, /src\/game\/game-weather\.js\?v=20260804-1/);
+  assert.match(gameHtml, /src\/game\/game-core\.js\?v=20260804-3/);
   assert.match(gameHtml, /src\/game\/game-io\.js\?v=20260804-1/);
   assert.match(menuHtml, /src\/shared\/shared-ui\.js\?v=20260804-4/);
 });

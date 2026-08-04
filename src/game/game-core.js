@@ -758,7 +758,7 @@ function draw() {
       }
 
       // VICTORY CHECK
-      if (!isTutorialMap && enemies && enemies.length === 0 && !hasAnyCoins() && !victoryShown) {
+      if (!isTutorialMap && !hasRemainingVictoryEnemies() && !hasAnyCoins() && !victoryShown) {
         triggerVictory();
       }
 

@@ -446,6 +446,9 @@ const WeatherSystem = {
     const ctx = this._nativeMapCtx;
 
     // 1. Fill entire screen with darkness — rebuild fillStyle string only when color changes.
+    // Clear previous light holes first so moving lights cannot leave permanent
+    // bright pools across the map.
+    ctx.clearRect(0, 0, cw, ch);
     const cc = this.currentColor;
     if (
       !this._overlayFillColor ||
@@ -749,7 +752,7 @@ const WeatherSystem = {
         intensity: 0.18 * fadeIn,
         eraseStrength: 0.12 * fadeIn,
       });
-      if (result.length === 3) break;
+      if (result.length === 2) break;
     }
     return result;
   },

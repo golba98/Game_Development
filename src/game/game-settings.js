@@ -97,6 +97,8 @@ function getScenePanelPalette(darkness = 0) {
         scrim: 'rgba(2, 5, 14, 0.32)',
         panel: 'rgba(9, 15, 29, 0.95)',
         text: '#eef4ff',
+        title: '#ffffff',
+        titleShadow: '0 2px 0 #000, 0 0 12px rgba(0,0,0,0.9)',
         border: 'rgba(192, 210, 255, 0.72)',
         shadow: 'rgba(0, 0, 0, 0.84)',
       }
@@ -104,6 +106,8 @@ function getScenePanelPalette(darkness = 0) {
         scrim: 'rgba(9, 20, 10, 0.34)',
         panel: 'rgba(19, 35, 24, 0.94)',
         text: '#fff2cc',
+        title: '#080b09',
+        titleShadow: '0 2px 0 #fff, 0 0 10px rgba(255,255,255,0.75)',
         border: MENU_GOLD_BORDER,
         shadow: 'rgba(0, 0, 0, 0.76)',
       };
@@ -148,6 +152,8 @@ function createZoomStablePanel(w, h, id) {
   panel.style('box-shadow', `0 0 18px ${palette.shadow}, inset 0 0 0 2px ${palette.border}`);
   panel.style('transform', 'none');
   panel.elt.style.setProperty('--gd-panel-text', palette.text);
+  panel.elt.style.setProperty('--gd-overlay-title', palette.title);
+  panel.elt.style.setProperty('--gd-overlay-title-shadow', palette.titleShadow);
   panel.elt.dataset.sceneTone = darkScene ? 'dark' : 'light';
 
   let zoomLoopId = null;

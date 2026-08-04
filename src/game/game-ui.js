@@ -21,8 +21,8 @@ function _addPanelTitle(panel, text) {
   title.style('text-align',  'center');
   title.style('font-size',   MENU_TITLE_FONT_SIZE);
   title.style('font-weight', 'bold');
-  title.style('color',       'var(--gd-panel-text, #fff2cc)');
-  title.style('text-shadow', '0 2px 0 rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.65)');
+  title.style('color',       'var(--gd-overlay-title, #fff)');
+  title.style('text-shadow', 'var(--gd-overlay-title-shadow, 0 2px 0 #000)');
   title.style('margin-bottom', '28px');
   return title;
 }
@@ -236,6 +236,11 @@ function exitToMenu() {
     } catch (e) {}
   }
   window.location.replace('menu.html');
+}
+
+// Night ghosts are optional encounters and never block level completion.
+function hasRemainingVictoryEnemies() {
+  return Array.isArray(enemies) && enemies.some(enemy => enemy && enemy.type !== 'ghost');
 }
 
 let characterMenuOverlay = null;
