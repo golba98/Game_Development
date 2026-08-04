@@ -217,16 +217,44 @@ test('objective tracker independently selects the closest living mob and coin', 
   assert.deepEqual({ ...targets.coin }, { x: 2, y: 1 });
   assert.deepEqual({ ...targets.mob }, { x: 3, y: 2 });
 
+  const locked = vm.runInContext(`(() => {
+    const firstMob = getTrackedLivingEnemy(0, 0);
+    const firstCoin = getTrackedCoin(0, 0);
+    enemies.push({ x: 0.5, y: 0.5, health: 2 });
+    activeCoins.push({ x: 0.25, y: 0.25 });
+    return {
+      firstMob,
+      heldMob: getTrackedLivingEnemy(0, 0),
+      firstCoin,
+      heldCoin: getTrackedCoin(0, 0)
+    };
+  })()`, context);
+  assert.deepEqual({ ...locked.firstMob }, { x: 3, y: 2 });
+  assert.deepEqual({ ...locked.heldMob }, { x: 3, y: 2 });
+  assert.deepEqual({ ...locked.firstCoin }, { x: 2, y: 1 });
+  assert.deepEqual({ ...locked.heldCoin }, { x: 2, y: 1 });
+
   const hud = fs.readFileSync(path.join(root, 'src/game/game-hud.js'), 'utf8');
   assert.match(hud, /type: 'coin', label: 'COIN', lane: 1/);
   assert.match(hud, /type: 'enemy', label: 'MOB', lane: -1/);
   assert.doesNotMatch(hud, /If on screen, skip pointer/);
+  assert.match(hud, /targetIsNearbyAndVisible/);
+  assert.match(hud, /lockedObjectiveCoinKey/);
+  assert.match(hud, /lockedObjectiveEnemy/);
+});
+
+test('loaded maps rebuild the live coin tracker from coin tiles', () => {
+  const gameIo = fs.readFileSync(path.join(root, 'src/game/game-io.js'), 'utf8');
+  assert.match(gameIo, /function rebuildActiveCoinsFromMap\(\)/);
+  assert.match(gameIo, /mapStates\[index\] !== TILE_TYPES\.COIN/);
+  assert.equal((gameIo.match(/rebuildActiveCoinsFromMap\(\);/g) || []).length, 2);
 });
 test('changed runtime scripts use the current cache version', () => {
   const gameHtml = fs.readFileSync(path.join(root, 'game.html'), 'utf8');
   const menuHtml = fs.readFileSync(path.join(root, 'menu.html'), 'utf8');
   assert.match(gameHtml, /src\/shared\/shared-ui\.js\?v=20260804-2/);
   assert.match(gameHtml, /src\/game\/runtime\/game-loop\.js\?v=20260804-1/);
-  assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-2/);
+  assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-3/);
+  assert.match(gameHtml, /src\/game\/game-io\.js\?v=20260804-1/);
   assert.match(menuHtml, /src\/shared\/shared-ui\.js\?v=20260804-2/);
 });
