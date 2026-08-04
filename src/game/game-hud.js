@@ -1035,7 +1035,6 @@ function drawCompass() {
             // Once close, pin the tracker to the actual target until it is resolved.
             markerX = constrain(tScreenX, leftLimit, rightLimit);
             markerY = constrain(tScreenY - cellSize * 0.7, topLimit, bottomLimit);
-            markerAngle = Math.PI / 2;
         } else {
             let tMin = Infinity;
             if (dx > 0) tMin = Math.min(tMin, (rightLimit - pScreenX) / dx);
