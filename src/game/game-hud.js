@@ -102,14 +102,6 @@ function getHudLayout() {
   const statBarW = Math.round(Math.max(1, Math.min(184 * uiScaleFactor, safeArea.width - 72 * uiScaleFactor)));
   const perfPad = Math.round(10 * uiScaleFactor);
   const perfSize = getPerformanceOverlaySize(uiScaleFactor, safeArea.width - perfPad * 2);
-  let perfRect = clampHudRect(
-    safeArea.right - perfSize.width - perfPad,
-    safeArea.top + perfPad,
-    perfSize.width,
-    perfSize.height,
-    safeArea,
-    perfPad,
-  );
 
   // --- Top-Left Player Status Card ---
   const healthBarH = Math.round(Math.max(16, 18 * uiScaleFactor));
@@ -133,11 +125,10 @@ function getHudLayout() {
   const rightColumnRight = Math.round(vW - HUD_MARGIN);
   const clockRadius = Math.round(22 * uiScaleFactor);
   const minimapPad = Math.min(Math.round(8 * uiScaleFactor), Math.max(0, Math.floor((safeArea.width - 1) / 2)));
-  const availableRightHeight = Math.max(48, safeArea.bottom - (perfRect.y + perfSize.height + gap) - minimapPad);
-  const minimapSize = Math.round(Math.min(168 * uiScaleFactor, safeArea.width * 0.24, availableRightHeight * 0.72));
-
   // Height of top right widget area above minimap
   const topRightWidgetHeight = Math.round(Math.max(32 * uiScaleFactor * 1.2, 22 * uiScaleFactor * 2));
+  const availableRightHeight = Math.max(48, safeArea.height - topRightWidgetHeight - perfSize.height - gap * 2 - minimapPad);
+  const minimapSize = Math.round(Math.min(168 * uiScaleFactor, safeArea.width * 0.24, availableRightHeight * 0.72));
   const minimapX = Math.round(rightColumnRight - minimapSize);
   const minimapY = Math.round(HUD_MARGIN + topRightWidgetHeight + HUD_GAP);
 
@@ -148,6 +139,17 @@ function getHudLayout() {
     minimapSize,
     safeArea,
     minimapPad,
+  );
+
+  // Compact telemetry sits beside the silver profile/difficulty badge rather
+  // than occupying the whole top-right quadrant.
+  let perfRect = clampHudRect(
+    minimapRect.x - perfSize.width - gap,
+    Math.round(HUD_MARGIN + 4 * uiScaleFactor),
+    perfSize.width,
+    perfSize.height,
+    safeArea,
+    perfPad,
   );
 
   // --- Top-Center Boss Bar (Responsive Fallback) ---
@@ -189,7 +191,7 @@ function getHudLayout() {
   );
   if (perfOverlapsBoss) {
     perfRect = clampHudRect(
-      safeArea.right - perfSize.width - perfPad,
+      perfRect.x,
       bossShell.y + bossShell.h + gap,
       perfSize.width,
       perfSize.height,

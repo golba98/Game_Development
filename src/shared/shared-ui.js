@@ -61,10 +61,10 @@ function getViewportSize() {
 function getPerformanceOverlaySize(uiScaleFactor = 1, maxWidth = Infinity) {
   const safeUiScaleFactor = Math.max(0.85, Math.min(1.4, Number(uiScaleFactor) || 1));
   const widthCap = Number.isFinite(maxWidth) ? Math.max(1, Number(maxWidth)) : Infinity;
-  const scaleFactor = Math.min(safeUiScaleFactor, widthCap / 520);
+  const scaleFactor = Math.min(safeUiScaleFactor, widthCap / 310);
   return {
-    width: Math.round(520 * scaleFactor),
-    height: Math.round(44 * scaleFactor),
+    width: Math.round(310 * scaleFactor),
+    height: Math.round(30 * scaleFactor),
     uiScaleFactor: scaleFactor,
   };
 }
@@ -79,7 +79,7 @@ function drawPerformanceOverlayPanel(opts = {}) {
   const w = _sz.width;
   const h = _sz.height;
   const uiScaleFactor = _sz.uiScaleFactor;
-  const padX = Math.round(12 * uiScaleFactor);
+  const padX = Math.round(8 * uiScaleFactor);
   const centerY = y + h / 2;
 
   push();
@@ -89,10 +89,10 @@ function drawPerformanceOverlayPanel(opts = {}) {
 
   const modeLabel = opts.modeLabel || getFpsModeLabel(normalizeFpsMode(opts.fpsMode ?? opts.targetFps));
   const metrics = [
-    ["CURRENT", String(Math.round(tracker.measuredFps || 0)), 0.19],
-    ["AVERAGE", String(Math.round(tracker.averageFps || tracker.measuredFps || 0)), 0.23],
+    ["CURRENT", String(Math.round(tracker.measuredFps || 0)), 0.2],
+    ["AVERAGE", String(Math.round(tracker.averageFps || tracker.measuredFps || 0)), 0.21],
     ["1% LOW", String(Math.round(tracker.low1Fps || tracker.measuredFps || 0)), 0.19],
-    ["FPS MODE", modeLabel, 0.39],
+    ["MODE", modeLabel, 0.4],
   ];
   let fieldX = x + padX;
   const usableW = w - padX * 2;
@@ -101,15 +101,15 @@ function drawPerformanceOverlayPanel(opts = {}) {
     textAlign(LEFT, CENTER);
     textStyle(NORMAL);
     fill(178, 178, 186);
-    if (typeof gTextSize === "function") gTextSize(Math.round(10 * uiScaleFactor));
-    else textSize(Math.round(10 * uiScaleFactor));
+    if (typeof gTextSize === "function") gTextSize(Math.round(7 * uiScaleFactor));
+    else textSize(Math.round(7 * uiScaleFactor));
     text(label, fieldX, centerY);
 
-    const labelW = textWidth(label) + Math.round(7 * uiScaleFactor);
+    const labelW = textWidth(label) + Math.round(4 * uiScaleFactor);
     textStyle(BOLD);
     fill(247, 247, 250);
-    if (typeof gTextSize === "function") gTextSize(Math.round(13 * uiScaleFactor));
-    else textSize(Math.round(13 * uiScaleFactor));
+    if (typeof gTextSize === "function") gTextSize(Math.round(9 * uiScaleFactor));
+    else textSize(Math.round(9 * uiScaleFactor));
     text(value, fieldX + labelW, centerY);
     fieldX += fieldW;
   });
