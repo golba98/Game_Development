@@ -153,3 +153,20 @@ test('night lighting enters gradually on one shared darkness curve', () => {
   assert.match(renderer, /intensity: 0\.42 \* darknessProgress/);
   assert.match(renderer, /eraseStrength: 0\.72 \* darknessProgress/);
 });
+
+test('pause panels keep readable text on day and night scenes', () => {
+  const context = vm.createContext({ Math, MENU_GOLD_BORDER: '#b8860b' });
+  runScript('src/game/game-settings.js', context);
+
+  const palettes = vm.runInContext(`({
+    day: getScenePanelPalette(0),
+    night: getScenePanelPalette(218)
+  })`, context);
+
+  assert.equal(palettes.day.darkScene, false);
+  assert.equal(palettes.night.darkScene, true);
+  assert.equal(palettes.day.palette.panel, 'rgba(19, 35, 24, 0.94)');
+  assert.equal(palettes.night.palette.panel, 'rgba(9, 15, 29, 0.95)');
+  assert.equal(palettes.night.palette.text, '#eef4ff');
+  assert.doesNotMatch(palettes.night.palette.panel, /207, 172, 108/);
+});
