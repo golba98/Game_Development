@@ -663,7 +663,7 @@ const WeatherSystem = {
     const nightMix = Math.max(0, Math.min(1, Number(darknessProgress) || 0));
     const isNight = nightMix >= 0.55;
     const kind = isNight ? 'firefly' : 'dust';
-    const cap = isNight ? 12 : 18;
+    const cap = isNight ? 5 : 18;
     if (this.particles.length !== cap || this.particles.some(p => p.kind !== kind)) {
       this.particles.length = 0;
       for (let i = 0; i < cap; i++) {
@@ -752,7 +752,7 @@ const WeatherSystem = {
         intensity: 0.18 * fadeIn,
         eraseStrength: 0.12 * fadeIn,
       });
-      if (result.length === 2) break;
+      if (result.length === 1) break;
     }
     return result;
   },

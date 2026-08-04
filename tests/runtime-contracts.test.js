@@ -180,7 +180,14 @@ test('night ghosts do not block victory and moving lights do not leave trails', 
   assert.match(gameUi, /enemy\.type !== 'ghost'/);
   assert.match(gameCore, /!hasRemainingVictoryEnemies\(\)/);
   assert.match(weather, /ctx\.clearRect\(0, 0, cw, ch\)/);
-  assert.match(weather, /result\.length === 2/);
+  assert.match(weather, /const cap = isNight \? 5 : 18/);
+  assert.match(weather, /result\.length === 1/);
+});
+
+test('collect all clears coin tiles and the live renderer list', () => {
+  const terminal = fs.readFileSync(path.join(root, 'src/game/game-terminal.js'), 'utf8');
+  assert.match(terminal, /mapStates\[i\] = underlyingTerrain/);
+  assert.match(terminal, /activeCoins = \[\]/);
 });
 
 test('performance panel is compact and only shows requested summary rows', () => {
@@ -272,7 +279,8 @@ test('changed runtime scripts use the current cache version', () => {
   assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-7/);
   assert.match(gameHtml, /src\/game\/game-ui\.js\?v=20260804-1/);
   assert.match(gameHtml, /src\/game\/game-settings\.js\?v=20260804-2/);
-  assert.match(gameHtml, /src\/game\/game-weather\.js\?v=20260804-1/);
+  assert.match(gameHtml, /src\/game\/game-terminal\.js\?v=20260804-2/);
+  assert.match(gameHtml, /src\/game\/game-weather\.js\?v=20260804-2/);
   assert.match(gameHtml, /src\/game\/game-core\.js\?v=20260804-3/);
   assert.match(gameHtml, /src\/game\/game-io\.js\?v=20260804-1/);
   assert.match(menuHtml, /src\/shared\/shared-ui\.js\?v=20260804-4/);
