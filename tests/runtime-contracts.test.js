@@ -11,15 +11,63 @@ function runScript(relativePath, context) {
   vm.runInContext(source, context, { filename: relativePath });
 }
 
-test('FPS modes keep 60 as default while supporting 120 and unlimited', () => {
+test('FPS modes keep 60 as default while preserving every cap and unlimited', () => {
   const applied = [];
   const context = vm.createContext({ frameRate: value => applied.push(value) });
   runScript('src/shared/shared-constants.js', context);
   assert.equal(vm.runInContext('DEFAULT_SETTINGS.fpsMode', context), '60');
   assert.equal(vm.runInContext('normalizeFpsMode("120")', context), '120');
+  assert.equal(vm.runInContext('normalizeFpsMode("144")', context), '144');
+  assert.equal(vm.runInContext('normalizeFpsMode(165)', context), '165');
+  assert.equal(vm.runInContext('normalizeFpsMode("240")', context), '240');
   assert.equal(vm.runInContext('getFpsTargetForMode("unlimited")', context), 0);
-  vm.runInContext('applyFpsModeToP5("60"); applyFpsModeToP5("120"); applyFpsModeToP5("unlimited")', context);
-  assert.deepEqual(applied, [60, 120, Infinity]);
+  assert.equal(vm.runInContext('FPS_MODE_OPTIONS.length', context), 6);
+  vm.runInContext('applyFpsModeToP5("60"); applyFpsModeToP5("120"); applyFpsModeToP5("144"); applyFpsModeToP5("165"); applyFpsModeToP5("240"); applyFpsModeToP5("unlimited")', context);
+  assert.deepEqual(applied, [60, 120, 144, 165, 240, Infinity]);
+});
+
+test('Pixi unlimited mode bypasses the requestAnimationFrame ticker', () => {
+  const queued = [];
+  const cleared = [];
+  let now = 100;
+  const context = vm.createContext({
+    console,
+    performance: { now: () => (now += 2) },
+    setTimeout: callback => { queued.push(callback); return queued.length; },
+    clearTimeout: id => cleared.push(id),
+    document: { hidden: false },
+  });
+  runScript('src/game/runtime/pixi-app.js', context);
+  vm.runInContext(`
+    globalThis.tickPeriods = [];
+    globalThis.renderCount = 0;
+    PixiApp.app = {
+      ticker: {
+        maxFPS: 60,
+        add() {},
+        remove() {},
+        start() { this.started = true; },
+        stop() { this.stopped = true; }
+      },
+      renderer: { render() { renderCount += 1; } },
+      stage: {}
+    };
+    PixiApp.setGameLoop((period, isElapsedMs) => tickPeriods.push([period, isElapsedMs]));
+    PixiApp.setTargetFps(0);
+  `, context);
+
+  assert.equal(vm.runInContext('PixiApp.app.ticker.maxFPS', context), 0);
+  assert.equal(vm.runInContext('PixiApp.app.ticker.stopped', context), true);
+  queued.shift()();
+  assert.equal(vm.runInContext('tickPeriods.length', context), 1);
+  assert.equal(vm.runInContext('tickPeriods[0][0]', context), 2);
+  assert.equal(vm.runInContext('tickPeriods[0][1]', context), true);
+  assert.equal(vm.runInContext('renderCount', context), 1);
+
+  vm.runInContext('PixiApp.setTargetFps(60)', context);
+  assert.equal(vm.runInContext('PixiApp.app.ticker.maxFPS', context), 60);
+  assert.equal(vm.runInContext('PixiApp.app.ticker.started', context), true);
+  assert.ok(cleared.length > 0);
 });
 
 test('camera impulse is directional, bounded, and settles within its duration', () => {

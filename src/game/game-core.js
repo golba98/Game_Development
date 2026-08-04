@@ -105,9 +105,12 @@ function callHudHook(hookName, opts = {}) {
 
 // Per-frame callback registered with Pixi ticker for Pixi backend.
 // Replaces p5's rAF-driven draw loop when RENDER_BACKEND === 'pixi'.
-function _pixiGameTick() {
+function _pixiGameTick(elapsedOverrideMs, hasElapsedOverride) {
   const ticker = PixiApp.app.ticker;
-  const periodMs = ticker.elapsedMS; // ms since last tick (Pixi's wall-clock measurement)
+  // Pixi passes a delta multiplier as its first listener argument, not ms.
+  const periodMs = hasElapsedOverride && Number.isFinite(elapsedOverrideMs)
+    ? elapsedOverrideMs
+    : ticker.elapsedMS;
 
   // Set p5 globals so draw() sees correct delta and frame counter.
   window.deltaTime = Math.min(periodMs, 50); // spiral-of-death clamp
@@ -204,11 +207,11 @@ function setup() {
       cnv.elt.style.position = 'absolute';
       cnv.elt.style.inset = '0';
     }
-    // Hand frame-pacing to the Pixi ticker. p5's rAF loop is stopped;
-    // _pixiGameTick calls draw() on every ticker frame.
+    // Hand frame-pacing to PixiApp. Capped modes use Pixi's ticker; unlimited
+    // uses its independent uncapped loop instead of display-synced rAF.
     noLoop();
-    PixiApp.app.ticker.add(_pixiGameTick);
-    PixiApp.app.ticker.start();
+    PixiApp.setGameLoop(_pixiGameTick);
+    PixiApp.setTargetFps(targetFps);
   }
 
   ensureTextSizeOverride();

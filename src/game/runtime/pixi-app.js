@@ -5,9 +5,8 @@
 // entities/HUD/weather on a transparent front canvas; Pixi draws the terrain
 // on the rear WebGL canvas. Both canvases fill #game-root absolutely.
 //
-// Pixi's ticker drives the game callback and its built-in low-priority render
-// callback flushes the stage once after the game has updated it. FPS settings
-// (60/120/Unlimited via applyGameFpsMode) therefore apply to both layers.
+// Pixi's ticker drives capped modes. Unlimited mode uses a zero-delay timer
+// because requestAnimationFrame-backed tickers are still display-refresh capped.
 
 const PixiApp = {
   app: null,
@@ -19,6 +18,10 @@ const PixiApp = {
   entityContainer: null,    // child of world — overlay/decor/coin/portal sprites
 
   _initialized: false,
+  _gameTickCallback: null,
+  _unlimitedTimer: null,
+  _unlimitedLoopToken: 0,
+  _unlimitedLastTime: 0,
 
   init: function ({ width, height }) {
     if (this._initialized || typeof PIXI === 'undefined') return;
@@ -41,6 +44,10 @@ const PixiApp = {
       autoDensity: true,
       powerPreference: 'high-performance',
     });
+
+    // Application may auto-start its requestAnimationFrame ticker. Frame pacing
+    // is selected explicitly after the game callback has been registered.
+    this.app.ticker.stop();
 
     // Ticker starts paused; game-core.js starts it after registering _pixiGameTick.
     // Do NOT call ticker.start() here — the game loop callback must be added first.
@@ -152,14 +159,57 @@ const PixiApp = {
     }
   },
 
-  // Set Pixi ticker FPS cap. 0 = uncapped (Unlimited mode). Call from applyGameFpsMode.
-  setTargetFps: function (fps) {
-    if (!this.app || !this.app.ticker) return;
-    this.app.ticker.maxFPS = (fps > 0 && fps < 10000) ? fps : 0;
+  setGameLoop: function (callback) {
+    if (!this.app || !this.app.ticker || typeof callback !== 'function') return;
+    if (this._gameTickCallback) this.app.ticker.remove(this._gameTickCallback);
+    this._gameTickCallback = callback;
+    this.app.ticker.add(callback);
   },
 
-  // Explicit flush helper for exceptional one-shot renders. Normal gameplay is
-  // rendered automatically by PIXI.Application's low-priority ticker callback.
+  _stopUnlimitedLoop: function () {
+    this._unlimitedLoopToken += 1;
+    if (this._unlimitedTimer !== null) clearTimeout(this._unlimitedTimer);
+    this._unlimitedTimer = null;
+    this._unlimitedLastTime = 0;
+  },
+
+  _startUnlimitedLoop: function () {
+    if (!this.app || !this._gameTickCallback || this._unlimitedTimer !== null) return;
+    const token = ++this._unlimitedLoopToken;
+    this._unlimitedLastTime = performance.now();
+
+    const step = () => {
+      if (token !== this._unlimitedLoopToken) return;
+      const now = performance.now();
+      const hidden = typeof document !== 'undefined' && document.hidden;
+      if (!hidden) {
+        const elapsedMs = Math.max(0.1, now - this._unlimitedLastTime);
+        this._gameTickCallback(elapsedMs, true);
+        this.render();
+      }
+      this._unlimitedLastTime = now;
+      this._unlimitedTimer = setTimeout(step, hidden ? 100 : 0);
+    };
+
+    this._unlimitedTimer = setTimeout(step, 0);
+  },
+
+  // Set the complete frame driver. 0 means no software or display-refresh cap.
+  setTargetFps: function (fps) {
+    if (!this.app || !this.app.ticker) return;
+    const cappedFps = (fps > 0 && fps < 10000) ? fps : 0;
+    this.app.ticker.maxFPS = cappedFps;
+    if (cappedFps === 0) {
+      this.app.ticker.stop();
+      this._startUnlimitedLoop();
+    } else {
+      this._stopUnlimitedLoop();
+      if (this._gameTickCallback) this.app.ticker.start();
+    }
+  },
+
+  // Explicit flush helper. Capped gameplay is rendered by PIXI.Application;
+  // the unlimited driver calls this after every independent update.
   render: function () {
     if (this.app) this.app.renderer.render(this.app.stage);
   },
