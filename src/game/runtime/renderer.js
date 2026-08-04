@@ -387,8 +387,10 @@ const Renderer = {
   drawNightOverlay: function (camX, camY) {
   // Night  // Weather Overlay Pass
   if (typeof WeatherSystem !== "undefined") {
-    const isNight = WeatherSystem.cycle > 0.8 || WeatherSystem.cycle < 0.2;
-    WeatherSystem.drawAmbientParticles(smoothCamX, smoothCamY, isNight);
+    const darknessProgress = typeof WeatherSystem.getDarknessProgress === "function"
+      ? WeatherSystem.getDarknessProgress()
+      : 0;
+    WeatherSystem.drawAmbientParticles(smoothCamX, smoothCamY, darknessProgress);
   }
   // --- Night overlay — drawn INSIDE the world transform so scale(gameScale) applies ---
   if (typeof WeatherSystem !== "undefined") {
@@ -419,6 +421,9 @@ const Renderer = {
         typeof WeatherSystem.getLightRadius === "function"
           ? WeatherSystem.getLightRadius()
           : 450;
+      const darknessProgress = typeof WeatherSystem.getDarknessProgress === "function"
+        ? WeatherSystem.getDarknessProgress()
+        : 1;
       const flicker = 1 + Math.sin(WeatherSystem.starTime * 15.7) * 0.025 + Math.sin(WeatherSystem.starTime * 7.9) * 0.015;
       pushVisibleLight({
         type: 'torch',
@@ -426,8 +431,8 @@ const Renderer = {
         y: screenY + facing[1],
         radius: baseRadius * flicker,
         color: [255, 174, 76],
-        intensity: 0.42,
-        eraseStrength: 0.72,
+        intensity: 0.42 * darknessProgress,
+        eraseStrength: 0.72 * darknessProgress,
       });
     }
     const ambientLights = WeatherSystem.getAmbientLights();
