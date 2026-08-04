@@ -61,10 +61,10 @@ function getViewportSize() {
 function getPerformanceOverlaySize(uiScaleFactor = 1, maxWidth = Infinity) {
   const safeUiScaleFactor = Math.max(0.85, Math.min(1.4, Number(uiScaleFactor) || 1));
   const widthCap = Number.isFinite(maxWidth) ? Math.max(1, Number(maxWidth)) : Infinity;
-  const scaleFactor = Math.min(safeUiScaleFactor, widthCap / 176);
+  const scaleFactor = Math.min(safeUiScaleFactor, widthCap / 520);
   return {
-    width: Math.round(176 * scaleFactor),
-    height: Math.round(118 * scaleFactor),
+    width: Math.round(520 * scaleFactor),
+    height: Math.round(44 * scaleFactor),
     uiScaleFactor: scaleFactor,
   };
 }
@@ -80,77 +80,40 @@ function drawPerformanceOverlayPanel(opts = {}) {
   const h = _sz.height;
   const uiScaleFactor = _sz.uiScaleFactor;
   const padX = Math.round(12 * uiScaleFactor);
-  const titleY = y + Math.round(16 * uiScaleFactor);
-  const rowStartY = y + Math.round(40 * uiScaleFactor);
-  const rowGap = Math.round(16 * uiScaleFactor);
-  const valueX = x + w - Math.round(12 * uiScaleFactor);
+  const centerY = y + h / 2;
 
   push();
-
-  if (typeof BUTTON_BG !== "undefined" && BUTTON_BG) {
-    image(BUTTON_BG, x - Math.round(10 * uiScaleFactor), y - Math.round(10 * uiScaleFactor), w + Math.round(20 * uiScaleFactor), h + Math.round(20 * uiScaleFactor));
-  } else {
-    noStroke();
-    fill(16, 16, 20, 220);
-    rect(x - Math.round(4 * uiScaleFactor), y - Math.round(4 * uiScaleFactor), w + Math.round(8 * uiScaleFactor), h + Math.round(8 * uiScaleFactor), 4);
-  }
-
-  stroke(typeof MENU_GOLD_BORDER !== "undefined" ? MENU_GOLD_BORDER : "rgba(184,134,11,0.65)");
-  strokeWeight(Math.max(1, Math.round(2 * uiScaleFactor)));
-  fill(20, 20, 24, 228);
-  rect(x, y, w, h, 4);
-
   noStroke();
-  fill(255, 214, 120);
-  if (typeof gTextSize === "function") gTextSize(Math.round(11 * uiScaleFactor));
-  else textSize(Math.round(11 * uiScaleFactor));
-  textAlign(LEFT, CENTER);
-  text("PERFORMANCE", x + padX, titleY);
-
-  const sepY = Math.round(y + Math.round(27 * uiScaleFactor));
-  stroke(typeof MENU_GOLD_BORDER !== "undefined" ? MENU_GOLD_BORDER : "rgba(184,134,11,0.65)");
-  strokeWeight(Math.max(1, Math.round(1 * uiScaleFactor)));
-  line(x + padX, sepY, x + w - padX, sepY);
-  noStroke();
-
-  if (tracker.paused) {
-    fill(255, 200, 80);
-    if (typeof gTextSize === "function") gTextSize(Math.round(13 * uiScaleFactor));
-    else textSize(Math.round(13 * uiScaleFactor));
-    textAlign(CENTER, CENTER);
-    text("PAUSED", x + w / 2, rowStartY + rowGap * 2);
-    pop();
-    return;
-  }
+  fill(0, 0, 0, 205);
+  rect(x, y, w, h, Math.max(2, Math.round(3 * uiScaleFactor)));
 
   const modeLabel = opts.modeLabel || getFpsModeLabel(normalizeFpsMode(opts.fpsMode ?? opts.targetFps));
-
-  const rows = [
-    ["CURRENT", String(Math.round(tracker.measuredFps || 0))],
-    ["AVERAGE", String(Math.round(tracker.averageFps  || tracker.measuredFps || 0))],
-    ["1% LOW",  String(Math.round(tracker.low1Fps     || tracker.measuredFps || 0))],
-    ["MODE",    modeLabel],
+  const metrics = [
+    ["CURRENT", String(Math.round(tracker.measuredFps || 0)), 0.19],
+    ["AVERAGE", String(Math.round(tracker.averageFps || tracker.measuredFps || 0)), 0.23],
+    ["1% LOW", String(Math.round(tracker.low1Fps || tracker.measuredFps || 0)), 0.19],
+    ["FPS MODE", modeLabel, 0.39],
   ];
-
-  const goldLabels = new Set(["MODE"]);
-  rows.forEach(([label, value], index) => {
-    const rowY = rowStartY + rowGap * index;
-    if (label === null) {
-      stroke(typeof MENU_GOLD_BORDER !== "undefined" ? MENU_GOLD_BORDER : "rgba(184,134,11,0.65)");
-      strokeWeight(Math.max(1, Math.round(1 * uiScaleFactor)));
-      line(x + padX, rowY, x + w - padX, rowY);
-      noStroke();
-      return;
-    }
-    fill(205, 205, 215);
-    if (typeof gTextSize === "function") gTextSize(Math.round(12 * uiScaleFactor));
-    else textSize(Math.round(12 * uiScaleFactor));
+  let fieldX = x + padX;
+  const usableW = w - padX * 2;
+  metrics.forEach(([label, value, share]) => {
+    const fieldW = usableW * share;
     textAlign(LEFT, CENTER);
-    text(label, x + padX, rowY);
-    fill(goldLabels.has(label) ? 255 : 245, goldLabels.has(label) ? 214 : 245, goldLabels.has(label) ? 120 : 245);
-    textAlign(RIGHT, CENTER);
-    text(value, valueX, rowY);
+    textStyle(NORMAL);
+    fill(178, 178, 186);
+    if (typeof gTextSize === "function") gTextSize(Math.round(10 * uiScaleFactor));
+    else textSize(Math.round(10 * uiScaleFactor));
+    text(label, fieldX, centerY);
+
+    const labelW = textWidth(label) + Math.round(7 * uiScaleFactor);
+    textStyle(BOLD);
+    fill(247, 247, 250);
+    if (typeof gTextSize === "function") gTextSize(Math.round(13 * uiScaleFactor));
+    else textSize(Math.round(13 * uiScaleFactor));
+    text(value, fieldX + labelW, centerY);
+    fieldX += fieldW;
   });
 
+  textStyle(NORMAL);
   pop();
 }
