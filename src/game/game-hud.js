@@ -980,15 +980,56 @@ function getCompassTopLimit(layout, playerScreenY, markerMargin) {
     return Math.min(desiredTop, Math.max(layout.safeArea.top + markerMargin, playerScreenY - markerMargin));
 }
 
+// Resolve placement first: offsets and clamping can change the required bearing.
+function getCompassMarkerGeometry(playerX, playerY, targetX, targetY, bounds, clearance, laneOffset = 0) {
+  const clampX = x => Math.max(bounds.left, Math.min(bounds.right, x));
+  const clampY = y => Math.max(bounds.top, Math.min(bounds.bottom, y));
+  const dx = targetX - playerX;
+  const dy = targetY - playerY;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 0.001) return null;
+  const targetIsVisible = targetX >= bounds.left && targetX <= bounds.right &&
+    targetY >= bounds.top && targetY <= bounds.bottom;
+  let x;
+  let y;
+  if (targetIsVisible) {
+    x = clampX(targetX - dx / distance * clearance);
+    y = clampY(targetY - dy / distance * clearance);
+  } else {
+    // Start inside the usable HUD area so intersection distances stay positive.
+    const originX = clampX(playerX);
+    const originY = clampY(playerY);
+    const rayX = targetX - originX;
+    const rayY = targetY - originY;
+    let t = Infinity;
+    if (rayX > 0) t = Math.min(t, (bounds.right - originX) / rayX);
+    if (rayX < 0) t = Math.min(t, (bounds.left - originX) / rayX);
+    if (rayY > 0) t = Math.min(t, (bounds.bottom - originY) / rayY);
+    if (rayY < 0) t = Math.min(t, (bounds.top - originY) / rayY);
+    const rayLength = Math.hypot(rayX, rayY);
+    x = clampX(originX + rayX * t - rayY / rayLength * laneOffset);
+    y = clampY(originY + rayY * t + rayX / rayLength * laneOffset);
+  }
+  if (Math.hypot(targetX - x, targetY - y) < 0.001) {
+    // A narrow viewport or boundary clamp can collapse the marker onto its target.
+    const inwardX = (bounds.left + bounds.right) / 2 - targetX;
+    const inwardY = (bounds.top + bounds.bottom) / 2 - targetY;
+    const inwardLength = Math.hypot(inwardX, inwardY);
+    if (inwardLength < 0.001) return null;
+    x = clampX(targetX + inwardX / inwardLength * clearance);
+    y = clampY(targetY + inwardY / inwardLength * clearance);
+    if (Math.hypot(targetX - x, targetY - y) < 0.001) return null;
+  }
+  return { x, y, angle: Math.atan2(targetY - y, targetX - x), targetIsVisible };
+}
+
 function drawCompass() {
     if (!playerPosition) return;
 
     const layout = getHudLayout();
-    const vW = layout.vW;
-    const vH = layout.vH;
     const safeArea = layout.safeArea;
-    const camX = Math.floor(smoothCamX || 0);
-    const camY = Math.floor(smoothCamY || 0);
+    const camX = smoothCamX || 0;
+    const camY = smoothCamY || 0;
     const pX = isMoving ? renderX : playerPosition.x;
     const pY = isMoving ? renderY : playerPosition.y;
     const pScreenX = (pX * cellSize + cellSize / 2) - camX;
@@ -1015,38 +1056,22 @@ function drawCompass() {
         const dy = tScreenY - pScreenY;
         if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return;
         const distTiles = Math.hypot(dx, dy) / cellSize;
-        const angle = atan2(dy, dx);
 
         const margin = Math.max(40, layout.margin + 12) + (i * 5);
         const leftLimit = Math.min(safeArea.right, safeArea.left + margin);
         const rightLimit = Math.max(leftLimit, safeArea.right - margin);
         const topLimit = Math.min(safeArea.bottom, getCompassTopLimit(layout, pScreenY, margin));
         const bottomLimit = Math.max(topLimit, safeArea.bottom - Math.max(margin, Math.round(48 * layout.uiScaleFactor)));
-        const targetIsNearbyAndVisible = distTiles <= OBJECTIVE_LOCK_DISTANCE_TILES &&
-            tScreenX >= leftLimit && tScreenX <= rightLimit &&
-            tScreenY >= topLimit && tScreenY <= bottomLimit;
-
-        let markerX;
-        let markerY;
-        let markerAngle = angle;
-        if (targetIsNearbyAndVisible) {
-            // Keep the arrow outside the target sprite and aim its tip inward.
-            const targetClearance = Math.max(cellSize * 0.85, 34 * layout.uiScaleFactor);
-            markerX = constrain(tScreenX - Math.cos(angle) * targetClearance, leftLimit, rightLimit);
-            markerY = constrain(tScreenY - Math.sin(angle) * targetClearance, topLimit, bottomLimit);
-        } else {
-            let tMin = Infinity;
-            if (dx > 0) tMin = Math.min(tMin, (rightLimit - pScreenX) / dx);
-            if (dx < 0) tMin = Math.min(tMin, (leftLimit - pScreenX) / dx);
-            if (dy > 0) tMin = Math.min(tMin, (bottomLimit - pScreenY) / dy);
-            if (dy < 0) tMin = Math.min(tMin, (topLimit - pScreenY) / dy);
-
-            const laneOffset = (m.lane || 0) * Math.round(14 * layout.uiScaleFactor);
-            const perpendicularX = -Math.sin(angle) * laneOffset;
-            const perpendicularY = Math.cos(angle) * laneOffset;
-            markerX = constrain(pScreenX + dx * tMin + perpendicularX, leftLimit, rightLimit);
-            markerY = constrain(pScreenY + dy * tMin + perpendicularY, topLimit, bottomLimit);
-        }
+        const geometry = getCompassMarkerGeometry(
+            pScreenX, pScreenY, tScreenX, tScreenY,
+            { left: leftLimit, right: rightLimit, top: topLimit, bottom: bottomLimit },
+            Math.max(cellSize * 0.85, 34 * layout.uiScaleFactor),
+            (m.lane || 0) * Math.round(14 * layout.uiScaleFactor),
+        );
+        if (!geometry) return;
+        const markerX = geometry.x;
+        const markerY = geometry.y;
+        const markerAngle = geometry.angle;
 
         let markerColor;
         if (m.type === 'enemy') markerColor = color(255, 50, 50);

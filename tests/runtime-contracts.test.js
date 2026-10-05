@@ -257,7 +257,7 @@ test('objective tracker independently selects the closest living mob and coin', 
   assert.match(hud, /type: 'coin', label: 'COIN', lane: 1/);
   assert.match(hud, /type: 'enemy', label: 'MOB', lane: -1/);
   assert.doesNotMatch(hud, /If on screen, skip pointer/);
-  assert.match(hud, /targetIsNearbyAndVisible/);
+  assert.match(hud, /getCompassMarkerGeometry/);
   assert.doesNotMatch(hud, /markerAngle = Math\.PI \/ 2/);
   assert.match(hud, /lockedObjectiveCoinKey/);
   assert.match(hud, /lockedObjectiveEnemy/);
@@ -277,7 +277,7 @@ test('changed runtime scripts use the current cache version', () => {
   assert.match(gameHtml, /src\/game\/runtime\/game-loop\.js\?v=20260804-1/);
   assert.match(gameHtml, /src\/game\/game-globals\.js\?v=20261005-1/);
   assert.match(gameHtml, /src\/game\/game-combat\.js\?v=20260804-1/);
-  assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-7/);
+  assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20261005-2/);
   assert.match(gameHtml, /src\/game\/game-ui\.js\?v=20260804-1/);
   assert.match(gameHtml, /src\/game\/game-settings\.js\?v=20260804-2/);
   assert.match(gameHtml, /src\/game\/game-terminal\.js\?v=20261005-1/);
