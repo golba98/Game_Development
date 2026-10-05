@@ -32,8 +32,9 @@ function floodReachable(options = {}) {
   const total = logicalW * logicalH;
   const visited = new Uint8Array(total);
   if (!mapStates || mapStates.length !== total) return visited;
-  const startIdx = findFloodStart();
-  if (startIdx < 0) return visited;
+  const explicitStart = Number.isInteger(options.startX) && Number.isInteger(options.startY);
+  const startIdx = explicitStart ? options.startY * logicalW + options.startX : findFloodStart();
+  if (startIdx < 0 || startIdx >= total || isSolid(mapStates[startIdx])) return visited;
   const queue = new Array(total);
   let head = 0;
   let tail = 0;
@@ -47,7 +48,11 @@ function floodReachable(options = {}) {
       { nx: x - 1, ny: y },
       { nx: x + 1, ny: y },
       { nx: x, ny: y - 1 },
-      { nx: x, ny: y + 1 }
+      { nx: x, ny: y + 1 },
+      { nx: x - 1, ny: y - 1 },
+      { nx: x + 1, ny: y - 1 },
+      { nx: x - 1, ny: y + 1 },
+      { nx: x + 1, ny: y + 1 }
     ];
     for (const { nx, ny } of next) {
       if (nx < 0 || nx >= logicalW || ny < 0 || ny >= logicalH) continue;
@@ -55,6 +60,7 @@ function floodReachable(options = {}) {
       if (visited[nIdx]) continue;
       const state = getTileState(nx, ny);
       if (isSolid(state)) continue;
+      if (options.respectDecor !== false && decorativeObstaclePositions.has(nIdx)) continue;
       if (respectEdgeLayer && edgeLayer && edgeLayer.length === total && edgeLayer[nIdx]) continue;
       visited[nIdx] = 1;
       queue[tail++] = nIdx;

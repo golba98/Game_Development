@@ -8,7 +8,7 @@ const TERMINAL_SPAWN_DIST = 10; // tile radius used by /spawn boss
 // canvas focus, p5 key normalization, or keyboard layout. F2 is the canonical
 // shortcut; Backquote (`/~) is retained as a convenient alternative.
 window.addEventListener('keydown', event => {
-  const isTerminalShortcut = event.key === 'F2' || event.code === 'Backquote';
+  const isTerminalShortcut = event.key === 'F2' || event.code === 'Backquote' || (event.ctrlKey && event.key === "'");
   if (!isTerminalShortcut || event.repeat) return;
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -397,8 +397,10 @@ function processTerminalCommand(cmd) {
       tutorialStepTimer = 0;
       tutorialMessage = "";
       tutorialMessageTimer = 0;
-      localStorage.setItem("hasShownWelcomeTutorial", "false");
-      localStorage.setItem("tutorialComplete", "false");
+      try {
+        localStorage.setItem("hasShownWelcomeTutorial", "false");
+        localStorage.setItem("tutorialComplete", "false");
+      } catch (error) {}
       log(
         "SUCCESS: Tutorial state reset. Loading Training Glade...",
         "terminal-success",

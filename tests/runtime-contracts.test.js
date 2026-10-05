@@ -267,21 +267,22 @@ test('loaded maps rebuild the live coin tracker from coin tiles', () => {
   const gameIo = fs.readFileSync(path.join(root, 'src/game/game-io.js'), 'utf8');
   assert.match(gameIo, /function rebuildActiveCoinsFromMap\(\)/);
   assert.match(gameIo, /mapStates\[index\] !== TILE_TYPES\.COIN/);
-  assert.equal((gameIo.match(/rebuildActiveCoinsFromMap\(\);/g) || []).length, 2);
+  assert.equal((gameIo.match(/rebuildActiveCoinsFromMap\(\);/g) || []).length, 1);
+  assert.match(gameIo, /return applyLoadedMap\(obj\)/);
 });
 test('changed runtime scripts use the current cache version', () => {
   const gameHtml = fs.readFileSync(path.join(root, 'game.html'), 'utf8');
   const menuHtml = fs.readFileSync(path.join(root, 'menu.html'), 'utf8');
   assert.match(gameHtml, /src\/shared\/shared-ui\.js\?v=20260804-4/);
   assert.match(gameHtml, /src\/game\/runtime\/game-loop\.js\?v=20260804-1/);
-  assert.match(gameHtml, /src\/game\/game-globals\.js\?v=20260804-2/);
+  assert.match(gameHtml, /src\/game\/game-globals\.js\?v=20261005-1/);
   assert.match(gameHtml, /src\/game\/game-combat\.js\?v=20260804-1/);
   assert.match(gameHtml, /src\/game\/game-hud\.js\?v=20260804-7/);
   assert.match(gameHtml, /src\/game\/game-ui\.js\?v=20260804-1/);
   assert.match(gameHtml, /src\/game\/game-settings\.js\?v=20260804-2/);
-  assert.match(gameHtml, /src\/game\/game-terminal\.js\?v=20260804-2/);
+  assert.match(gameHtml, /src\/game\/game-terminal\.js\?v=20261005-1/);
   assert.match(gameHtml, /src\/game\/game-weather\.js\?v=20260804-2/);
-  assert.match(gameHtml, /src\/game\/game-core\.js\?v=20260804-3/);
-  assert.match(gameHtml, /src\/game\/game-io\.js\?v=20260804-1/);
+  assert.match(gameHtml, /src\/game\/game-core\.js\?v=20261005-1/);
+  assert.match(gameHtml, /src\/game\/game-io\.js\?v=20261005-1/);
   assert.match(menuHtml, /src\/shared\/shared-ui\.js\?v=20260804-4/);
 });

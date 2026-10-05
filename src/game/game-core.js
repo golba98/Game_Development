@@ -67,13 +67,15 @@ function handlePixiTickError(error) {
   const message = error && error.message ? String(error.message) : String(error);
   const now = typeof performance !== "undefined" ? performance.now() : Date.now();
 
-  // Generation errors must return to phase 1 instead of throwing forever on
-  // a completed loading bar. The run ID prevents stale phase data being reused.
-  if (genPhase > 0) {
-    genPhase = GENPHASE_PART1;
-    genTimer = (typeof millis === "function" ? millis() : now) + 100;
+  if (genPhase > 0 && generationRetries < 1) {
+    generationRetries++;
+    clearPreviousGameState();
+    genPhase = GENPHASE_START;
     genTempData = { runId: generationRunId, clearArea: null };
+    console.error('[game] Retrying failed generation once', error);
+    return;
   }
+  failGameLoading(error, genPhase > 0 ? 'Generating world' : 'Running game');
 
   // Keep the console useful: report a repeated frame-loop failure at most once
   // per second rather than adding the same stack on every display frame.
@@ -129,6 +131,11 @@ function _pixiGameTick(elapsedOverrideMs, hasElapsedOverride) {
 }
 
 function setup() {
+  try { initializeGame(); }
+  catch (error) { failGameLoading(error, 'Starting game'); }
+}
+
+function initializeGame() {
   verboseLog(
     "!!! NEW VERSION LOADED !!! - FIXED_VIRTUAL_HEIGHT = " +
       FIXED_VIRTUAL_HEIGHT,
@@ -199,19 +206,23 @@ function setup() {
 
   // PixiJS WebGL layer — creates its own canvas behind the p5 canvas.
   // Must run after createCanvas so gameScale / W / H are known.
-  if (RENDER_BACKEND === 'pixi' && typeof PixiApp !== 'undefined') {
-    PixiApp.init({ width: W, height: H });
-    // Make the p5 canvas a transparent overlay so the Pixi terrain shows through.
-    if (cnv && cnv.elt) {
-      cnv.elt.style.background = 'transparent';
-      cnv.elt.style.position = 'absolute';
-      cnv.elt.style.inset = '0';
+  if (RENDER_BACKEND === 'pixi') {
+    if (typeof PixiApp !== 'undefined' && PixiApp.init({ width: W, height: H })) {
+      // Make the p5 canvas a transparent overlay so the Pixi terrain shows through.
+      if (cnv && cnv.elt) {
+        cnv.elt.style.background = 'transparent';
+        cnv.elt.style.position = 'absolute';
+        cnv.elt.style.inset = '0';
+      }
+      // Hand frame-pacing to PixiApp. Capped modes use Pixi's ticker; unlimited
+      // uses its independent uncapped loop instead of display-synced rAF.
+      noLoop();
+      PixiApp.setGameLoop(_pixiGameTick);
+      PixiApp.setTargetFps(targetFps);
+    } else {
+      RENDER_BACKEND = 'p5';
+      applyGameFpsMode(targetFps, 'renderer-fallback');
     }
-    // Hand frame-pacing to PixiApp. Capped modes use Pixi's ticker; unlimited
-    // uses its independent uncapped loop instead of display-synced rAF.
-    noLoop();
-    PixiApp.setGameLoop(_pixiGameTick);
-    PixiApp.setTargetFps(targetFps);
   }
 
   ensureTextSizeOverride();
@@ -313,7 +324,7 @@ function setup() {
   let serverFetchPromise = Promise.resolve(false);
 
   try {
-    if (typeof shouldAttemptMapFetch === "function" && shouldAttemptMapFetch()) {
+    if (!isTutorialMap && typeof shouldAttemptMapFetch === "function" && shouldAttemptMapFetch()) {
       serverFetchPromise = tryFetchActiveMap();
     }
   } catch (e) {}
@@ -353,35 +364,24 @@ function setup() {
         if (loadMapFromStorage()) return;
         runAutoGenerator();
       })
-      .catch((err) => {
-        runAutoGenerator();
+      .catch((error) => {
+        failGameLoading(error, 'Loading world');
       });
-
-    try {
-      serverFetchPromise.finally(() => {
-        setTimeout(() => {
-          if (typeof mapLoadComplete === "undefined" || !mapLoadComplete) {
-            // Do not start a second world while a phased generation is already
-            // active. Successful phase 2 marks mapLoadComplete before this
-            // fallback is allowed to run.
-            if (genPhase === 0 && !playerPosition && !mapStates) generateMap();
-          }
-        }, 1000);
-      });
-    } catch (e) {}
 
     if (!ready) {
       try {
         AssetTracker.onReady(() => {
           try {
+            if (!mapLoadComplete || runtimeFailed) return;
             createMapImage();
-            redraw();
+            requestGameRedraw();
           } catch (e) {}
         });
       } catch (e) {}
     }
   });
 
+  setTimeout(loadDeferredGameAudio, 0);
   applyGameFpsMode(targetFps, "setup");
 
   if (gameMusic) gameMusic.setVolume(musicVol * masterVol);
@@ -391,14 +391,6 @@ function setup() {
       pendingGameActivated = false;
     } catch (e) {}
   }
-
-  // Tell the parent menu that the game is fully initialised and ready for game-activated.
-  try {
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: 'game-ready' }, window.location.origin);
-      console.log('[game] posted game-ready to parent');
-    }
-  } catch (e) {}
 
 }
 
@@ -435,6 +427,8 @@ function _confirmResize() {
   virtualW = W / gameScale;
   virtualH = H / gameScale;
 
+  if (RENDER_BACKEND === 'pixi' && typeof PixiApp !== 'undefined') PixiApp.resize(W, H);
+
   const mapW = (logicalW || 0) * cellSize;
   const mapH = (logicalH || 0) * cellSize;
   if (mapW <= 0 || mapH <= 0) {
@@ -444,10 +438,6 @@ function _confirmResize() {
   }
 
   resizeCanvas(W, H);
-
-  if (RENDER_BACKEND === 'pixi' && typeof PixiApp !== 'undefined') {
-    PixiApp.resize(W, H);
-  }
 
   try {
     enforceCanvasSharpness(drawingContext);
@@ -470,7 +460,7 @@ function _confirmResize() {
     return;
   }
 
-  redraw();
+  requestGameRedraw();
 }
 
 function createFullWindowCanvas() {
@@ -482,6 +472,12 @@ function createFullWindowCanvas() {
 }
 
 function draw() {
+  if (runtimeFailed || (typeof GameStartup !== 'undefined' && GameStartup.failed)) return;
+  try { renderGameFrame(); }
+  catch (error) { handlePixiTickError(error); }
+}
+
+function renderGameFrame() {
   if (isRuntimePerfEnabled()) BrowserRafSampler.start();
   else BrowserRafSampler.stop();
 
@@ -570,16 +566,12 @@ function draw() {
         if (typeof FramePerf !== "undefined") FramePerf.endFrame();
         return;
       }
-      if (!generateMap_Part2()) {
-        genPhase = GENPHASE_PART1;
-        genTimer = millis() + 100;
-        if (typeof FramePerf !== "undefined") FramePerf.endFrame();
-        return;
-      }
+      if (!generateMap_Part2()) throw new Error('Generation phase data is stale');
       genPhase = 0;
       showLoadingOverlay = false;
       completeLoadingProgress();
       updateLoadingOverlayDom();
+      finishGameLoading();
       if (typeof resetPerformanceTracker === "function")
         resetPerformanceTracker(performanceTracker);
       if (typeof FramePerf !== "undefined") FramePerf.reset();
@@ -781,7 +773,7 @@ function draw() {
             // Completion belongs to the exit action, not the last coin pickup.
             // Set both persisted and in-memory state before map generation so
             // this cannot accidentally reload the tutorial start.
-            localStorage.setItem("tutorialComplete", "true");
+            try { localStorage.setItem("tutorialComplete", "true"); } catch (error) {}
             isTutorialMap = false;
             currentLevel = 1;
           } else {

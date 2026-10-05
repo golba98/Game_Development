@@ -4,9 +4,11 @@ let pendingGameActivated = false;
 // Render backend: 'pixi' uses WebGL via PixiJS (terrain GPU-batched, entities on
 // transparent p5 canvas overlay). 'p5' falls back to full Canvas2D rendering.
 // Toggle in Settings > Graphics > Render, or via localStorage('renderBackend').
-const RENDER_BACKEND = (function () {
+let RENDER_BACKEND = (function () {
   try {
-    return localStorage.getItem('renderBackend') || 'pixi';
+    const requested = new URLSearchParams(window.location.search).get('renderBackend');
+    const saved = readGameStorage('renderBackend');
+    return (requested || saved) === 'p5' ? 'p5' : 'pixi';
   } catch (e) {
     return 'pixi';
   }
@@ -72,7 +74,12 @@ let lastManaChange = 0;
 let equipment = { weapon: null, armor: null };
 
 // --- Tutorial Flags ---
-let isTutorialMap = localStorage.getItem("tutorialComplete") !== "true";
+function readGameStorage(key, fallback = null) {
+  try { return localStorage.getItem(key) ?? fallback; }
+  catch (error) { return fallback; }
+}
+
+let isTutorialMap = readGameStorage("tutorialComplete") !== "true";
 let tutorialStep = 0;
 let tutorialMoved = false;
 let tutorialAttacked = false;
@@ -86,7 +93,7 @@ let tutorialMessageTimer = 0;
 let tutorialArrowBlink = 0;
 let activeTutorial = null;
 let hasShownWelcomeTutorial =
-  localStorage.getItem("hasShownWelcomeTutorial") === "true";
+  readGameStorage("hasShownWelcomeTutorial") === "true";
 let initialSpawnPosition = { x: 0, y: 0 };
 
 // --- HUD & Overlay Buffers ---
@@ -608,6 +615,8 @@ let genPhase = 0;
 let genTimer = 0;
 let genTempData = {};
 let generationRunId = 0;
+let generationRetries = 0;
+let runtimeFailed = false;
 
 const FIXED_VIRTUAL_HEIGHT = 900;
 const FIXED_MAP_WIDTH_TILES = 150;

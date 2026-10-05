@@ -24,71 +24,85 @@ const PixiApp = {
   _unlimitedLastTime: 0,
 
   init: function ({ width, height }) {
-    if (this._initialized || typeof PIXI === 'undefined') return;
-    this._initialized = true;
+    if (this._initialized) return !!this.app;
+    if (typeof PIXI === 'undefined') return false;
+    try {
 
-    // Pixel-art nearest-neighbour scaling (set before any textures are created)
-    PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
-    PIXI.settings.ROUND_PIXELS = typeof PIXI_ROUND_PIXELS !== 'undefined' ? PIXI_ROUND_PIXELS : true;
+      // Pixel-art nearest-neighbour scaling (set before any textures are created)
+      PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
+      PIXI.settings.ROUND_PIXELS = typeof PIXI_ROUND_PIXELS !== 'undefined' ? PIXI_ROUND_PIXELS : true;
 
-    this.app = new PIXI.Application({
-      width,
-      height,
-      antialias: false,
-      backgroundColor: 0x0a1f04,
-      backgroundAlpha: 0,
-      resolution: Math.min(
-        window.devicePixelRatio || 1,
-        typeof MAX_PIXEL_DENSITY !== 'undefined' ? MAX_PIXEL_DENSITY : 1,
-      ),
-      autoDensity: true,
-      powerPreference: 'high-performance',
-    });
+      this.app = new PIXI.Application({
+        width,
+        height,
+        antialias: false,
+        backgroundColor: 0x0a1f04,
+        backgroundAlpha: 0,
+        resolution: Math.min(
+          window.devicePixelRatio || 1,
+          typeof MAX_PIXEL_DENSITY !== 'undefined' ? MAX_PIXEL_DENSITY : 1,
+        ),
+        autoDensity: true,
+        powerPreference: 'high-performance',
+      });
 
-    // Application may auto-start its requestAnimationFrame ticker. Frame pacing
-    // is selected explicitly after the game callback has been registered.
-    this.app.ticker.stop();
+      // Application may auto-start its requestAnimationFrame ticker. Frame pacing
+      // is selected explicitly after the game callback has been registered.
+      this.app.ticker.stop();
 
-    // Ticker starts paused; game-core.js starts it after registering _pixiGameTick.
-    // Do NOT call ticker.start() here — the game loop callback must be added first.
+      // Ticker starts paused; game-core.js starts it after registering _pixiGameTick.
+      // Do NOT call ticker.start() here — the game loop callback must be added first.
 
-    // Inject the Pixi canvas as the first child of #game-root so p5's canvas
-    // (appended later by adoptCanvas) lands on top in DOM stacking order.
-    const view = this.app.view;
-    view.id = 'pixi-canvas';
-    view.style.cssText = [
-      'position:absolute',
-      'inset:0',
-      'width:100%!important',
-      'height:100%!important',
-      'image-rendering:pixelated',
-      'display:block',
-    ].join(';');
+      // Inject the Pixi canvas as the first child of #game-root so p5's canvas
+      // (appended later by adoptCanvas) lands on top in DOM stacking order.
+      const view = this.app.view;
+      view.id = 'pixi-canvas';
+      view.style.cssText = [
+        'position:absolute',
+        'inset:0',
+        'width:100%!important',
+        'height:100%!important',
+        'image-rendering:pixelated',
+        'display:block',
+      ].join(';');
 
-    const root = document.getElementById('game-root');
-    if (root) root.insertBefore(view, root.firstChild);
+      const root = document.getElementById('game-root');
+      if (root) root.insertBefore(view, root.firstChild);
 
-    // WebGL context loss/restore — rebuild terrain texture after restore
-    view.addEventListener('webglcontextlost', (e) => {
-      e.preventDefault();
-      console.warn('[PixiApp] WebGL context lost');
-    });
-    view.addEventListener('webglcontextrestored', () => {
-      console.warn('[PixiApp] WebGL context restored — rebuilding textures');
-      try { PixiWorldRenderer.rebuildTerrainTexture(); } catch (ex) {}
-    });
+      // WebGL context loss/restore — rebuild terrain texture after restore
+      view.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+        this.useCanvasFallback();
+      });
+      view.addEventListener('webglcontextrestored', () => {
+        if (RENDER_BACKEND !== 'pixi') return;
+        console.warn('[PixiApp] WebGL context restored — rebuilding textures');
+        try { PixiWorldRenderer.rebuildTerrainTexture(); } catch (ex) {}
+      });
 
-    // Build container tree
-    this.worldContainer    = new PIXI.Container();
-    this.terrainContainer  = new PIXI.Container();
-    this.entityContainer   = new PIXI.Container();
-    this.entityContainer.sortableChildren = true;
-    this.worldContainer.addChild(this.terrainContainer);
-    this.worldContainer.addChild(this.entityContainer);
+      // Build container tree
+      this.worldContainer    = new PIXI.Container();
+      this.terrainContainer  = new PIXI.Container();
+      this.entityContainer   = new PIXI.Container();
+      this.entityContainer.sortableChildren = true;
+      this.worldContainer.addChild(this.terrainContainer);
+      this.worldContainer.addChild(this.entityContainer);
 
-    this._createForestBackdrop(width, height);
-    if (this.forestBackdrop) this.app.stage.addChild(this.forestBackdrop);
-    this.app.stage.addChild(this.worldContainer);
+      this._createForestBackdrop(width, height);
+      if (this.forestBackdrop) this.app.stage.addChild(this.forestBackdrop);
+      this.app.stage.addChild(this.worldContainer);
+      this._initialized = true;
+      return true;
+    } catch (error) {
+      console.warn('[PixiApp] WebGL initialization failed; using Canvas2D', error);
+      if (this.app) {
+        try { this.app.destroy(true, { children: true, texture: true, baseTexture: true }); } catch (_) {}
+      }
+      this.app = null;
+      this._initialized = false;
+      this.worldContainer = this.terrainContainer = this.entityContainer = this.forestBackdrop = null;
+      return false;
+    }
   },
 
   // Fill the area outside a small map with a deterministic, irregular forest.
@@ -157,6 +171,19 @@ const PixiApp = {
     } catch (e) {
       this.forestBackdrop = null;
     }
+  },
+
+  useCanvasFallback: function () {
+    this._stopUnlimitedLoop();
+    if (this.app) {
+      this.app.ticker.stop();
+      this.app.view.style.display = 'none';
+    }
+    if (typeof PixiWorldRenderer !== 'undefined') PixiWorldRenderer.clear();
+    RENDER_BACKEND = 'p5';
+    applyGameFpsMode(targetFps, 'webgl-context-lost');
+    loop();
+    console.warn('[PixiApp] WebGL context lost; continuing with Canvas2D');
   },
 
   setGameLoop: function (callback) {

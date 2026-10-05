@@ -86,6 +86,7 @@ function loadTutorialMap() {
     const dummy = createBeetle(TUTORIAL_DUMMY_X, TUTORIAL_DUMMY_Y);
     dummy.aggro = false;
     dummy.health = TUTORIAL_DUMMY_HP;
+    dummy.maxHealth = TUTORIAL_DUMMY_HP;
     enemies.push(dummy);
 
     // Coins (placed after terrainLayer snapshot so underlying terrain is GRASS)
@@ -128,12 +129,10 @@ function loadTutorialMap() {
     verboseLog("[game] Tutorial Map Ready.");
   } catch (e) {
     console.warn("[game] loadTutorialMap error:", e);
-  } finally {
-    showLoadingOverlay = false;
-    mapLoadComplete = true;
-    completeLoadingProgress();
-    try { updateLoadingOverlayDom(); } catch (e) {}
+    failGameLoading(e, 'Loading training world');
+    return;
   }
+  finishGameLoading();
 }
 
 // Returns the number of COIN tiles currently on the map.

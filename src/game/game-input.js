@@ -133,6 +133,7 @@ function mousePressed() {
 
 // Toggles the pause / in-game menu when Escape is pressed, with debounce.
 function togglePauseMenuFromEscape() {
+  if (isGameOver || runtimeFailed || !mapLoadComplete) return;
   const now = Date.now();
   if (now - _lastEscToggleAt < ESC_TOGGLE_DEBOUNCE_MS) return;
   _lastEscToggleAt = now;
@@ -174,6 +175,15 @@ function keyPressed() {
   }
 
   if (isGameOver) return;
+  if (key === 'p' || key === 'P') {
+    if (!SceneManager.isBusy() && !SceneManager.isOverlayOpen()) generateMap();
+    return;
+  }
+  // Configured attack takes priority over the legacy E spell shortcut.
+  if (keyCode === playerKeybinds.cut) {
+    if (!SceneManager.isBusy() && !SceneManager.isOverlayOpen()) startPlayerAttack();
+    return;
+  }
   if (keyCode === playerKeybinds.jump && !isJumping && !isMoving) {
     isJumping = true;
     jumpFrame = 0;
@@ -224,7 +234,16 @@ function keyPressed() {
   }
 
   if (key === "f" || key === "F") {
-    fullscreen(!fullscreen());
+    const unavailable = error => {
+      console.warn('[game] Fullscreen unavailable', error);
+      if (typeof showToast === 'function') showToast('Fullscreen is unavailable in this browser.', 'info', 2200);
+    };
+    try {
+      const request = document.fullscreenElement
+        ? document.exitFullscreen()
+        : document.documentElement.requestFullscreen();
+      if (request && typeof request.catch === 'function') request.catch(unavailable);
+    } catch (error) { unavailable(error); }
     return;
   }
 
@@ -526,10 +545,6 @@ function keyPressed() {
     return;
   }
 
-  if (keyCode === playerKeybinds.cut) {
-    startPlayerAttack();
-    return;
-  }
 }
 
 // ── Escape key handler (Terminal-aware) ──

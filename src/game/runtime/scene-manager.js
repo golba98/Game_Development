@@ -43,6 +43,7 @@ const SceneManager = {
   isOverlayOpen: function () {
     return (
       (typeof inGameMenuVisible !== "undefined" && inGameMenuVisible) ||
+      (typeof isTerminalOpen !== "undefined" && isTerminalOpen) ||
       (typeof settingsOverlayDiv !== "undefined" && !!settingsOverlayDiv)
     );
   },
@@ -63,7 +64,7 @@ const SceneManager = {
    * !isGameOver` checks.
    */
   isSimulating: function () {
-    return !this.isOverlayOpen() && !this.isGameOver();
+    return !this.isBusy() && !this.isOverlayOpen() && !this.isGameOver();
   },
 
   /** The dominant scene this frame, by precedence. */
