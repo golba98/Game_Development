@@ -15,8 +15,10 @@ function preload() {
     () => { if (_dbg) console.log('[preload] font ok'); },
     () => console.warn('[preload] font failed (continuing): font.ttf'));
   bgVideo      = createVideo(MENU_VIDEO_PATH);  // DOM element — not tracked by p5 preload
-  bgMusic      = loadSound('assets/8-Music/menu_music.wav',    sndOk('menu_music'),    sndErr('menu_music'));
-  clickSFX     = loadSound('assets/9-Sounds/Button_Press.mp3', sndOk('Button_Press'), sndErr('Button_Press'));
+
+  if (typeof loadSound === 'function') {
+    clickSFX = loadSound('assets/9-Sounds/Button_Press.mp3', sndOk('Button_Press'), sndErr('Button_Press'));
+  }
   bgPlayButton = loadImage('assets/1-Background/1-Menu/Background.png', imgOk('Background'), imgErr('Background'));
 }
 
@@ -24,10 +26,6 @@ function setup() {
   const _dbg = (() => { try { return new URLSearchParams(window.location.search).get('debug') === '1'; } catch (e) { return false; } })();
   if (_dbg) console.log('[setup] started');
   try {
-    const loadingOverlay = document.getElementById('gd-loading-overlay');
-    if (loadingOverlay) loadingOverlay.remove();
-    if (_dbg) console.log('[setup] loading overlay removed');
-
     const viewportSize = getViewportSize();
     canvas = createCanvas(viewportSize.width, viewportSize.height);
     canvas.style('z-index', '1');
@@ -35,7 +33,7 @@ function setup() {
 
     canvas.style('pointer-events', 'none');
 
-    textFont(myFont);
+    textFont(myFont && myFont.font ? myFont : 'monospace');
     noStroke();
 
     loadAllSettings();
@@ -62,6 +60,16 @@ function setup() {
     window.addEventListener('keydown', resumeOnFirstGesture, { once: true });
     calculateLayout();
     createMainMenu();
+    if (typeof GameStartup !== 'undefined') GameStartup.finish();
+    setTimeout(() => {
+      if (typeof loadSound !== 'function') return;
+      try {
+        bgMusic = loadSound('assets/8-Music/menu_music.wav', (sound) => {
+          bgMusic = sound;
+          if (audioUnlocked) startMenuMusicIfNeeded();
+        }, () => { bgMusic = null; });
+      } catch (error) { bgMusic = null; }
+    }, 0);
     if (_dbg) console.log('[setup] main menu created');
     installMenuZoomLogger();
 
@@ -71,6 +79,7 @@ function setup() {
     } catch (e) {}
   } catch (e) {
     console.error('[setup] failed:', e);
+    if (typeof GameStartup !== 'undefined') GameStartup.fail(e, 'Loading menu');
     try {
       const ov = document.getElementById('gd-loading-overlay');
       if (ov) {
@@ -107,6 +116,11 @@ function setup() {
             }, '*');
           }
         } catch (e) {}
+      }
+
+      else if (ev.data.type === 'game-load-error') {
+        gameIframe.setAttribute('data-load-state', 'failed');
+        console.warn('[menu] Game load failed:', ev.data.stage);
       }
 
       else if (ev.data.type === 'game-ready') {
@@ -172,6 +186,7 @@ function setup() {
     const ov = document.getElementById('game-overlay');
 
     const cleanupAndResume = () => {
+      if (document.getElementById('game-iframe') !== iframe) return;
       try {
         const ifr = document.getElementById('game-iframe');
         if (ifr && ifr.contentWindow) {
@@ -209,6 +224,7 @@ function setup() {
     let acked = false;
     const onMessage = (ev) => {
       if (!ev || !ev.data) return;
+      if (ev.origin !== window.location.origin || ev.source !== iframe.contentWindow) return;
       if (ev.data.type === ackType) {
         acked = true;
         window.removeEventListener('message', onMessage);

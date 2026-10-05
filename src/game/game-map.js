@@ -5,8 +5,6 @@
 const SCATTER_FOREST_PROB        = 0.18;  // probability a tile becomes forest in scatter-style generation
 const COIN_SCATTER_COUNT         = 20;    // number of coins placed randomly on the map
 const BEETLE_SPAWN_PROB          = 0.15;  // chance any enemy slot becomes the one-per-map beetle
-const BEETLE_SEARCH_RADIUS       = 15;    // tile radius when force-placing the fallback beetle
-const BEETLE_MIN_DIST            = 8;     // minimum distance from player for fallback beetle placement
 const ENEMY_COUNT_NORMAL         = 12;
 const ENEMY_COUNT_HARD           = 24;
 const ENEMY_COUNT_EASY           = 6;
@@ -38,12 +36,16 @@ function isInClearRect(x, y, startX, endX, startY, endY) {
 
 // Entry point: clears state and kicks off phased map generation.
 function generateMap() {
+  runtimeFailed = false;
+  generationRetries = 0;
+  if (typeof GameStartup !== 'undefined') GameStartup.begin('Generating world');
   generationRunId++;
   genPhase = 0;
   clearPreviousGameState();
   genTempData = { runId: generationRunId, clearArea: null };
 
-  isTutorialMap = (localStorage.getItem('tutorialComplete') !== 'true');
+  // In-memory completion survives blocked/full browser storage.
+  if (readGameStorage('tutorialComplete') === 'true') isTutorialMap = false;
 
   if (isTutorialMap) {
     loadTutorialMap();
@@ -121,6 +123,12 @@ function generateMap_Part2() {
 
   // --- Phase 2: Hills ---
   generateHills(mapStates, logicalW, logicalH);
+  // Hills run after rivers, so restore the protected spawn after both passes.
+  for (let dy = -SPAWN_CLEAR_RADIUS; dy <= SPAWN_CLEAR_RADIUS; dy++) {
+    for (let dx = -SPAWN_CLEAR_RADIUS; dx <= SPAWN_CLEAR_RADIUS; dx++) {
+      mapStates[(spawn.spawnY + dy) * logicalW + spawn.spawnX + dx] = TILE_TYPES.GRASS;
+    }
+  }
 
   // --- Phase 3: Prune Unreachable Tiles ---
   pruneUnreachable(spawn.spawnX, spawn.spawnY);
@@ -152,7 +160,8 @@ function generateMap_Part2() {
               const py = midY + dy;
 
               if (px >= 0 && px < logicalW && py >= 0 && py < logicalH) {
-                  if (mapStates[py * logicalW + px] === TILE_TYPES.GRASS) {
+                  if (mapStates[py * logicalW + px] === TILE_TYPES.GRASS &&
+                      Math.hypot(px - spawn.spawnX, py - spawn.spawnY) > SPAWN_CLEAR_RADIUS) {
                       portalPos = { x: px, y: py };
                       foundMid = true;
                       break;
@@ -179,98 +188,62 @@ function generateMap_Part2() {
   isMoving = false;
 
   markDecorObjectsDirty();
-  createMapImage();
+  spawnDecorativeObjects();
+  decorObjectsDirty = false;
+  let reachable = floodReachable();
+  if (portalPos && !reachable[portalPos.y * logicalW + portalPos.x]) {
+    decorativeObjectsList = decorativeObjectsList.filter(object => object.type !== 'obstacle');
+    decorativeObstaclePositions.clear();
+    reachable = floodReachable();
+  }
+  const available = [];
+  for (let index = 0; index < mapStates.length; index++) {
+    if (reachable[index] && mapStates[index] === TILE_TYPES.GRASS &&
+        !decorativeObstaclePositions.has(index) &&
+        Math.hypot(index % logicalW - spawn.spawnX, Math.floor(index / logicalW) - spawn.spawnY) > SPAWN_CLEAR_RADIUS &&
+        (!portalPos || Math.hypot(index % logicalW - portalPos.x, Math.floor(index / logicalW) - portalPos.y) > 1)) available.push(index);
+  }
+  shuffleArray(available);
 
   // --- Phase 5: Enemies ---
-  try {
-     let enemyCount = ENEMY_COUNT_NORMAL;
-     if (difficultySetting === 'hard') enemyCount = ENEMY_COUNT_HARD;
-     else if (difficultySetting === 'easy') enemyCount = ENEMY_COUNT_EASY;
+  let enemyCount = ENEMY_COUNT_NORMAL;
+  if (difficultySetting === 'hard') enemyCount = ENEMY_COUNT_HARD;
+  else if (difficultySetting === 'easy') enemyCount = ENEMY_COUNT_EASY;
 
-     let beetleSpawned = false;
-     for (let i = 0; i < enemyCount; i++) {
-        let enemyX, enemyY;
-        let attempts = 0;
-        let invalid = true;
-        do {
-           enemyX = Math.floor(Math.random() * logicalW);
-           enemyY = Math.floor(Math.random() * logicalH);
-           attempts++;
-           const tState = mapStates[enemyY * logicalW + enemyX];
-           invalid = isSolid(tState) || tState === TILE_TYPES.RIVER;
-        } while (attempts < 50 && invalid);
+  let beetleSpawned = false;
+  for (let i = 0; i < enemyCount; i++) {
+    const index = available.pop();
+    if (index === undefined) throw new Error('Not enough reachable enemy spawns');
+    const enemyX = index % logicalW;
+    const enemyY = Math.floor(index / logicalW);
+    const roll = Math.random();
+    let enemyType = roll < 0.5 ? 'mantis' : 'maggot';
+    if (!beetleSpawned && Math.random() < BEETLE_SPAWN_PROB) {
+      enemyType = 'beetle';
+      beetleSpawned = true;
+    }
+    spawnEnemy(enemyType, enemyX, enemyY);
+  }
 
-        const finalTile = mapStates[enemyY * logicalW + enemyX];
-        if (!isSolid(finalTile) && finalTile !== TILE_TYPES.RIVER) {
-            const roll = Math.random();
-            let enemyType = roll < 0.5 ? 'mantis' : 'maggot';
+  // Guarantee one reachable boss when no random slot selected it.
+  if (!beetleSpawned) {
+    const index = available.pop();
+    if (index === undefined) throw new Error('No reachable boss spawn');
+    spawnEnemy('beetle', index % logicalW, Math.floor(index / logicalW));
+  }
 
-
-
-            // Only spawn ONE beetle per map
-            if (!beetleSpawned && Math.random() < BEETLE_SPAWN_PROB) {
-                enemyType = 'beetle';
-                beetleSpawned = true;
-            }
-            spawnEnemy(enemyType, enemyX, enemyY);
-        }
-     }
-
-     // Fallback: Ensure exactly one beetle spawns, and FORCE it to be on GRASS near the player
-     if (!beetleSpawned) {
-        let enemyX, enemyY, attempts = 0, found = false;
-        do {
-           // Try to find a spot relatively near the player but not on top of them
-           const angle = Math.random() * TWO_PI;
-           const dist = BEETLE_MIN_DIST + Math.random() * BEETLE_SEARCH_RADIUS;
-           enemyX = Math.floor(playerPosition.x + Math.cos(angle) * dist);
-           enemyY = Math.floor(playerPosition.y + Math.sin(angle) * dist);
-           enemyX = constrain(enemyX, 1, logicalW - 2);
-           enemyY = constrain(enemyY, 1, logicalH - 2);
-           attempts++;
-           const tState = mapStates[enemyY * logicalW + enemyX];
-           found = (tState === TILE_TYPES.GRASS);
-        } while (attempts < 200 && !found);
-
-        if (found) {
-            spawnEnemy('beetle', enemyX, enemyY);
-            beetleSpawned = true;
-            verboseLog(`[game] Boss Beetle forced at ${enemyX}, ${enemyY}`);
-        } else {
-            // Absolute fallback anywhere on grass
-            for (let i = 0; i < mapStates.length; i++) {
-                if (mapStates[i] === TILE_TYPES.GRASS) {
-                    spawnEnemy('beetle', i % logicalW, Math.floor(i / logicalW));
-                    beetleSpawned = true;
-                    break;
-                }
-            }
-        }
-     }
-
-     // --- Phase 6: Scatter Coins ---
-     activeCoins = [];
-     for (let i = 0; i < COIN_SCATTER_COUNT; i++) {
-        let cx = Math.floor(Math.random() * logicalW);
-        let cy = Math.floor(Math.random() * logicalH);
-        const idx = cy * logicalW + cx;
-        if (mapStates[idx] === TILE_TYPES.GRASS) {
-            mapStates[idx] = TILE_TYPES.COIN;
-            activeCoins.push({ x: cx, y: cy });
-        }
-     }
-
-     initialEnemies = enemies.map(e => ({ type: e.type, x: e.x, y: e.y }));
-
-     // CRITICAL: Reset camera and redraw static map to prevent shifting
-     smoothCamX = playerPosition.x * cellSize - width/2;
-     smoothCamY = playerPosition.y * cellSize - height/2;
-     createMapImage();
-
-     try {
-         showToast(t('objective'), 'warn', 5000);
-     } catch(e) {}
-  } catch(e) {}
+  // --- Phase 6: Scatter Coins ---
+  activeCoins = [];
+  for (let i = 0; i < COIN_SCATTER_COUNT; i++) {
+    const index = available.pop();
+    if (index === undefined) throw new Error('Not enough reachable coin spawns');
+    mapStates[index] = TILE_TYPES.COIN;
+    activeCoins.push({ x: index % logicalW, y: Math.floor(index / logicalW) });
+  }
+  initialEnemies = enemies.map(e => ({ type: e.type, x: e.x, y: e.y }));
+  smoothCamX = playerPosition.x * cellSize - width / 2;
+  smoothCamY = playerPosition.y * cellSize - height / 2;
+  try { showToast(t('objective'), 'warn', 5000); } catch (error) {}
 
   // --- Phase 7: Tree Objects ---
   treeObjects = [];
@@ -283,13 +256,11 @@ function generateMap_Part2() {
         if (Math.random() < TREE_SPAWN_CHANCE) treeObjects.push({ x, y });
       }
     }
-    createMapImage();
   }
 
   // --- Phase 8: Finalize & Save ---
+  createMapImage();
   genTempData = {};
-
-  redraw();
   autosaveMap();
   persistActiveMapToServer('generated');
   mapLoadComplete = true;
@@ -373,37 +344,9 @@ function postProcessRiversAndClearArea(clearStartX, clearEndX, clearStartY, clea
 
 // BFS from (startX, startY); converts isolated non-solid tiles to FOREST (unreachable pruning).
 function pruneUnreachable(startX, startY) {
-    const startIdx = startY * logicalW + startX;
-    if (isSolid(mapStates[startIdx])) return;
-    const q = [{ x: startX, y: startY }];
-    const visited = new Set([`${startX},${startY}`]);
-    let head = 0;
-    const dirs = [
-      { dx: 0, dy: -1 }, { dx: 1, dy: -1 }, { dx: 1, dy: 0 }, { dx: 1, dy: 1 },
-      { dx: 0, dy: 1 },  { dx: -1, dy: 1 }, { dx: -1, dy: 0 }, { dx: -1, dy: -1 }
-    ];
-    while (head < q.length) {
-      const { x, y } = q[head++];
-      for (const d of dirs) {
-        const nx = x + d.dx;
-        const ny = y + d.dy;
-        if (nx >= 0 && nx < logicalW && ny >= 0 && ny < logicalH) {
-          const key = `${nx},${ny}`;
-          const idx = ny * logicalW + nx;
-          if (!visited.has(key) && !isSolid(mapStates[idx])) {
-            visited.add(key);
-            q.push({ x: nx, y: ny });
-          }
-        }
-      }
-    }
+    const reachable = floodReachable({ startX, startY, respectDecor: false, respectEdgeLayer: false });
     for (let i = 0; i < mapStates.length; i++) {
-      const x = i % logicalW;
-      const y = Math.floor(i / logicalW);
-
-      if (!isSolid(mapStates[i]) && !visited.has(`${x},${y}`)) {
-        mapStates[i] = TILE_TYPES.FOREST;
-      }
+      if (!isSolid(mapStates[i]) && !reachable[i]) mapStates[i] = TILE_TYPES.FOREST;
     }
 }
 

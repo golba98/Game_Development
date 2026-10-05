@@ -243,6 +243,14 @@ function createBeetle(startX, startY) {
 
     update: function() {
       const dt = gameDelta;
+      // Training targets are stationary; the boss unstuck nudge otherwise
+      // walks this passive dummy through walls while the player reads prompts.
+      if (isTutorialMap && !this.aggro) {
+        this.moving = false;
+        this.attacking = false;
+        this.hurtTimer = Math.max(0, this.hurtTimer - dt);
+        return;
+      }
       const targetX = playerPosition.x;
       const targetY = playerPosition.y;
       const d = dist(this.x, this.y, targetX, targetY);

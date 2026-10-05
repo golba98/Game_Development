@@ -107,6 +107,20 @@ uploaded as a static asset.
 | Deploy command          | npx wrangler deploy  |
 | Static assets directory | dist                 |
 
+Cloudflare Pages can also serve the same build with build command `npm run build`
+and output directory `dist`. The configured deployment remains Workers Static Assets.
+
+Startup loads essential images and fonts before the world, then loads optional
+music without blocking play. If WebGL initialization fails or the context is lost,
+the game continues with Canvas2D. For troubleshooting, open
+`game.html?renderBackend=p5` to select Canvas2D for that session, or
+`game.html?renderBackend=pixi` to check the default renderer.
+
+Loading failures offer Retry and Return to Menu. Save files are checked before
+loading; incompatible dimensions, tile buffers, or entity coordinates are rejected.
+Existing valid saves remain supported, and new saves also retain player position
+and decorative props.
+
 Wrangler also reads `wrangler.jsonc`, which sets `assets.directory` to `./dist`
 and runs `npm run build` before deployment.
 
@@ -126,12 +140,13 @@ System / Debug:
 [P] : Procedural Regeneration (Generate a fresh new world instantly)
 [T] : Toggle Assets (Switch between sprite textures and raw colors)
 [Space] : Jump (Experimental physics)
-[F] : Fullscreen NOTE: Currently has a problem
-[Ctrl + '] : Open Terminal Cheat Console (Works in Menu & Game)
+[F] : Toggle Fullscreen (when permitted by the browser)
+[F2 / Backquote] : Open Terminal Cheat Console
+[Ctrl + '] : Alternate Terminal Shortcut
 
 ## TERMINAL COMMANDS
 
-_Open the console with `Ctrl + '` to execute these commands:_
+_In-game, open the console with F2, Backquote, or `Ctrl + '`. The menu uses `Ctrl + '`._
 
 - `/kill all` : Purge all enemy neural signatures from the current grid.
 - `/collect all` : Instantly sequester all gold units on the map.

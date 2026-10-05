@@ -86,7 +86,7 @@ function placePotionDropNear(worldX, worldY, dropType) {
 }
 
 // Triggers the visual and logical move, applying progress-based queuing if a move is active.
-function startMove(dx, dy) {
+function startMove(dx, dy, bufferImmediately = false) {
   if (!playerPosition) return;
 
   const targetX = Math.max(0, Math.min(playerPosition.x + dx, (logicalW || 0) - 1));
@@ -125,7 +125,7 @@ function startMove(dx, dy) {
     const duration = Math.max(1, lastMoveDurationMs);
     const progress = elapsed / duration;
 
-    if (progress >= MOVE_BUFFER_PROGRESS) {
+    if (progress >= MOVE_BUFFER_PROGRESS || bufferImmediately) {
       if (canMoveTo(playerPosition.x, playerPosition.y, targetX, targetY)) {
         queuedMove = {
           dx: dx,
@@ -148,8 +148,11 @@ function handleMovement() {
 
   if (isJumping) return;
 
-  // Buffer the next direction early enough that held movement is continuous.
-  if (isMoving) {
+  const hasNewMove = InputState.wasPressed(playerKeybinds.moveLeft) ||
+    InputState.wasPressed(playerKeybinds.moveRight) || InputState.wasPressed(playerKeybinds.moveUp) ||
+    InputState.wasPressed(playerKeybinds.moveDown);
+  // A tap can begin and end between frames; preserve its edge and buffer turns.
+  if (isMoving && !hasNewMove) {
     const elapsed = millis() - moveStartMillis;
     const duration = Math.max(1, lastMoveDurationMs);
     if (elapsed / duration < MOVE_BUFFER_PROGRESS) {
@@ -157,10 +160,10 @@ function handleMovement() {
     }
   }
 
-  const keyLeft  = InputState.isDown(playerKeybinds.moveLeft);
-  const keyRight = InputState.isDown(playerKeybinds.moveRight);
-  const keyUp    = InputState.isDown(playerKeybinds.moveUp);
-  const keyDown  = InputState.isDown(playerKeybinds.moveDown);
+  const keyLeft  = InputState.isDown(playerKeybinds.moveLeft) || InputState.wasPressed(playerKeybinds.moveLeft);
+  const keyRight = InputState.isDown(playerKeybinds.moveRight) || InputState.wasPressed(playerKeybinds.moveRight);
+  const keyUp    = InputState.isDown(playerKeybinds.moveUp) || InputState.wasPressed(playerKeybinds.moveUp);
+  const keyDown  = InputState.isDown(playerKeybinds.moveDown) || InputState.wasPressed(playerKeybinds.moveDown);
   const shiftHeld = InputState.isDown(playerKeybinds.sprint);
 
   // Dash trigger
@@ -182,7 +185,7 @@ function handleMovement() {
   if (actualDown) dy += 1;
 
   if (dx !== 0 || dy !== 0) {
-    startMove(dx, dy);
+    startMove(dx, dy, hasNewMove);
   }
 
   // Update animation speed matching actual speed

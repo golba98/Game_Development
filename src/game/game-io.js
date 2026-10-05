@@ -44,6 +44,8 @@ function buildActiveMapPayload() {
       mapStates: Array.from(mapStates),
       terrainLayer: terrainLayer ? Array.from(terrainLayer) : null,
       treeObjects: Array.isArray(treeObjects) ? treeObjects.slice() : [],
+      decorativeObjects: decorativeObjectsList.map(object => ({ ...object })),
+      playerPosition,
       portalPos,
       isPortalActive,
       enemies: Array.isArray(enemies) ? enemies.map(e => ({
@@ -70,7 +72,7 @@ function _deserialiseEnemies(enemyData) {
     if (enemy) {
       if (eData.direction)  enemy.direction  = eData.direction;
       if (eData.moveTimer)  enemy.moveTimer  = eData.moveTimer;
-      if (eData.health)     enemy.health     = eData.health;
+      if (Number.isFinite(eData.health)) enemy.health = eData.health;
       if (eData.maxHealth)  enemy.maxHealth  = eData.maxHealth;
       result.push(enemy);
     }
@@ -185,7 +187,9 @@ function tryFetchActiveMap() {
       ? SERVER_MAP_URL_RELATIVE
       : SERVER_MAP_URL_ABSOLUTE;
 
-    return fetch(url, { cache: 'no-cache' })
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    return fetch(url, { cache: 'no-cache', signal: controller.signal })
       .then(resp => {
         if (!resp.ok) {
             console.warn('[game] tryFetchActiveMap: Server returned status', resp.status);
@@ -198,7 +202,8 @@ function tryFetchActiveMap() {
               return success;
           } catch (e) { console.warn('[game] applyLoadedMap failed', e); return false; }
         }).catch(err => { console.warn('[game] failed to parse active_map.json', err); return false; });
-      }).catch(err => { console.warn('[game] tryFetchActiveMap: Fetch failed', err); return false; });
+      }).catch(err => { console.warn('[game] tryFetchActiveMap: Fetch failed', err); return false; })
+      .finally(() => clearTimeout(timeout));
   } catch (e) { return Promise.resolve(false); }
 }
 
@@ -215,56 +220,92 @@ function rebuildActiveCoinsFromMap() {
   }
 }
 
-function applyLoadedMap(obj) {
-  try {
-    if (!obj || typeof obj !== 'object' || !Array.isArray(obj.mapStates) || !obj.logicalW || !obj.logicalH) {
-      console.warn('[game] applyLoadedMap: invalid payload', obj);
-      return false;
-    }
+// Validate the complete payload before touching the current world.
+function validateMapPayload(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  const w = obj.logicalW, h = obj.logicalH;
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 ||
+      w > FIXED_MAP_WIDTH_TILES || h > FIXED_MAP_HEIGHT_TILES) return false;
+  if (obj.cellSize !== undefined && obj.cellSize !== cellSize) return false;
+  const tiles = new Set(Object.values(TILE_TYPES));
+  const validLayer = layer => Array.isArray(layer) && layer.length === w * h &&
+    layer.every(tile => Number.isInteger(tile) && tiles.has(tile));
+  if (!validLayer(obj.mapStates)) return false;
+  if (obj.terrainLayer != null && !validLayer(obj.terrainLayer)) return false;
+  const validPosition = position => position && Number.isFinite(position.x) && Number.isFinite(position.y) &&
+    position.x >= 0 && position.y >= 0 && position.x < w && position.y < h;
+  if (obj.playerPosition != null && (!validPosition(obj.playerPosition) ||
+      !Number.isInteger(obj.playerPosition.x) || !Number.isInteger(obj.playerPosition.y))) return false;
+  if (obj.portalPos != null && (!validPosition(obj.portalPos) ||
+      !Number.isInteger(obj.portalPos.x) || !Number.isInteger(obj.portalPos.y))) return false;
+  if (obj.treeObjects != null && (!Array.isArray(obj.treeObjects) || obj.treeObjects.length > w * h ||
+      !obj.treeObjects.every(tree => validPosition(tree) && Number.isInteger(tree.x) && Number.isInteger(tree.y)))) return false;
+  if (obj.enemies != null && (!Array.isArray(obj.enemies) || obj.enemies.length > w * h ||
+      !obj.enemies.every(enemy => validPosition(enemy) && ['mantis', 'maggot', 'beetle'].includes(enemy.type) &&
+        ['health', 'maxHealth', 'moveTimer'].every(key => enemy[key] === undefined ||
+          (Number.isFinite(enemy[key]) && enemy[key] >= 0))))) return false;
+  if (obj.decorativeObjects != null && (!Array.isArray(obj.decorativeObjects) || obj.decorativeObjects.length > w * h ||
+      !obj.decorativeObjects.every(object => object && Object.hasOwn(DECOR_ASSET_PATHS, object.id) &&
+        ['obstacle', 'walkable', 'special'].includes(object.type) &&
+        Number.isInteger(object.tileX) && Number.isInteger(object.tileY) &&
+        validPosition({ x: object.tileX, y: object.tileY })))) return false;
+  if (obj.persistentGameId != null && typeof obj.persistentGameId !== 'string') return false;
+  return obj.mapStates.some(tile => !isSolid(tile));
+}
 
+function applyLoadedMap(obj) {
+  if (!validateMapPayload(obj)) {
+    console.warn('[game] Invalid saved map; generating a new world');
+    return false;
+  }
+  try {
+    clearPreviousGameState();
+    logicalW = obj.logicalW;
+    logicalH = obj.logicalH;
+    mapStates = new Uint8Array(obj.mapStates);
+    terrainLayer = new Uint8Array(obj.terrainLayer || obj.mapStates);
+    treeObjects = (obj.treeObjects || []).map(tree => ({ ...tree }));
+    portalPos = obj.portalPos || _findFallbackPortalPos();
+    isPortalActive = obj.isPortalActive === true;
+    enemies = _deserialiseEnemies(obj.enemies);
+    initialEnemies = enemies.map(enemy => ({ type: enemy.type, x: enemy.x, y: enemy.y }));
+    const preferred = obj.playerPosition || { x: Math.floor(logicalW / 2), y: Math.floor(logicalH / 2) };
+    playerPosition = { ...preferred };
+    const index = findFloodStart();
+    playerPosition = { x: index % logicalW, y: Math.floor(index / logicalW) };
+    initialSpawnPosition = { ...playerPosition };
+    _resetRenderPosition();
+    rebuildActiveCoinsFromMap();
+    counts = {};
+    for (const tile of mapStates) counts[tile] = (counts[tile] || 0) + 1;
+    if (obj.decorativeObjects) {
+      decorativeObjectsList = obj.decorativeObjects.map(object => ({ ...object }));
+      decorativeObstaclePositions = new Set(decorativeObjectsList.filter(object => object.type === 'obstacle')
+        .map(object => object.tileY * logicalW + object.tileX));
+      decorObjectsDirty = false;
+    } else {
+      spawnDecorativeObjects();
+      decorObjectsDirty = false;
+    }
+    // Legacy saves generated props randomly. Remove blocking props if they
+    // cover the restored spawn or isolate a required objective.
+    const reachable = floodReachable();
+    if (decorativeObstaclePositions.has(playerPosition.y * logicalW + playerPosition.x) ||
+        [...activeCoins, ...enemies.filter(enemy => enemy.health > 0), ...(portalPos ? [portalPos] : [])]
+          .some(position => !reachable[Math.floor(position.y) * logicalW + Math.floor(position.x)])) {
+      decorativeObjectsList = decorativeObjectsList.filter(object => object.type !== 'obstacle');
+      decorativeObstaclePositions.clear();
+    }
+    createMapImage();
     if (obj.persistentGameId) {
       persistentGameId = obj.persistentGameId;
-      try { localStorage.setItem('persistentGameId', persistentGameId); } catch (e) {}
+      try { localStorage.setItem('persistentGameId', persistentGameId); } catch (error) {}
     }
-
-    logicalW = Number(obj.logicalW) || Math.ceil((virtualW || W) / cellSize);
-    logicalH = Number(obj.logicalH) || Math.ceil((virtualH || H) / cellSize);
-    if (obj.cellSize && Number(obj.cellSize) > 0) {
-      try { cellSize = Number(obj.cellSize); } catch (e) {}
-    }
-
-    try { mapStates = new Uint8Array(obj.mapStates); } catch (e) { mapStates = new Uint8Array(Array.from(obj.mapStates || [])); }
-    rebuildActiveCoinsFromMap();
-    if (obj.terrainLayer && Array.isArray(obj.terrainLayer)) {
-      try { terrainLayer = new Uint8Array(obj.terrainLayer); } catch (e) { terrainLayer = new Uint8Array(Array.from(obj.terrainLayer)); }
-    } else {
-      terrainLayer = mapStates.slice();
-    }
-    treeObjects = Array.isArray(obj.treeObjects) ? obj.treeObjects.slice() : [];
-    portalPos = obj.portalPos || _findFallbackPortalPos();
-    if (typeof obj.isPortalActive === 'boolean') isPortalActive = obj.isPortalActive;
-
-    enemies = _deserialiseEnemies(obj.enemies);
-    initialEnemies = enemies.map(e => ({ type: e.type, x: e.x, y: e.y }));
-
-    markDecorObjectsDirty();
-    counts = {};
-    for (let i = 0; i < mapStates.length; i++) counts[mapStates[i]] = (counts[mapStates[i]] || 0) + 1;
-
-    const centerX = Math.floor(logicalW / 2);
-    const centerY = Math.floor(logicalH / 2);
-    playerPosition = { x: centerX, y: centerY };
-    initialSpawnPosition = { x: centerX, y: centerY };
-    _resetRenderPosition();
-    createMapImage();
-    redraw();
-    try { mapLoadComplete = true; } catch (e) {}
-    try { showLoadingOverlay = false; } catch (e) {}
-    completeLoadingProgress();
-    try { updateLoadingOverlayDom(); } catch (e) {}
+    finishGameLoading();
     return true;
-  } catch (err) {
-    console.warn('[game] applyLoadedMap error', err);
+  } catch (error) {
+    console.warn('[game] Could not restore map', error);
+    clearPreviousGameState();
     return false;
   }
 }
@@ -296,8 +337,8 @@ function loadMapFromStorage() {
     let obj = null;
     try { obj = JSON.parse(raw); } catch (e) { console.warn('[game] failed to parse stored map JSON', e); return false; }
 
-    if (obj.persistentGameId !== persistentGameId) {
-      console.warn(`[game] stored map has wrong game ID (expected ${persistentGameId}, got ${obj.persistentGameId}). Ignoring.`);
+    if (!obj || obj.persistentGameId !== persistentGameId) {
+      console.warn(`[game] stored map has wrong game ID (expected ${persistentGameId}, got ${obj && obj.persistentGameId}). Ignoring.`);
       return false;
     }
     if (!obj || typeof obj !== 'object' || !Array.isArray(obj.mapStates) || !obj.logicalW || !obj.logicalH) {
@@ -305,42 +346,7 @@ function loadMapFromStorage() {
       return false;
     }
 
-    logicalW = Number(obj.logicalW) || Math.ceil((virtualW || W) / cellSize);
-    logicalH = Number(obj.logicalH) || Math.ceil((virtualH || H) / cellSize);
-    if (obj.cellSize && Number(obj.cellSize) > 0) {
-      try { cellSize = Number(obj.cellSize); } catch (e) {}
-    }
-
-    try { mapStates = new Uint8Array(obj.mapStates); } catch (e) { mapStates = new Uint8Array(Array.from(obj.mapStates || [])); }
-    rebuildActiveCoinsFromMap();
-    if (obj.terrainLayer && Array.isArray(obj.terrainLayer)) {
-      try { terrainLayer = new Uint8Array(obj.terrainLayer); } catch (e) { terrainLayer = new Uint8Array(Array.from(obj.terrainLayer)); }
-    } else {
-      terrainLayer = mapStates.slice();
-    }
-    treeObjects = Array.isArray(obj.treeObjects) ? obj.treeObjects.slice() : [];
-    portalPos = obj.portalPos || _findFallbackPortalPos();
-    if (typeof obj.isPortalActive === 'boolean') isPortalActive = obj.isPortalActive;
-
-    enemies = _deserialiseEnemies(obj.enemies);
-    initialEnemies = enemies.map(e => ({ type: e.type, x: e.x, y: e.y }));
-
-    counts = {};
-    for (let i = 0; i < mapStates.length; i++) counts[mapStates[i]] = (counts[mapStates[i]] || 0) + 1;
-
-    const centerX = Math.floor(logicalW / 2);
-    const centerY = Math.floor(logicalH / 2);
-    playerPosition = { x: centerX, y: centerY };
-    initialSpawnPosition = { x: centerX, y: centerY };
-    _resetRenderPosition();
-    createMapImage();
-    redraw();
-    try { showToast(t('map_loaded'), 'info', 2200); } catch (e) {}
-    try { mapLoadComplete = true; } catch (e) {}
-    try { showLoadingOverlay = false; } catch (e) {}
-    completeLoadingProgress();
-    try { updateLoadingOverlayDom(); } catch (e) {}
-    return true;
+    return applyLoadedMap(obj);
   } catch (err) {
     console.warn('[game] loadMapFromStorage error', err);
     return false;
@@ -564,7 +570,7 @@ window.addEventListener('message', (ev) => {
             try { window.dispatchEvent(new Event('resize')); } catch (e) {}
           }
           try { window.focus(); } catch (e) {}
-          try { const c = document.querySelector('canvas'); if (c) c.focus(); } catch (e) {}
+          try { const c = document.querySelector('canvas:not(#pixi-canvas)'); if (c) c.focus(); } catch (e) {}
         } catch (e) {}
         break;
       }

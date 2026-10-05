@@ -84,9 +84,9 @@ function createMainMenu() {
         });
 
 
-
         const iframe = document.createElement('iframe');
         iframe.id = 'game-iframe';
+        iframe.allowFullscreen = true;
         const fpsMode = normalizeFpsMode(targetFps, DEFAULT_SETTINGS.fpsMode);
         const params = new URLSearchParams({
           masterVol,
@@ -139,6 +139,7 @@ function createMainMenu() {
 
         iframe.addEventListener('load', () => {
           try {
+            if (document.getElementById('game-iframe') !== iframe) return;
             if (iframe.contentWindow) {
               // Give keyboard focus to the game iframe so WASD input works
               try { iframe.focus(); } catch (e) {}
@@ -149,6 +150,7 @@ function createMainMenu() {
                 const startTs = Date.now();
                 const maxWait = 800;
                 const poll = () => {
+                  if (document.getElementById('game-iframe') !== iframe) return;
                   if (menuMusicStopped || Date.now() - startTs > maxWait) {
                     try {
                       iframe.contentWindow.postMessage({ type: 'start-game-music' }, '*');
@@ -167,28 +169,14 @@ function createMainMenu() {
         setTimeout(() => {
           try {
             const ifr = document.getElementById('game-iframe');
-            if (ifr && ifr.contentWindow) {
-              ifr.contentWindow.postMessage(getGameSettingsMessage(), '*');
+            if (ifr === iframe && ifr.contentWindow) {
+              ifr.contentWindow.postMessage(getGameSettingsMessage(), window.location.origin);
               console.log('[parent] fallback: posted audio settings to iframe after timeout');
             }
           } catch (e) {}
         }, 500);
 
 
-        // Fallback: if game never posts game-ready (e.g. game-core.js fails to load),
-        // send game-activated after 3s so the game at least gets its settings.
-        setTimeout(() => {
-          try {
-            const ifr = document.getElementById('game-iframe');
-            if (ifr && ifr.contentWindow && !ifr._gameActivatedSent) {
-              ifr._gameActivatedSent = true;
-              ifr.contentWindow.postMessage(getGameSettingsMessage('game-activated'), '*');
-              console.log('[parent] fallback: posted game-activated to iframe after 3s');
-              try { ifr.focus(); } catch (e) {}
-              try { ifr.contentWindow.focus(); } catch (e) {}
-            }
-          } catch (e) {}
-        }, 3000);
       } else {
         disableMenuBackgroundVideo();
         overlay.style.display = 'flex';

@@ -35,6 +35,20 @@ function disposeMenuBackgroundVideo() {
   loopFallbackBuffer = null;
 }
 
+// Use the native promise so rapid Play/Exit cannot leave a rejected play request.
+function playMenuBackgroundVideo() {
+  if (!bgVideo || !bgVideo.elt) return;
+  bgVideo.elt.loop = true;
+  const request = bgVideo.elt.play();
+  if (request && typeof request.catch === 'function') {
+    request.catch(error => {
+      if (error.name !== 'AbortError' && error.name !== 'NotAllowedError') {
+        console.warn('[menu] Background video unavailable', error);
+      }
+    });
+  }
+}
+
 function initializeMenuBackgroundVideo(videoElement) {
   if (!videoElement) return;
   bgVideo = videoElement;
@@ -55,8 +69,7 @@ function initializeMenuBackgroundVideo(videoElement) {
   videoLoopPending = false;
   bgVideo.onended(() => { videoLoopPending = true; });
   try {
-    bgVideo.loop();
-    bgVideo.play();
+    playMenuBackgroundVideo();
   } catch (e) {}
 }
 
@@ -73,8 +86,7 @@ function enableMenuBackgroundVideo() {
   inGame = false;
   if (bgVideo) {
     try {
-      bgVideo.loop();
-      bgVideo.play();
+      playMenuBackgroundVideo();
     } catch (e) {}
     return;
   }
@@ -114,7 +126,7 @@ function updateBackgroundVideo() {
     videoLoopPending = false;
     try {
       bgVideo.time(0);
-      bgVideo.play();
+      playMenuBackgroundVideo();
     } catch (e) {}
   }
 }

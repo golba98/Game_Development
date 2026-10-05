@@ -53,20 +53,26 @@ const InputState = {
     );
 
     window.addEventListener("blur", function () {
-      self._down.clear();
+      self.reset();
     });
 
     window.addEventListener("focusout", function () {
-      self._down.clear();
+      self.reset();
     });
 
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) {
-        self._down.clear();
+        self.reset();
       }
     });
 
     this._installed = true;
+  },
+
+  reset: function () {
+    this._down.clear();
+    this._pressed.clear();
+    this._released.clear();
   },
 
   isDown: function (code) {

@@ -168,7 +168,7 @@ function drawTileToMap(lx, ly) {
   if (typeof TerrainChunkCache !== "undefined") TerrainChunkCache.markTileDirty(lx, ly);
   if (typeof RENDER_BACKEND !== 'undefined' && RENDER_BACKEND === 'pixi' &&
       typeof PixiWorldRenderer !== 'undefined') {
-    PixiWorldRenderer.invalidate();
+    PixiWorldRenderer.invalidate(px, py, cellSize, cellSize);
   }
 }
 
@@ -584,7 +584,21 @@ function clearPreviousGameState() {
   renderX = renderY = renderStartX = renderStartY = renderTargetX = renderTargetY = 0;
   isMoving = false;
   queuedMove = null;
+  if (typeof InputState !== 'undefined') InputState.reset();
   isJumping = false;
+  activeCoins = [];
+  initialEnemies = [];
+  projectiles = [];
+  vfx = [];
+  isAttacking = false;
+  isDashing = false;
+  isGameOver = false;
+  if (playerHealth <= 0) playerHealth = maxHealth;
+  if (gameOverOverlay) { gameOverOverlay.close(); gameOverOverlay = null; }
+  if (victoryOverlay) { victoryOverlay.close(); victoryOverlay = null; }
+  if (inGameMenuVisible && typeof closeInGameMenu === 'function') closeInGameMenu();
+  playerHurtTimer = 0;
+  if (typeof PixiWorldRenderer !== 'undefined') PixiWorldRenderer.clear();
   clouds.length = 0;
   lastCloudSpawn = 0;
   overlayProgress = 0;
@@ -639,8 +653,11 @@ function spawnDecorativeObjects() {
     if (decorativeObjectsList.length >= maxDecor) break;
     const tileIdx = tile.y * logicalW + tile.x;
     if (occupied.has(tileIdx)) continue;
+    if (playerPosition && Math.hypot(tile.x - playerPosition.x, tile.y - playerPosition.y) <= SPAWN_CLEAR_RADIUS) continue;
+    if (portalPos && Math.hypot(tile.x - portalPos.x, tile.y - portalPos.y) <= 1) continue;
+    if (mapStates[tileIdx] !== TILE_TYPES.GRASS) continue;
     const roll = Math.random();
-    if (obstaclesPlaced < maxObstacles && roll < DECOR_OBSTACLE_SPAWN_CHANCE) {
+    if (!isTutorialMap && obstaclesPlaced < maxObstacles && roll < DECOR_OBSTACLE_SPAWN_CHANCE) {
       if (placeRandomDecor(tile, 'obstacle', DECORATIVE_OBSTACLE_NAMES)) {
         obstaclesPlaced++;
       }
@@ -683,8 +700,10 @@ function normalizeDifficultyValue(value) {
 function setDifficulty(value, { regenerate = true, reason = 'unknown' } = {}) {
   const normalized = normalizeDifficultyValue(value);
   if (!normalized) return false;
-  if (normalized === currentDifficulty) return false;
+  const changed = normalized !== currentDifficulty;
   currentDifficulty = normalized;
+  difficultySetting = normalized;
+  if (!changed) return false;
   verboseLog(`[game] difficulty set to ${normalized} (${reason})`);
   if (regenerate && typeof generateMap === 'function' && W && H) {
     generateMap();
@@ -733,6 +752,7 @@ function releaseGameAssets() {
   clickSFX = null;
 
   if (typeof AssetTracker !== 'undefined') {
+    AssetTracker.settledNames.clear();
     AssetTracker.loaded = 0;
     AssetTracker.expected = 0;
     if (AssetTracker.names && typeof AssetTracker.names.clear === 'function') {

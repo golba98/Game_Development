@@ -164,24 +164,6 @@ function preload() {
 
   try {
     trackLoadSound(
-      "gameMusic:assets/8-Music/game_music.wav",
-      "assets/8-Music/game_music.wav",
-      (snd) => {
-        gameMusic = snd;
-      },
-      (err) => {
-        gameMusic = null;
-      },
-    );
-  } catch (e) {
-    try {
-      gameMusic = loadSound("assets/8-Music/game_music.wav");
-    } catch (ee) {
-      gameMusic = null;
-    }
-  }
-  try {
-    trackLoadSound(
       "clickSFX:assets/9-Sounds/Button_Press.mp3",
       "assets/9-Sounds/Button_Press.mp3",
       (snd) => {
@@ -577,6 +559,7 @@ const AssetTracker = {
   expected: 0,
   loaded: 0,
   names: new Set(),
+  settledNames: new Set(),
   _resolve: null,
   _readyPromise: null,
   _callbacks: [],
@@ -592,6 +575,8 @@ const AssetTracker = {
       this.names.add(name);
       this.expected++;
     }
+    if (this.settledNames.has(name)) return;
+    this.settledNames.add(name);
     this.loaded++;
     if (this.loaded >= this.expected) {
       if (this._resolve) {
@@ -1023,4 +1008,19 @@ function cleanImageBrown(img) {
     console.warn("[cleanImageBrown] failed", e);
     return 0;
   }
+}
+
+// Music is optional and must not hold p5's preload gate or world readiness.
+function loadDeferredGameAudio() {
+  if (typeof loadSound !== 'function') return;
+  try {
+    gameMusic = loadSound('assets/8-Music/game_music.wav', (sound) => {
+      gameMusic = sound;
+      sound.setVolume(musicVol * masterVol);
+      if (pendingGameMusicStart) attemptStartGameMusic('audio-loaded');
+    }, (error) => {
+      gameMusic = null;
+      console.warn('[game] Optional music unavailable', error);
+    });
+  } catch (error) { gameMusic = null; }
 }
