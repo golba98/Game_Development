@@ -1,0 +1,42 @@
+{
+  "owner": "golba98",
+  "private_git_blobs": [
+    "389737a94d632e6f4170a44232ad9802ab0ee97f",
+    "c942606f474da6d8b4fb6a833928771e7b2d9b1e"
+  ],
+  "private_hashes": [
+    "36fb8fe2d3cbe66b42d75a214162cf37aee736e78535183e709c311e6288dff3",
+    "e17fc31b628eb6a33a58536a627147c9331cb1265dc477fc287abdd8b1daa2a0"
+  ],
+  "private_paths": [
+    ".agents/scratch/",
+    ".agents/teamwork/",
+    ".private/",
+    "docs/_reports/",
+    "docs/tmp/"
+  ],
+  "protected_paths": [
+    ".github/documentation-policy.json",
+    "scripts/check_documentation.py",
+    "scripts/test_documentation_policy.py",
+    ".gitignore",
+    ".npmignore",
+    ".dockerignore",
+    "MANIFEST.in",
+    "scripts/documentation-policy.json",
+    "scripts/check-docs.mjs",
+    "scripts/install-hooks.mjs",
+    "tools/stage-workspace.py",
+    "scripts/package.mjs"
+  ],
+  "public_markdown": {
+    "DOCUMENTATION.md": "c51e8e65739987deb2986f1b988578f312513c98880f1ab189226398fd539ce7",
+    "README.md": "b35753b079fedb204545dceedf8a9ba1704ca54e1fb8cfdc2d0e8bba61f4222e",
+    "SECURITY.md": "a18143e33a9daa8b4548344f37003ffbb76a9498ac71a6c86d6dfe43a2c16081",
+    "design-qa.md": "5877086428376f5088db09d0e46108c3da59390cd955a6025746750000d01025",
+    "docs/validation/cloudflare-runtime.md": "05b1af755e7b24fa2bccb520e7e3b31d5f370d09f7edd6e2d1f40b656984b334",
+    "docs/validation/objective-arrow-direction.md": "dd7f3ec1d46fc1c91ca7f1b0109ef771f7aabf4047ded11aad9f462af8ef2663"
+  },
+  "repository": "golba98/Game_Development",
+  "version": 1
+}

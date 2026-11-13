@@ -40,3 +40,14 @@ build/
 p5.min.js
 p5.sound.min.js
 p5.sound.dummy.js
+
+# Private notes and local agent entrypoints; never force-add.
+/.agents/scratch/
+/.agents/teamwork/
+/.private/
+/docs/_reports/
+/docs/tmp/
+[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]
+[Aa][Gg][Ee][Nn][Tt][Ss].[Oo][Vv][Ee][Rr][Rr][Ii][Dd][Ee].[Mm][Dd]
+[Cc][Ll][Aa][Uu][Dd][Ee].[Mm][Dd]
+[Gg][Ee][Mm][Ii][Nn][Ii].[Mm][Dd]
